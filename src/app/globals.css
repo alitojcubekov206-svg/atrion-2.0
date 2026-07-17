@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #060609;
+  --surface: #0d0d14;
+  --surface-2: #13131d;
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #ededf2;
+  --muted: #8b8b9e;
+  --accent: #7c6cff;
+  --accent-2: #4dd6ff;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface-2);
+  --color-line: var(--border);
+  --color-fg: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent2: var(--accent-2);
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(124, 108, 255, 0.35);
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+}
+
+.glow-text {
+  background: linear-gradient(120deg, #fff 20%, var(--accent-2) 50%, var(--accent) 80%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.btn-primary {
+  background: linear-gradient(120deg, var(--accent), #5a4bff);
+  box-shadow: 0 0 24px rgba(124, 108, 255, 0.35);
+  transition: box-shadow 0.3s, transform 0.15s;
+}
+.btn-primary:hover {
+  box-shadow: 0 0 40px rgba(124, 108, 255, 0.6);
+  transform: translateY(-1px);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
+}
+.card:hover {
+  border-color: rgba(124, 108, 255, 0.4);
+  box-shadow: 0 8px 40px rgba(124, 108, 255, 0.08);
+}
+
+/* AI thinking animation */
+@keyframes pulse-dot {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+.thinking-dot {
+  animation: pulse-dot 1.2s infinite ease-in-out;
+}
+.thinking-dot:nth-child(2) { animation-delay: 0.15s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.3s; }
+
+/* score ring */
+@keyframes ring-fill {
+  from { stroke-dashoffset: 260; }
+}
+.score-ring circle.fill {
+  animation: ring-fill 1.2s ease-out forwards;
+}
+
+@media print {
+  body { background: #fff; color: #111; }
+  .no-print { display: none !important; }
+  .print-block { display: block !important; }
+  .card { border-color: #ddd; box-shadow: none; }
+}
