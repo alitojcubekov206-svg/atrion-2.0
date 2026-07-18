@@ -1,7 +1,8 @@
 "use client";
 
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { ContactShadows, Edges, Grid, Html, OrbitControls } from "@react-three/drei";
+import { useEffect } from "react";
 import type { ModelPart, ThreeDConcept } from "@/lib/types";
 
 function Part({
@@ -49,25 +50,75 @@ function Part({
   );
 }
 
+type DrawingView = "perspective" | "top" | "front" | "side";
+
+function CameraRig({
+  view,
+  maxDimension,
+}: {
+  view: DrawingView;
+  maxDimension: number;
+}) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    const positions: Record<DrawingView, [number, number, number]> = {
+      perspective: [8, 6, 9],
+      top: [0, 14, 0.01],
+      front: [0, 1, 14],
+      side: [14, 1, 0],
+    };
+    camera.position.set(...positions[view]);
+    camera.up.set(0, view === "top" ? 0 : 1, view === "top" ? -1 : 0);
+    camera.lookAt(0, 0, 0);
+    if (view !== "perspective" && "zoom" in camera) {
+      (camera as typeof camera & { zoom: number }).zoom = Math.max(
+        14,
+        Math.min(90, 360 / Math.max(1, maxDimension))
+      );
+    }
+    camera.updateProjectionMatrix();
+  }, [camera, maxDimension, view]);
+
+  return null;
+}
+
 export default function ConceptViewer({
   concept,
   selectedId,
   onSelect,
+  view = "perspective",
 }: {
   concept: ThreeDConcept;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  view?: DrawingView;
 }) {
+  const maxDimension = Math.max(
+    concept.dimensions.width,
+    concept.dimensions.height,
+    concept.dimensions.depth
+  );
+
   return (
     <div className="relative h-[520px] overflow-hidden rounded-2xl border border-line bg-[#07070c]">
       <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-line bg-bg/70 px-3 py-1.5 text-xs text-muted backdrop-blur">
-        Drag to rotate · Scroll to zoom · Click a part
+        {view === "perspective"
+          ? "Drag to rotate · Scroll to zoom · Click a part"
+          : "Ортографический чертёж · Click a part"}
       </div>
       <Canvas
-        shadows
-        camera={{ position: [8, 6, 9], fov: 42 }}
+        key={view}
+        shadows={view === "perspective"}
+        orthographic={view !== "perspective"}
+        camera={
+          view === "perspective"
+            ? { position: [8, 6, 9], fov: 42 }
+            : { position: [0, 0, 14], zoom: 50, near: -100, far: 100 }
+        }
         onPointerMissed={() => onSelect(null)}
       >
+        <CameraRig view={view} maxDimension={maxDimension} />
         <color attach="background" args={["#07070c"]} />
         <fog attach="fog" args={["#07070c", 12, 30]} />
         <ambientLight intensity={0.8} />
@@ -85,21 +136,31 @@ export default function ConceptViewer({
           ))}
         </group>
 
-        <Grid
-          position={[0, -1.2, 0]}
-          args={[30, 30]}
-          cellSize={0.5}
-          cellThickness={0.6}
-          cellColor="#252538"
-          sectionSize={2.5}
-          sectionThickness={1}
-          sectionColor="#4f46a5"
-          fadeDistance={20}
-          fadeStrength={1}
-          infiniteGrid
+        {view === "perspective" && (
+          <>
+            <Grid
+              position={[0, -1.2, 0]}
+              args={[30, 30]}
+              cellSize={0.5}
+              cellThickness={0.6}
+              cellColor="#252538"
+              sectionSize={2.5}
+              sectionThickness={1}
+              sectionColor="#4f46a5"
+              fadeDistance={20}
+              fadeStrength={1}
+              infiniteGrid
+            />
+            <ContactShadows position={[0, -1.15, 0]} opacity={0.45} scale={20} blur={2.5} far={8} />
+          </>
+        )}
+        <OrbitControls
+          makeDefault
+          enabled={view === "perspective"}
+          enablePan
+          minDistance={3}
+          maxDistance={22}
         />
-        <ContactShadows position={[0, -1.15, 0]} opacity={0.45} scale={20} blur={2.5} far={8} />
-        <OrbitControls makeDefault enablePan minDistance={3} maxDistance={22} />
       </Canvas>
     </div>
   );

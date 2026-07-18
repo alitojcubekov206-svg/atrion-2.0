@@ -1,5 +1,13 @@
 import OpenAI from "openai";
-import type { Blueprint, InterviewQuestion, ModelPart, ThreeDConcept } from "./types";
+import type {
+  Blueprint,
+  ExpertReply,
+  ExpertRole,
+  InterviewQuestion,
+  ModelPart,
+  StarterKit,
+  ThreeDConcept,
+} from "./types";
 
 const hasKey = () => Boolean(process.env.OPENAI_API_KEY);
 
@@ -231,6 +239,98 @@ function mockBlueprint(idea: string, answers: { question: string; answer: string
 }
 
 export const isDemoMode = () => !hasKey();
+
+// ---------- Expert Team ----------
+
+const EXPERT_PROMPTS: Record<ExpertRole, string> = {
+  architect: "You are a principal software architect. Focus on system boundaries, scalability, data and trade-offs.",
+  programmer: "You are a staff-level programmer. Give concrete implementation guidance, file structure, code-level decisions and tests.",
+  product: "You are a senior product manager. Focus on users, MVP scope, metrics, positioning and monetization.",
+  security: "You are a security engineer. Identify realistic threats, privacy issues, abuse cases and practical mitigations.",
+  critic: "You are a skeptical technical reviewer. Challenge assumptions, remove unnecessary scope and explain what may fail.",
+};
+
+export async function consultProjectExpert(
+  role: ExpertRole,
+  idea: string,
+  blueprint: Blueprint,
+  question: string,
+  history: { role: "user" | "assistant"; content: string }[] = []
+): Promise<ExpertReply> {
+  if (!hasKey()) {
+    return {
+      answer: `Как ${role}, я рекомендую сначала проверить главный сценарий проекта «${blueprint.overview.name}» на небольшой группе пользователей, а затем усложнять архитектуру.`,
+      actionItems: ["Зафиксировать один MVP-сценарий", "Добавить измеримую метрику успеха", "Проверить главный риск до разработки"],
+      warnings: ["Ответ создан в демонстрационном режиме"],
+    };
+  }
+
+  return chatJSON<ExpertReply>(
+    `${EXPERT_PROMPTS[role]}
+Be concise but specific. Do not blindly agree. Reply in the user's language.
+Return JSON: {"answer":"...","actionItems":["..."],"warnings":["..."]}`,
+    `Project idea: ${idea}
+Blueprint: ${JSON.stringify(blueprint)}
+Recent conversation:
+${history.slice(-6).map((item) => `${item.role}: ${item.content}`).join("\n")}
+User question: ${question}`
+  );
+}
+
+export async function generateStarterKit(
+  idea: string,
+  blueprint: Blueprint
+): Promise<StarterKit> {
+  if (!hasKey()) {
+    return {
+      summary: "Минимальный стартовый набор для реализации MVP.",
+      files: [
+        {
+          path: "README.md",
+          language: "markdown",
+          content: `# ${blueprint.overview.name}\n\n${blueprint.overview.description}\n\n## MVP\n${blueprint.roadmap[0]?.tasks.map((task) => `- ${task}`).join("\n") ?? ""}`,
+        },
+        {
+          path: ".env.example",
+          language: "dotenv",
+          content: "DATABASE_URL=\nAUTH_SECRET=\nAI_API_KEY=\n",
+        },
+      ],
+      nextSteps: ["Создать репозиторий", "Настроить окружение", "Реализовать первую фазу roadmap"],
+    };
+  }
+
+  const rawResult = await chatJSON<unknown>(
+    `You are a staff software engineer creating a small but runnable starter kit from a project blueprint.
+Generate at most 8 essential text files. Prefer a minimal vertical slice over boilerplate.
+Never include real secrets. Keep total output concise. Return the code in the user's language where appropriate.
+Return JSON:
+{"summary":"...","files":[{"path":"...","language":"...","content":"..."}],"nextSteps":["..."]}`,
+    `Idea: ${idea}\nBlueprint: ${JSON.stringify(blueprint)}`
+  );
+
+  if (!rawResult || typeof rawResult !== "object") {
+    throw new Error("AI returned an invalid starter kit");
+  }
+  const result = rawResult as Partial<StarterKit>;
+  return {
+    summary: typeof result.summary === "string" ? result.summary : "Generated starter kit",
+    files: Array.isArray(result.files)
+      ? result.files
+          .filter(
+            (file) =>
+              file &&
+              typeof file.path === "string" &&
+              typeof file.language === "string" &&
+              typeof file.content === "string"
+          )
+          .slice(0, 8)
+      : [],
+    nextSteps: Array.isArray(result.nextSteps)
+      ? result.nextSteps.filter((step): step is string => typeof step === "string").slice(0, 10)
+      : [],
+  };
+}
 
 // ---------- 3D Concept Studio ----------
 

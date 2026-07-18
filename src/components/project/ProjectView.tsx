@@ -66,6 +66,7 @@ export default function ProjectView({ project }: { project: ProjectData }) {
     return (
       <BlueprintView
         blueprint={blueprint}
+        projectId={project.id}
         idea={project.idea}
         onRegenerate={generate}
         regenerating={phase === "generating"}

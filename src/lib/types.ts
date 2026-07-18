@@ -126,3 +126,26 @@ export interface ThreeDConcept {
   engineeringNotes: string[];
   disclaimer: string;
 }
+
+export type ExpertRole =
+  | "architect"
+  | "programmer"
+  | "product"
+  | "security"
+  | "critic";
+
+export interface ExpertReply {
+  answer: string;
+  actionItems: string[];
+  warnings: string[];
+}
+
+export interface StarterKit {
+  summary: string;
+  files: {
+    path: string;
+    language: string;
+    content: string;
+  }[];
+  nextSteps: string[];
+}

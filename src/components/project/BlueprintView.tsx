@@ -7,10 +7,27 @@ import { motion } from "framer-motion";
 import type { Blueprint } from "@/lib/types";
 import { blueprintToMarkdown, download } from "@/lib/export";
 import ScoreRing from "./ScoreRing";
+import ExpertTeam from "./ExpertTeam";
+import StarterKitPanel from "./StarterKitPanel";
+import { HealthScore, SharePanel, VersionHistory } from "./ProjectInsights";
 
 const ArchGraph = dynamic(() => import("@/components/three/ArchGraph"), { ssr: false });
 
-const TABS = ["Overview", "Architecture", "Database", "API", "Roadmap", "Score", "Risks", "Export"] as const;
+const TABS = [
+  "Overview",
+  "Health",
+  "Architecture",
+  "Database",
+  "API",
+  "Roadmap",
+  "Score",
+  "Risks",
+  "Experts",
+  "Build",
+  "Versions",
+  "Share",
+  "Export",
+] as const;
 type Tab = (typeof TABS)[number];
 
 const METHOD_COLOR: Record<string, string> = {
@@ -23,12 +40,14 @@ const METHOD_COLOR: Record<string, string> = {
 
 export default function BlueprintView({
   blueprint: bp,
+  projectId,
   idea,
   onRegenerate,
   regenerating,
   onDelete,
 }: {
   blueprint: Blueprint;
+  projectId: string;
   idea: string;
   onRegenerate: () => void;
   regenerating: boolean;
@@ -84,6 +103,7 @@ export default function BlueprintView({
 
       <motion.div key={tab} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mt-8">
         {tab === "Overview" && <Overview bp={bp} idea={idea} />}
+        {tab === "Health" && <HealthScore blueprint={bp} />}
         {tab === "Architecture" && (
           <div className="flex flex-col gap-6">
             <div className="card flex flex-wrap items-center justify-between gap-4 border-accent2/20 p-5">
@@ -223,6 +243,10 @@ export default function BlueprintView({
             </div>
           </div>
         )}
+        {tab === "Experts" && <ExpertTeam projectId={projectId} />}
+        {tab === "Build" && <StarterKitPanel projectId={projectId} />}
+        {tab === "Versions" && <VersionHistory projectId={projectId} blueprint={bp} />}
+        {tab === "Share" && <SharePanel projectId={projectId} />}
         {tab === "Export" && (
           <div className="grid gap-4 sm:grid-cols-3">
             <button
