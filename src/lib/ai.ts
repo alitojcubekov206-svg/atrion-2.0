@@ -33,7 +33,7 @@ async function chatJSON<T>(system: string, user: string): Promise<T> {
 export async function generateInterview(idea: string): Promise<InterviewQuestion[]> {
   if (!hasKey()) return mockInterview(idea);
 
-  const data = await chatJSON<unknown>(
+  const data = await chatJSON<{ questions: InterviewQuestion[] }>(
     `You are a senior software architect conducting a discovery interview.
 Given a product idea, produce exactly 5 short clarifying questions that materially change the technical plan.
 Each question has 3-4 concise answer options.
