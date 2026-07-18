@@ -252,19 +252,24 @@ Return JSON: {"questions":[{"id":"q1","question":"...","options":["..."]}]}`,
   }
   const rawQuestions = (data as { questions?: unknown }).questions;
   if (!Array.isArray(rawQuestions)) return mock3DInterview();
-  const questions = rawQuestions
-    .filter(
-      (item) =>
-        item &&
-        typeof item.id === "string" &&
-        typeof item.question === "string" &&
-        Array.isArray(item.options)
-    )
+  const questionItems: unknown[] = rawQuestions;
+  const questions = questionItems
+    .filter((item): item is { id: string; question: string; options: unknown[] } => {
+      if (!item || typeof item !== "object") return false;
+      const candidate = item as Record<string, unknown>;
+      return (
+        typeof candidate.id === "string" &&
+        typeof candidate.question === "string" &&
+        Array.isArray(candidate.options)
+      );
+    })
     .slice(0, 6)
     .map((item) => ({
       id: item.id,
       question: item.question,
-      options: item.options.filter((option): option is string => typeof option === "string").slice(0, 4),
+      options: item.options
+        .filter((option: unknown): option is string => typeof option === "string")
+        .slice(0, 4),
     }))
     .filter((item) => item.options.length > 0);
   return questions.length > 0 ? questions : mock3DInterview();
