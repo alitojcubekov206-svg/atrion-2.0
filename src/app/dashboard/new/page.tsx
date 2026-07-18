@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { motion } from "framer-motion";
 
 const EXAMPLES = [
@@ -15,6 +16,7 @@ export default function NewProjectPage() {
   const [idea, setIdea] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [limitReached, setLimitReached] = useState(false);
 
   async function create() {
     setError(null);
@@ -29,6 +31,7 @@ export default function NewProjectPage() {
       router.push(`/dashboard/projects/${data.project.id}`);
     } else {
       setError(data.error ?? "Ошибка");
+      setLimitReached(data.code === "LIMIT_REACHED");
       setLoading(false);
     }
   }
@@ -60,7 +63,16 @@ export default function NewProjectPage() {
         ))}
       </div>
 
-      {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
+      {error && (
+        <div className="mt-4">
+          <p className="text-sm text-red-400">{error}</p>
+          {limitReached && (
+            <Link href="/pricing" className="mt-2 inline-block text-sm font-semibold text-accent hover:underline">
+              Посмотреть тариф Pro →
+            </Link>
+          )}
+        </div>
+      )}
 
       <button
         onClick={create}

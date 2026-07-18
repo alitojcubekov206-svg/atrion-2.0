@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionUserId } from "@/lib/auth";
+import { canCreateProject, FREE_PROJECT_LIMIT } from "@/lib/plans";
 
 export async function GET() {
   const userId = await getSessionUserId();
@@ -21,6 +22,18 @@ export async function POST(req: Request) {
   const { idea } = await req.json();
   if (!idea || typeof idea !== "string" || idea.trim().length < 10) {
     return NextResponse.json({ error: "Опишите идею подробнее (минимум 10 символов)" }, { status: 400 });
+  }
+
+  const user = await db.user.findUnique({ where: { id: userId }, select: { plan: true } });
+  const count = await db.project.count({ where: { userId } });
+  if (!canCreateProject(user?.plan ?? "free", count)) {
+    return NextResponse.json(
+      {
+        error: `Бесплатный лимит — ${FREE_PROJECT_LIMIT} проектов. Перейдите на Pro для безлимита.`,
+        code: "LIMIT_REACHED",
+      },
+      { status: 403 }
+    );
   }
 
   const title = idea.trim().length > 60 ? idea.trim().slice(0, 57) + "..." : idea.trim();

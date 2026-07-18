@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { getSessionUserId } from "@/lib/auth";
+import { FREE_PROJECT_LIMIT } from "@/lib/plans";
 import type { Blueprint } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -11,10 +12,12 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default async function DashboardPage() {
   const userId = (await getSessionUserId())!;
-  const projects = await db.project.findMany({
-    where: { userId },
-    orderBy: { updatedAt: "desc" },
-  });
+  const [projects, user] = await Promise.all([
+    db.project.findMany({ where: { userId }, orderBy: { updatedAt: "desc" } }),
+    db.user.findUnique({ where: { id: userId }, select: { plan: true } }),
+  ]);
+  const isPro = user?.plan === "pro";
+  const limitReached = !isPro && projects.length >= FREE_PROJECT_LIMIT;
 
   const generated = projects.filter((p) => p.status === "generated");
   const avgScore =
@@ -31,17 +34,42 @@ export default async function DashboardPage() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">My Projects</h1>
+          <h1 className="text-3xl font-bold">
+            My Projects
+            {isPro && (
+              <span className="ml-3 align-middle rounded-full bg-accent/15 px-3 py-1 text-xs font-semibold text-accent">
+                PRO
+              </span>
+            )}
+          </h1>
           <p className="mt-1 text-sm text-muted">
             {projects.length > 0
               ? `${projects.length} проект(ов), ${generated.length} с готовым планом`
               : "Создайте первый проект — опишите идею, остальное сделает AI"}
+            {!isPro && ` · использовано ${Math.min(projects.length, FREE_PROJECT_LIMIT)} из ${FREE_PROJECT_LIMIT} бесплатных`}
           </p>
         </div>
-        <Link href="/dashboard/new" className="btn-primary rounded-full px-6 py-2.5 text-sm font-semibold text-white">
-          + Create Project
-        </Link>
+        {limitReached ? (
+          <Link href="/pricing" className="btn-primary rounded-full px-6 py-2.5 text-sm font-semibold text-white">
+            ⚡ Перейти на Pro
+          </Link>
+        ) : (
+          <Link href="/dashboard/new" className="btn-primary rounded-full px-6 py-2.5 text-sm font-semibold text-white">
+            + Create Project
+          </Link>
+        )}
       </div>
+
+      {limitReached && (
+        <div className="card mt-6 flex flex-wrap items-center justify-between gap-4 border-accent/30 p-5">
+          <p className="text-sm text-muted">
+            Ты использовал все {FREE_PROJECT_LIMIT} бесплатных проектов. Pro снимает лимит полностью.
+          </p>
+          <Link href="/pricing" className="text-sm font-semibold text-accent hover:underline">
+            Смотреть тарифы →
+          </Link>
+        </div>
+      )}
 
       <div className="mt-8 grid gap-4 sm:grid-cols-3">
         <div className="card p-5">

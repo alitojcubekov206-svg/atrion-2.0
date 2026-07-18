@@ -4,7 +4,11 @@ import type { Blueprint, InterviewQuestion } from "./types";
 const hasKey = () => Boolean(process.env.OPENAI_API_KEY);
 
 function client() {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    // Allows OpenAI-compatible providers (Groq, Gemini, OpenRouter, etc.)
+    baseURL: process.env.OPENAI_BASE_URL || undefined,
+  });
 }
 
 const MODEL = () => process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -18,7 +22,9 @@ async function chatJSON<T>(system: string, user: string): Promise<T> {
       { role: "user", content: user },
     ],
   });
-  const text = res.choices[0]?.message?.content ?? "{}";
+  let text = res.choices[0]?.message?.content ?? "{}";
+  // Some providers wrap JSON in markdown fences despite json mode
+  text = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
   return JSON.parse(text) as T;
 }
 

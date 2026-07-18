@@ -23,6 +23,9 @@ export default async function Home() {
           Atrion <span className="text-accent">2.0</span>
         </Link>
         <div className="flex items-center gap-4 text-sm">
+          <Link href="/pricing" className="text-muted transition hover:text-fg">
+            Pricing
+          </Link>
           {user ? (
             <Link href="/dashboard" className="btn-primary rounded-full px-5 py-2 font-medium text-white">
               Dashboard

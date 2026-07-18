@@ -49,6 +49,6 @@ export async function getCurrentUser() {
   if (!userId) return null;
   return db.user.findUnique({
     where: { id: userId },
-    select: { id: true, name: true, email: true, createdAt: true },
+    select: { id: true, name: true, email: true, plan: true, createdAt: true },
   });
 }
