@@ -242,7 +242,10 @@ export async function generate3DInterview(prompt: string): Promise<InterviewQues
 Ask exactly 6 concise, project-specific questions before designing.
 Questions must clarify dimensions, intended use/load, installation environment,
 preferred materials, budget, available equipment or specialists, and other critical unknowns.
-Provide 3-4 practical options per question. Respond in the user's language.
+Provide 3 practical options per question. For measurable questions, use concrete values
+with units appropriate to the object (for example 1.5 m, 2 m, 3 m), not vague words.
+Do not add an "Other" option because the interface adds a custom text field automatically.
+Respond in the user's language.
 Return JSON: {"questions":[{"id":"q1","question":"...","options":["..."]}]}`,
     `Object requested by the user: ${prompt}`
   );
@@ -277,12 +280,12 @@ Return JSON: {"questions":[{"id":"q1","question":"...","options":["..."]}]}`,
 
 function mock3DInterview(): InterviewQuestion[] {
   return [
-    { id: "dimensions", question: "Какие примерные размеры нужны?", options: ["Компактный", "Средний", "Крупный", "Укажу своими словами"] },
-    { id: "usage", question: "Для чего и кем будет использоваться объект?", options: ["Людьми", "Транспортом", "Для хранения", "Другое назначение"] },
-    { id: "location", question: "Где объект будет установлен?", options: ["В помещении", "На улице", "Над водой", "Место пока не выбрано"] },
-    { id: "material", question: "Какие материалы предпочтительны?", options: ["Металл", "Дерево", "Бетон", "Пусть AI подберёт"] },
-    { id: "budget", question: "Какой ориентировочный бюджет?", options: ["Минимальный", "Средний", "Премиальный", "Бюджет пока неизвестен"] },
-    { id: "equipment", question: "Какое оборудование доступно?", options: ["Только ручной инструмент", "Сварка и электроинструмент", "Мастерская", "Будут работать специалисты"] },
+    { id: "dimensions", question: "Какая основная длина объекта нужна?", options: ["1.5 метра", "3 метра", "5 метров"] },
+    { id: "usage", question: "Для чего и кем будет использоваться объект?", options: ["Людьми", "Транспортом", "Для хранения"] },
+    { id: "location", question: "Где объект будет установлен?", options: ["В помещении", "На улице", "Над водой"] },
+    { id: "material", question: "Какие материалы предпочтительны?", options: ["Металл", "Дерево", "Бетон"] },
+    { id: "budget", question: "Какой ориентировочный бюджет?", options: ["До 50 000 сом", "50 000–200 000 сом", "Более 200 000 сом"] },
+    { id: "equipment", question: "Какое оборудование доступно?", options: ["Только ручной инструмент", "Сварка и электроинструмент", "Будут работать специалисты"] },
   ];
 }
 
