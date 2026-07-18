@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import type { Blueprint } from "@/lib/types";
 import { blueprintToMarkdown, download } from "@/lib/export";
@@ -85,6 +86,20 @@ export default function BlueprintView({
         {tab === "Overview" && <Overview bp={bp} idea={idea} />}
         {tab === "Architecture" && (
           <div className="flex flex-col gap-6">
+            <div className="card flex flex-wrap items-center justify-between gap-4 border-accent2/20 p-5">
+              <div>
+                <h3 className="font-semibold">Нужна физическая 3D-концепция?</h3>
+                <p className="mt-1 text-sm text-muted">
+                  Открой Atrion 3D Studio, чтобы создать модель, детали и список материалов.
+                </p>
+              </div>
+              <Link
+                href="/dashboard/3d-studio"
+                className="rounded-full border border-accent2/40 bg-accent2/10 px-5 py-2 text-sm font-semibold text-accent2 transition hover:bg-accent2/20"
+              >
+                Создать 3D-модель →
+              </Link>
+            </div>
             <ArchGraph layers={bp.architecture} />
             <div className="grid gap-4 md:grid-cols-2">
               {bp.architecture.map((l) => (

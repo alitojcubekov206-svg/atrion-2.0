@@ -17,6 +17,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <Link href="/dashboard" className="text-sm text-muted transition hover:text-fg">
             My Projects
           </Link>
+          <Link href="/dashboard/3d-studio" className="text-sm text-muted transition hover:text-accent2">
+            3D Studio
+          </Link>
         </div>
         <div className="flex items-center gap-4 text-sm">
           <span className="hidden text-muted sm:inline">{user.name}</span>

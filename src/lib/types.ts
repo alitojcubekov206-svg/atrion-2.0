@@ -73,3 +73,56 @@ export interface Blueprint {
   critique: string[]; // honest criticism from AI Critic Mode
   risks: { risk: string; severity: "Low" | "Medium" | "High"; mitigation: string }[];
 }
+
+export interface ModelPart {
+  id: string;
+  name: string;
+  shape: "box" | "cylinder";
+  position: [number, number, number];
+  size: [number, number, number];
+  rotation: [number, number, number];
+  color: string;
+  material: string;
+  quantity: number;
+}
+
+export interface ThreeDConcept {
+  name: string;
+  description: string;
+  units: "m" | "cm" | "mm";
+  dimensions: { width: number; height: number; depth: number };
+  parts: ModelPart[];
+  materials: {
+    name: string;
+    specification: string;
+    estimatedQuantity: string;
+    reason: string;
+  }[];
+  equipment: {
+    name: string;
+    purpose: string;
+    access: "buy" | "rent" | "specialist";
+  }[];
+  requirements: string[];
+  assemblySteps: string[];
+  costEstimate: {
+    currency: string;
+    minimum: number;
+    maximum: number;
+    breakdown: {
+      item: string;
+      quantity: string;
+      estimatedCost: number;
+    }[];
+    note: string;
+  };
+  advantages: string[];
+  disadvantages: string[];
+  risks: {
+    risk: string;
+    severity: "Low" | "Medium" | "High";
+    mitigation: string;
+  }[];
+  engineeringNotes: string[];
+  disclaimer: string;
+}

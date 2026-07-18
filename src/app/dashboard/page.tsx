@@ -71,6 +71,31 @@ export default async function DashboardPage() {
         </div>
       )}
 
+      <Link
+        href="/dashboard/3d-studio"
+        className="card relative mt-8 block overflow-hidden border-accent2/20 p-6 md:p-8"
+      >
+        <div className="absolute -right-16 -top-20 h-52 w-52 rounded-full bg-accent2/15 blur-3xl" />
+        <div className="relative flex flex-wrap items-center justify-between gap-6">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className="rounded-full bg-accent2/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-accent2">
+                New
+              </span>
+              <span className="text-xs text-muted">Experimental AI design</span>
+            </div>
+            <h2 className="mt-3 text-2xl font-bold">Atrion 3D Studio</h2>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
+              Опиши мост, мебель, корпус или конструкцию — AI создаст интерактивную
+              3D-модель, список деталей и материалы.
+            </p>
+          </div>
+          <span className="btn-primary rounded-full px-6 py-2.5 text-sm font-semibold text-white">
+            Создать 3D-концепт →
+          </span>
+        </div>
+      </Link>
+
       <div className="mt-8 grid gap-4 sm:grid-cols-3">
         <div className="card p-5">
           <p className="text-xs uppercase tracking-wider text-muted">Projects</p>
