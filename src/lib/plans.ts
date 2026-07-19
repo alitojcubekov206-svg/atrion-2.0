@@ -15,7 +15,7 @@ export const PLANS = {
   },
   pro: {
     name: "Pro",
-    price: "$2 / 30 дней",
+    price: "200 сом",
     limit: Infinity,
     features: [
       "Безлимитные проекты",

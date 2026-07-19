@@ -1,10 +1,18 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { PLANS } from "@/lib/plans";
+import { isFinikConfigured } from "@/lib/finik";
+import FinikPayButton from "@/components/payments/FinikPayButton";
 
-export default async function PricingPage() {
+export default async function PricingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ payment?: string }>;
+}) {
+  const query = await searchParams;
   const user = await getCurrentUser();
   const isPro = user?.plan === "pro";
+  const finikReady = isFinikConfigured();
 
   // WhatsApp number for manual payment, e.g. 996700123456 (digits only)
   const wa = process.env.PAYMENT_WHATSAPP;
@@ -35,6 +43,12 @@ export default async function PricingPage() {
         <p className="mx-auto mt-4 max-w-xl text-muted">
           Начни бесплатно. Когда идей станет больше — переходи на Pro.
         </p>
+        {query.payment === "processing" && (
+          <div className="mx-auto mt-6 max-w-xl rounded-2xl border border-accent/30 bg-accent/10 p-4 text-sm">
+            Платёж отправлен. Finik подтверждает его через защищённый webhook. Обновите
+            страницу через минуту — Pro включится автоматически.
+          </div>
+        )}
       </div>
 
       <div className="mx-auto mt-14 grid max-w-3xl gap-6 md:grid-cols-2">
@@ -77,6 +91,30 @@ export default async function PricingPage() {
             <div className="btn-primary mt-8 block rounded-full py-3 text-center font-semibold text-white opacity-70">
               Pro активен ✓
             </div>
+          ) : !user ? (
+            <Link
+              href="/login"
+              className="btn-primary mt-8 block rounded-full py-3 text-center font-semibold text-white"
+            >
+              Войти для оплаты
+            </Link>
+          ) : finikReady ? (
+            <div className="mt-8">
+              <FinikPayButton />
+              <p className="mt-3 text-center text-xs text-muted">
+                Безопасная QR-оплата. Pro активируется только после подтверждения Finik.
+              </p>
+              {waLink && (
+                <a
+                  href={waLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 block text-center text-xs text-accent hover:underline"
+                >
+                  Или оплатить вручную через WhatsApp
+                </a>
+              )}
+            </div>
           ) : waLink ? (
             <div className="mt-8">
               <a
@@ -91,7 +129,7 @@ export default async function PricingPage() {
                 Перевод через Mbank / O!Деньги / Элсом. Активация Pro в течение часа после оплаты.
               </p>
               <p className="mt-2 text-center text-xs text-accent2">
-                Скоро: автоматическая оплата через Finik
+                Finik готовится к подключению
               </p>
             </div>
           ) : (
@@ -100,7 +138,7 @@ export default async function PricingPage() {
                 Оплата через WhatsApp настраивается
               </div>
               <p className="mt-3 text-center text-xs text-accent2">
-                Скоро: автоматическая оплата через Finik
+                Finik готовится к подключению
               </p>
             </div>
           )}

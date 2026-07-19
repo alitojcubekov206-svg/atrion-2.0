@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { getSessionUserId } from "@/lib/auth";
+import { getSessionUserId, getUserPlan } from "@/lib/auth";
 import { FREE_PROJECT_LIMIT } from "@/lib/plans";
 import type { Blueprint } from "@/lib/types";
 
@@ -12,11 +12,11 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default async function DashboardPage() {
   const userId = (await getSessionUserId())!;
-  const [projects, user] = await Promise.all([
+  const [projects, plan] = await Promise.all([
     db.project.findMany({ where: { userId }, orderBy: { updatedAt: "desc" } }),
-    db.user.findUnique({ where: { id: userId }, select: { plan: true } }),
+    getUserPlan(userId),
   ]);
-  const isPro = user?.plan === "pro";
+  const isPro = plan === "pro";
   const limitReached = !isPro && projects.length >= FREE_PROJECT_LIMIT;
 
   const generated = projects.filter((p) => p.status === "generated");

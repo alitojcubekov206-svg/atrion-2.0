@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionUserId } from "@/lib/auth";
+import { getSessionUserId, getUserPlan } from "@/lib/auth";
 import { generate3DConcept } from "@/lib/ai";
 import { db } from "@/lib/db";
 
@@ -30,16 +30,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Описание слишком длинное." }, { status: 400 });
   }
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { plan: true },
-  });
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const plan = await getUserPlan(userId);
 
   let freeGenerationReserved = false;
-  if (user.plan !== "pro") {
+  if (plan !== "pro") {
     const reservation = await db.user.updateMany({
       where: {
         id: userId,

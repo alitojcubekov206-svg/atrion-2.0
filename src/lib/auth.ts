@@ -44,11 +44,71 @@ export async function getSessionUserId(): Promise<string | null> {
   }
 }
 
+export function isProPlanActive(plan: string, planExpiresAt: Date | null) {
+  return plan === "pro" && planExpiresAt !== null && planExpiresAt.getTime() > Date.now();
+}
+
+export async function getUserPlan(userId: string) {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { plan: true, planExpiresAt: true },
+  });
+  if (!user) return "free";
+  if (user.plan === "pro" && !isProPlanActive(user.plan, user.planExpiresAt)) {
+    const expired = await db.user.updateMany({
+      where: { id: userId, plan: "pro", planExpiresAt: user.planExpiresAt },
+      data: { plan: "free", planExpiresAt: null },
+    });
+    if (expired.count > 0) return "free";
+    const current = await db.user.findUnique({
+      where: { id: userId },
+      select: { plan: true, planExpiresAt: true },
+    });
+    return current && isProPlanActive(current.plan, current.planExpiresAt)
+      ? "pro"
+      : "free";
+  }
+  return user.plan;
+}
+
 export async function getCurrentUser() {
   const userId = await getSessionUserId();
   if (!userId) return null;
-  return db.user.findUnique({
+  const user = await db.user.findUnique({
     where: { id: userId },
-    select: { id: true, name: true, email: true, plan: true, createdAt: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      plan: true,
+      planExpiresAt: true,
+      createdAt: true,
+    },
   });
+  if (!user) return null;
+  if (user.plan === "pro" && !isProPlanActive(user.plan, user.planExpiresAt)) {
+    const expired = await db.user.updateMany({
+      where: { id: user.id, plan: "pro", planExpiresAt: user.planExpiresAt },
+      data: { plan: "free", planExpiresAt: null },
+    });
+    if (expired.count > 0) {
+      return { ...user, plan: "free", planExpiresAt: null };
+    }
+    const current = await db.user.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        plan: true,
+        planExpiresAt: true,
+        createdAt: true,
+      },
+    });
+    if (!current) return null;
+    return isProPlanActive(current.plan, current.planExpiresAt)
+      ? current
+      : { ...current, plan: "free", planExpiresAt: null };
+  }
+  return user;
 }

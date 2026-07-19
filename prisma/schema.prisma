@@ -14,6 +14,7 @@ model User {
   password  String
   // "free" | "pro"
   plan      String    @default("free")
+  planExpiresAt       DateTime?
   emailVerified       Boolean   @default(false)
   verificationCode    String?
   verificationExpires DateTime?
@@ -22,6 +23,7 @@ model User {
   threeDGenerations   Int       @default(0)
   createdAt DateTime  @default(now())
   projects  Project[]
+  payments  Payment[]
 }
 
 model Project {
@@ -38,4 +40,22 @@ model Project {
   blueprint String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Payment {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider              String   @default("finik")
+  providerPaymentId     String   @unique
+  providerTransactionId String?  @unique
+  amount                Int
+  currency              String   @default("KGS")
+  status                String   @default("pending")
+  paymentUrl            String?
+  failureReason         String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([userId, status])
 }

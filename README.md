@@ -16,13 +16,14 @@ Atrion 2.0 is an **AI Software Architect** — a SaaS application that transform
 - **Project Score** — Innovation / Difficulty / Market Potential / Cost / Risk
 - **AI Critic Mode** — honest criticism, not agreement
 - **Export System** — Markdown / JSON / PDF
+- **Finik Pro Payments** — signed QR checkout with verified, idempotent webhooks
 
 ## Tech Stack
 
 - **Frontend:** Next.js (App Router), React, TypeScript, Tailwind CSS
 - **3D & animation:** React Three Fiber, drei, Framer Motion
 - **Database:** PostgreSQL via Prisma (Neon on Vercel)
-- **Auth:** Auth.js (NextAuth)
+- **Auth:** JWT sessions with JOSE, bcrypt and email OTP
 - **AI:** Atrion AI Pro (OpenAI-compatible primary provider with optional automatic fallback)
 
 ## Getting Started
@@ -65,6 +66,36 @@ still apply.
 In Vercel, add the six variables above in **Project Settings → Environment Variables**
 for Production (and Preview if required), then redeploy. `OPENAI_BASE_URL` and all
 three `AI_FALLBACK_*` values are optional; without `OPENAI_API_KEY`, AI runs in demo mode.
+
+## Finik Pro payments
+
+Atrion charges **200 KGS for 30 days of Pro**. WhatsApp remains available until
+the Finik business account is approved. Run `prisma/manual-production-migration.sql`
+in Neon before deploying the payment code.
+
+Finik must first be tested against its beta environment:
+
+```env
+APP_URL="https://atrion-2-0.vercel.app"
+FINIK_ENABLED="false"
+FINIK_BASE_URL="https://beta.api.acquiring.averspay.kg"
+FINIK_API_KEY=""
+FINIK_ACCOUNT_ID=""
+FINIK_QR_NAME="Atrion Pro"
+FINIK_PRIVATE_PEM="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+FINIK_PUBLIC_PEM="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+```
+
+Generate the merchant RSA key pair according to the official Finik Web SDK guide.
+Upload only the public key to Finik. Keep the private key and all API credentials as
+Sensitive Vercel variables; never commit them. `FINIK_PUBLIC_PEM` is Finik's public
+key for verifying incoming webhooks, not the merchant public key.
+
+The checkout endpoint creates a pending payment and sends the browser to Finik.
+The redirect never grants Pro. Only a correctly signed webhook with the expected
+payment ID and exact amount can activate the subscription. Duplicate webhook
+deliveries are processed once. After beta checkout and webhook tests pass, switch
+to `https://api.acquiring.averspay.kg` and set `FINIK_ENABLED="true"`.
 
 ## Project Structure
 
