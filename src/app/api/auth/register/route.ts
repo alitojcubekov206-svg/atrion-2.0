@@ -1,27 +1,92 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
-import { createSession } from "@/lib/auth";
+import {
+  createVerificationCode,
+  hashVerificationCode,
+  RESEND_COOLDOWN_SECONDS,
+  sendVerificationEmail,
+  verificationExpiry,
+} from "@/lib/email-verification";
 
 export async function POST(req: Request) {
-  const { name, email, password } = await req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Некорректный запрос" }, { status: 400 });
+  }
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const password = typeof body.password === "string" ? body.password : "";
 
   if (!name || !email || !password) {
     return NextResponse.json({ error: "Заполните все поля" }, { status: 400 });
   }
-  if (typeof password !== "string" || password.length < 6) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json({ error: "Введите корректный email" }, { status: 400 });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json({ error: "Введите корректный email" }, { status: 400 });
+  }
+  if (password.length < 6) {
     return NextResponse.json({ error: "Пароль должен быть не короче 6 символов" }, { status: 400 });
   }
 
   const existing = await db.user.findUnique({ where: { email } });
-  if (existing) {
+  if (existing?.emailVerified) {
     return NextResponse.json({ error: "Пользователь с таким email уже существует" }, { status: 409 });
   }
+  if (
+    existing?.verificationSentAt &&
+    Date.now() - existing.verificationSentAt.getTime() < RESEND_COOLDOWN_SECONDS * 1000
+  ) {
+    return NextResponse.json(
+      { error: `Новый код можно отправить через ${RESEND_COOLDOWN_SECONDS} секунд` },
+      { status: 429 }
+    );
+  }
 
-  const user = await db.user.create({
-    data: { name, email, password: await bcrypt.hash(password, 10) },
-  });
+  const code = createVerificationCode();
+  const verificationCode = hashVerificationCode(email, code);
+  const passwordHash = await bcrypt.hash(password, 10);
+  const now = new Date();
 
-  await createSession(user.id);
-  return NextResponse.json({ ok: true });
+  if (existing) {
+    await db.user.update({
+      where: { id: existing.id },
+      data: {
+        name,
+        password: passwordHash,
+        verificationCode,
+        verificationExpires: verificationExpiry(),
+        verificationSentAt: now,
+        verificationAttempts: 0,
+      },
+    });
+  } else {
+    await db.user.create({
+      data: {
+        name,
+        email,
+        password: passwordHash,
+        emailVerified: false,
+        verificationCode,
+        verificationExpires: verificationExpiry(),
+        verificationSentAt: now,
+      },
+    });
+  }
+
+  try {
+    await sendVerificationEmail(email, code);
+  } catch (error) {
+    console.error("verification email failed", error);
+    return NextResponse.json(
+      { error: "Не удалось отправить письмо. Проверьте настройки почты и попробуйте ещё раз." },
+      { status: 502 }
+    );
+  }
+
+  return NextResponse.json({ ok: true, requiresVerification: true, email });
 }

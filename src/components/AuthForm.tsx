@@ -23,12 +23,20 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    const data = await res.json().catch(() => ({}));
 
     if (res.ok) {
-      router.push("/dashboard");
+      if (data.requiresVerification && data.email) {
+        router.push(`/verify?email=${encodeURIComponent(data.email)}`);
+      } else {
+        router.push("/dashboard");
+      }
       router.refresh();
     } else {
-      const data = await res.json().catch(() => ({}));
+      if (data.code === "EMAIL_NOT_VERIFIED" && data.email) {
+        router.push(`/verify?email=${encodeURIComponent(data.email)}`);
+        return;
+      }
       setError(data.error ?? "Что-то пошло не так");
       setLoading(false);
     }

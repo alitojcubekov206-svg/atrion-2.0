@@ -23,7 +23,7 @@ Atrion 2.0 is an **AI Software Architect** — a SaaS application that transform
 - **3D & animation:** React Three Fiber, drei, Framer Motion
 - **Database:** PostgreSQL via Prisma (Neon on Vercel)
 - **Auth:** Auth.js (NextAuth)
-- **AI:** OpenAI API
+- **AI:** Atrion AI Pro (OpenAI-compatible primary provider with optional automatic fallback)
 
 ## Getting Started
 
@@ -34,6 +34,37 @@ npm run dev
 ```
 
 Copy `.env.example` to `.env` and fill in your keys. **Never commit `.env`.**
+
+## Atrion AI Pro configuration
+
+Atrion keeps the existing OpenAI-compatible settings, so Groq and other compatible
+providers continue to work:
+
+```env
+OPENAI_API_KEY="primary-provider-key"
+OPENAI_BASE_URL="https://api.groq.com/openai/v1"
+OPENAI_MODEL="llama-3.3-70b-versatile"
+```
+
+For higher availability, use Gemini as the independent second provider. Create
+the key in Google AI Studio:
+
+```env
+AI_FALLBACK_API_KEY="your-gemini-api-key"
+AI_FALLBACK_BASE_URL="https://generativelanguage.googleapis.com/v1beta/openai/"
+AI_FALLBACK_MODEL="gemini-3.5-flash"
+```
+
+Every JSON generation first uses the primary provider. On a network, rate-limit,
+provider, or invalid-JSON failure, Atrion tries the fallback once. If both providers
+are unavailable, generators return their existing local demo fallback where one is
+defined. API keys are server-only and are never logged. This improves resilience but
+does not promise unlimited availability: provider quotas, billing, and service limits
+still apply.
+
+In Vercel, add the six variables above in **Project Settings → Environment Variables**
+for Production (and Preview if required), then redeploy. `OPENAI_BASE_URL` and all
+three `AI_FALLBACK_*` values are optional; without `OPENAI_API_KEY`, AI runs in demo mode.
 
 ## Project Structure
 

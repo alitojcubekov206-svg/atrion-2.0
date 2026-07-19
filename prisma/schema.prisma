@@ -12,7 +12,14 @@ model User {
   name      String
   email     String    @unique
   password  String
-plan      String    @default("free")
+  // "free" | "pro"
+  plan      String    @default("free")
+  emailVerified       Boolean   @default(false)
+  verificationCode    String?
+  verificationExpires DateTime?
+  verificationSentAt  DateTime?
+  verificationAttempts Int      @default(0)
+  threeDGenerations   Int       @default(0)
   createdAt DateTime  @default(now())
   projects  Project[]
 }

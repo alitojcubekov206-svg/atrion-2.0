@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import Thinking from "@/components/Thinking";
 import type { InterviewQuestion, ThreeDConcept } from "@/lib/types";
@@ -34,11 +35,13 @@ export default function ThreeDStudioPage() {
   const [loading, setLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState<"interview" | "concept">("interview");
   const [error, setError] = useState<string | null>(null);
+  const [limitReached, setLimitReached] = useState(false);
 
   async function startInterview() {
     setLoading(true);
     setLoadingMode("interview");
     setError(null);
+    setLimitReached(false);
     setQuestions([]);
     setAnswers({});
     setCustomQuestions({});
@@ -70,6 +73,7 @@ export default function ThreeDStudioPage() {
     setLoading(true);
     setLoadingMode("concept");
     setError(null);
+    setLimitReached(false);
     setConcept(null);
     setSelectedId(null);
 
@@ -89,6 +93,7 @@ export default function ThreeDStudioPage() {
       if (response.ok && data.concept) {
         setConcept(data.concept);
       } else {
+        setLimitReached(data.code === "THREE_D_LIMIT_REACHED");
         setError(data.error ?? "Не удалось создать модель.");
       }
     } catch {
@@ -111,7 +116,7 @@ export default function ThreeDStudioPage() {
         <div className="relative">
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-accent">
-              Experimental
+              Atrion AI Pro
             </span>
             <span className="text-xs text-muted">AI-powered conceptual design</span>
           </div>
@@ -121,6 +126,9 @@ export default function ThreeDStudioPage() {
           <p className="mt-4 max-w-2xl leading-relaxed text-muted">
             Опиши объект обычными словами. AI разложит его на детали, предложит материалы
             и соберёт интерактивную концептуальную 3D-модель.
+          </p>
+          <p className="mt-3 text-xs text-muted">
+            Free: одна 3D-генерация · Pro: расширенный доступ в рамках лимитов провайдеров
           </p>
 
           <div className="mt-7 max-w-3xl">
@@ -163,7 +171,15 @@ export default function ThreeDStudioPage() {
 
       {error && (
         <div className="mt-6 rounded-2xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-400">
-          {error}
+          <p>{error}</p>
+          {limitReached && (
+            <Link
+              href="/pricing"
+              className="mt-3 inline-block rounded-full bg-accent px-5 py-2 font-semibold text-white"
+            >
+              Перейти на Pro — $2/месяц
+            </Link>
+          )}
         </div>
       )}
 

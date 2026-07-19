@@ -9,21 +9,70 @@ import type {
   ThreeDConcept,
 } from "./types";
 
+type AIProvider = {
+  apiKey: string;
+  baseURL?: string;
+  model: string;
+  name: "primary" | "fallback";
+};
+
 const hasKey = () => Boolean(process.env.OPENAI_API_KEY);
 
-function client() {
-  return new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    // Allows OpenAI-compatible providers (Groq, Gemini, OpenRouter, etc.)
+function primaryProvider(): AIProvider | null {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  return {
+    apiKey,
     baseURL: process.env.OPENAI_BASE_URL || undefined,
-  });
+    model: process.env.OPENAI_MODEL || "gpt-4o",
+    name: "primary",
+  };
 }
 
-const MODEL = () => process.env.OPENAI_MODEL || "gpt-4o-mini";
+function fallbackProvider(): AIProvider | null {
+  const apiKey = process.env.AI_FALLBACK_API_KEY;
+  if (!apiKey) return null;
+  return {
+    apiKey,
+    baseURL: process.env.AI_FALLBACK_BASE_URL || undefined,
+    model: process.env.AI_FALLBACK_MODEL || "gpt-4o-mini",
+    name: "fallback",
+  };
+}
 
-async function chatJSON<T>(system: string, user: string): Promise<T> {
-  const res = await client().chat.completions.create({
-    model: MODEL(),
+function errorSummary(error: unknown) {
+  return {
+    name: error instanceof Error ? error.name : "UnknownError",
+    status:
+      error && typeof error === "object" && "status" in error
+        ? String((error as { status?: unknown }).status ?? "")
+        : undefined,
+  };
+}
+
+function isProviderFailure(error: unknown) {
+  return (
+    error instanceof OpenAI.APIError ||
+    error instanceof SyntaxError ||
+    error instanceof TypeError ||
+    (error instanceof Error &&
+      ["AbortError", "APIConnectionError", "APIConnectionTimeoutError"].includes(error.name))
+  );
+}
+
+async function requestJSON<T>(
+  provider: AIProvider,
+  system: string,
+  user: string
+): Promise<T> {
+  const client = new OpenAI({
+    apiKey: provider.apiKey,
+    baseURL: provider.baseURL,
+    maxRetries: 0,
+    timeout: 60_000,
+  });
+  const res = await client.chat.completions.create({
+    model: provider.model,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: system },
@@ -36,20 +85,55 @@ async function chatJSON<T>(system: string, user: string): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+async function chatJSON<T>(system: string, user: string): Promise<T> {
+  const primary = primaryProvider();
+  if (!primary) throw new Error("Primary AI provider is not configured");
+
+  try {
+    return await requestJSON<T>(primary, system, user);
+  } catch (error) {
+    const fallback = fallbackProvider();
+    if (!fallback || !isProviderFailure(error)) throw error;
+
+    console.warn(
+      "Atrion AI Pro primary provider failed; trying fallback",
+      errorSummary(error)
+    );
+    try {
+      return await requestJSON<T>(fallback, system, user);
+    } catch (fallbackError) {
+      console.warn(
+        "Atrion AI Pro fallback provider failed; using local fallback",
+        errorSummary(fallbackError)
+      );
+      throw fallbackError;
+    }
+  }
+}
+
+function localFallback<T>(label: string, error: unknown, value: () => T): T {
+  console.warn(`Atrion AI Pro ${label} unavailable; using local fallback`, errorSummary(error));
+  return value();
+}
+
 // ---------- Interview ----------
 
 export async function generateInterview(idea: string): Promise<InterviewQuestion[]> {
   if (!hasKey()) return mockInterview(idea);
 
-  const data = await chatJSON<{ questions: InterviewQuestion[] }>(
-    `You are a senior software architect conducting a discovery interview.
+  try {
+    const data = await chatJSON<{ questions: InterviewQuestion[] }>(
+      `You are a senior software architect conducting a discovery interview.
 Given a product idea, produce exactly 5 short clarifying questions that materially change the technical plan.
 Each question has 3-4 concise answer options.
 Respond in the same language as the idea.
 Return JSON: {"questions":[{"id":"q1","question":"...","options":["...","..."]}]}`,
-    `Product idea: ${idea}`
-  );
-  return data.questions.slice(0, 6);
+      `Product idea: ${idea}`
+    );
+    return data.questions.slice(0, 6);
+  } catch (error) {
+    return localFallback("interview", error, () => mockInterview(idea));
+  }
 }
 
 function mockInterview(idea: string): InterviewQuestion[] {
@@ -91,17 +175,21 @@ export async function generateBlueprint(
   "risks": [{"risk":"","severity":"Medium","mitigation":""}]
 }`;
 
-  return chatJSON<Blueprint>(
-    `You are a senior software architect. You transform product ideas into complete technical plans.
+  try {
+    return await chatJSON<Blueprint>(
+      `You are a senior software architect. You transform product ideas into complete technical plans.
 Be honest and critical — do not just agree. In "critique", point out real problems: saturated markets, features that bloat the MVP, technical risks.
 Scores are integers 0-100. Include 4-6 database tables, 8-14 API endpoints, 3-4 roadmap phases, 2-4 competitors, 3-5 critique points, 3-5 risks.
 Respond in the same language as the idea. Return ONLY valid JSON matching exactly this shape:
 ${schemaHint}`,
-    `Product idea: ${idea}
+      `Product idea: ${idea}
 
 Discovery interview answers:
 ${answers.map((a) => `- ${a.question} → ${a.answer}`).join("\n")}`
-  );
+    );
+  } catch (error) {
+    return localFallback("blueprint", error, () => mockBlueprint(idea, answers));
+  }
 }
 
 function mockBlueprint(idea: string, answers: { question: string; answer: string }[]): Blueprint {
@@ -257,79 +345,85 @@ export async function consultProjectExpert(
   question: string,
   history: { role: "user" | "assistant"; content: string }[] = []
 ): Promise<ExpertReply> {
-  if (!hasKey()) {
-    return {
-      answer: `Как ${role}, я рекомендую сначала проверить главный сценарий проекта «${blueprint.overview.name}» на небольшой группе пользователей, а затем усложнять архитектуру.`,
-      actionItems: ["Зафиксировать один MVP-сценарий", "Добавить измеримую метрику успеха", "Проверить главный риск до разработки"],
-      warnings: ["Ответ создан в демонстрационном режиме"],
-    };
-  }
+  const mock = (): ExpertReply => ({
+    answer: `Как ${role}, я рекомендую сначала проверить главный сценарий проекта «${blueprint.overview.name}» на небольшой группе пользователей, а затем усложнять архитектуру.`,
+    actionItems: ["Зафиксировать один MVP-сценарий", "Добавить измеримую метрику успеха", "Проверить главный риск до разработки"],
+    warnings: ["Ответ создан в демонстрационном режиме"],
+  });
+  if (!hasKey()) return mock();
 
-  return chatJSON<ExpertReply>(
-    `${EXPERT_PROMPTS[role]}
+  try {
+    return await chatJSON<ExpertReply>(
+      `${EXPERT_PROMPTS[role]}
 Be concise but specific. Do not blindly agree. Reply in the user's language.
 Return JSON: {"answer":"...","actionItems":["..."],"warnings":["..."]}`,
-    `Project idea: ${idea}
+      `Project idea: ${idea}
 Blueprint: ${JSON.stringify(blueprint)}
 Recent conversation:
 ${history.slice(-6).map((item) => `${item.role}: ${item.content}`).join("\n")}
 User question: ${question}`
-  );
+    );
+  } catch (error) {
+    return localFallback("expert", error, mock);
+  }
 }
 
 export async function generateStarterKit(
   idea: string,
   blueprint: Blueprint
 ): Promise<StarterKit> {
-  if (!hasKey()) {
-    return {
-      summary: "Минимальный стартовый набор для реализации MVP.",
-      files: [
-        {
-          path: "README.md",
-          language: "markdown",
-          content: `# ${blueprint.overview.name}\n\n${blueprint.overview.description}\n\n## MVP\n${blueprint.roadmap[0]?.tasks.map((task) => `- ${task}`).join("\n") ?? ""}`,
-        },
-        {
-          path: ".env.example",
-          language: "dotenv",
-          content: "DATABASE_URL=\nAUTH_SECRET=\nAI_API_KEY=\n",
-        },
-      ],
-      nextSteps: ["Создать репозиторий", "Настроить окружение", "Реализовать первую фазу roadmap"],
-    };
-  }
+  const mock = (): StarterKit => ({
+    summary: "Минимальный стартовый набор для реализации MVP.",
+    files: [
+      {
+        path: "README.md",
+        language: "markdown",
+        content: `# ${blueprint.overview.name}\n\n${blueprint.overview.description}\n\n## MVP\n${blueprint.roadmap[0]?.tasks.map((task) => `- ${task}`).join("\n") ?? ""}`,
+      },
+      {
+        path: ".env.example",
+        language: "dotenv",
+        content: "DATABASE_URL=\nAUTH_SECRET=\nAI_API_KEY=\n",
+      },
+    ],
+    nextSteps: ["Создать репозиторий", "Настроить окружение", "Реализовать первую фазу roadmap"],
+  });
+  if (!hasKey()) return mock();
 
-  const rawResult = await chatJSON<unknown>(
-    `You are a staff software engineer creating a small but runnable starter kit from a project blueprint.
+  try {
+    const rawResult = await chatJSON<unknown>(
+      `You are a staff software engineer creating a small but runnable starter kit from a project blueprint.
 Generate at most 8 essential text files. Prefer a minimal vertical slice over boilerplate.
 Never include real secrets. Keep total output concise. Return the code in the user's language where appropriate.
 Return JSON:
 {"summary":"...","files":[{"path":"...","language":"...","content":"..."}],"nextSteps":["..."]}`,
-    `Idea: ${idea}\nBlueprint: ${JSON.stringify(blueprint)}`
-  );
+      `Idea: ${idea}\nBlueprint: ${JSON.stringify(blueprint)}`
+    );
 
-  if (!rawResult || typeof rawResult !== "object") {
-    throw new Error("AI returned an invalid starter kit");
+    if (!rawResult || typeof rawResult !== "object") {
+      throw new Error("AI returned an invalid starter kit");
+    }
+    const result = rawResult as Partial<StarterKit>;
+    return {
+      summary: typeof result.summary === "string" ? result.summary : "Generated starter kit",
+      files: Array.isArray(result.files)
+        ? result.files
+            .filter(
+              (file) =>
+                file &&
+                typeof file.path === "string" &&
+                typeof file.language === "string" &&
+                typeof file.content === "string"
+            )
+            .slice(0, 8)
+        : [],
+      nextSteps: Array.isArray(result.nextSteps)
+        ? result.nextSteps.filter((step): step is string => typeof step === "string").slice(0, 10)
+        : [],
+    };
+  } catch (error) {
+    return localFallback("starter kit", error, mock);
   }
-  const result = rawResult as Partial<StarterKit>;
-  return {
-    summary: typeof result.summary === "string" ? result.summary : "Generated starter kit",
-    files: Array.isArray(result.files)
-      ? result.files
-          .filter(
-            (file) =>
-              file &&
-              typeof file.path === "string" &&
-              typeof file.language === "string" &&
-              typeof file.content === "string"
-          )
-          .slice(0, 8)
-      : [],
-    nextSteps: Array.isArray(result.nextSteps)
-      ? result.nextSteps.filter((step): step is string => typeof step === "string").slice(0, 10)
-      : [],
-  };
 }
 
 // ---------- 3D Concept Studio ----------
@@ -337,8 +431,9 @@ Return JSON:
 export async function generate3DInterview(prompt: string): Promise<InterviewQuestion[]> {
   if (!hasKey()) return mock3DInterview();
 
-  const data = await chatJSON<{ questions: InterviewQuestion[] }>(
-    `You are an industrial designer preparing a conceptual 3D model.
+  try {
+    const data = await chatJSON<{ questions: InterviewQuestion[] }>(
+      `You are an industrial designer preparing a conceptual 3D model.
 Ask exactly 6 concise, project-specific questions before designing.
 Questions must clarify dimensions, intended use/load, installation environment,
 preferred materials, budget, available equipment or specialists, and other critical unknowns.
@@ -347,35 +442,38 @@ with units appropriate to the object (for example 1.5 m, 2 m, 3 m), not vague wo
 Do not add an "Other" option because the interface adds a custom text field automatically.
 Respond in the user's language.
 Return JSON: {"questions":[{"id":"q1","question":"...","options":["..."]}]}`,
-    `Object requested by the user: ${prompt}`
-  );
+      `Object requested by the user: ${prompt}`
+    );
 
-  if (!data || typeof data !== "object" || !("questions" in data)) {
-    return mock3DInterview();
+    if (!data || typeof data !== "object" || !("questions" in data)) {
+      return mock3DInterview();
+    }
+    const rawQuestions = (data as { questions?: unknown }).questions;
+    if (!Array.isArray(rawQuestions)) return mock3DInterview();
+    const questionItems: unknown[] = rawQuestions;
+    const questions = questionItems
+      .filter((item): item is { id: string; question: string; options: unknown[] } => {
+        if (!item || typeof item !== "object") return false;
+        const candidate = item as Record<string, unknown>;
+        return (
+          typeof candidate.id === "string" &&
+          typeof candidate.question === "string" &&
+          Array.isArray(candidate.options)
+        );
+      })
+      .slice(0, 6)
+      .map((item) => ({
+        id: item.id,
+        question: item.question,
+        options: item.options
+          .filter((option: unknown): option is string => typeof option === "string")
+          .slice(0, 4),
+      }))
+      .filter((item) => item.options.length > 0);
+    return questions.length > 0 ? questions : mock3DInterview();
+  } catch (error) {
+    return localFallback("3D interview", error, mock3DInterview);
   }
-  const rawQuestions = (data as { questions?: unknown }).questions;
-  if (!Array.isArray(rawQuestions)) return mock3DInterview();
-  const questionItems: unknown[] = rawQuestions;
-  const questions = questionItems
-    .filter((item): item is { id: string; question: string; options: unknown[] } => {
-      if (!item || typeof item !== "object") return false;
-      const candidate = item as Record<string, unknown>;
-      return (
-        typeof candidate.id === "string" &&
-        typeof candidate.question === "string" &&
-        Array.isArray(candidate.options)
-      );
-    })
-    .slice(0, 6)
-    .map((item) => ({
-      id: item.id,
-      question: item.question,
-      options: item.options
-        .filter((option: unknown): option is string => typeof option === "string")
-        .slice(0, 4),
-    }))
-    .filter((item) => item.options.length > 0);
-  return questions.length > 0 ? questions : mock3DInterview();
 }
 
 function mock3DInterview(): InterviewQuestion[] {
@@ -395,8 +493,9 @@ export async function generate3DConcept(
 ): Promise<ThreeDConcept> {
   if (!hasKey()) return mock3DConcept(prompt);
 
-  const result = await chatJSON<unknown>(
-    `You are Atrion 3D Studio, a conceptual industrial designer.
+  try {
+    const result = await chatJSON<unknown>(
+      `You are Atrion 3D Studio, a conceptual industrial designer.
 Turn the user's idea into a simple 3D concept assembled from at most 24 primitives.
 This is visualization only, never construction-ready engineering.
 Use the same language as the user. Return only valid JSON.
@@ -438,7 +537,7 @@ JSON shape:
   "engineeringNotes": ["..."],
   "disclaimer": "Concept only. Dimensions and loads must be verified by a qualified engineer."
 }`,
-    `Create a detailed 3D concept for: ${prompt}
+      `Create a detailed 3D concept for: ${prompt}
 
 Discovery answers:
 ${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n")}
@@ -446,9 +545,12 @@ ${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n")}
 Include realistic part quantities, required tools/equipment, prerequisites, 5-10 ordered
 assembly steps, advantages, disadvantages, risks and a rough cost range in Kyrgyz som (KGS).
 Never claim that the model is structurally certified.`
-  );
+    );
 
-  return normalize3DConcept(result);
+    return normalize3DConcept(result);
+  } catch (error) {
+    return localFallback("3D concept", error, () => mock3DConcept(prompt));
+  }
 }
 
 function normalize3DConcept(value: unknown): ThreeDConcept {
