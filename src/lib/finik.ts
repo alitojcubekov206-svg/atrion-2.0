@@ -106,7 +106,7 @@ export async function createFinikPayment(input: {
       "x-api-key": config.apiKey,
       "x-api-timestamp": timestamp,
     },
-    queryStringParameters: undefined,
+    queryStringParameters: null,
     body,
   };
   const signature = await new Signer(requestData).sign(config.privateKey);
@@ -156,7 +156,7 @@ export async function verifyFinikWebhook(input: {
     httpMethod: "POST",
     path: input.path,
     headers: signedHeaders,
-    queryStringParameters: undefined,
+    queryStringParameters: null,
     body: input.body,
   };
   return new Signer(requestData).verify(config.publicKey, input.signature);
