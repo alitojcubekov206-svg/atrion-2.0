@@ -3,7 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, type Variants } from "framer-motion";
+
+const EASE = [0.22, 1, 0.36, 1] as const;
+
+const gateItem: Variants = {
+  hidden: { opacity: 0, y: 18 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.55, ease: EASE },
+  },
+};
 
 export default function AuthForm({
   mode,
@@ -57,15 +68,6 @@ export default function AuthForm({
     const gateInput =
       "w-full border-0 border-b border-white/15 bg-transparent px-1 py-3.5 text-[15px] text-white outline-none transition placeholder:text-slate-500 focus:border-violet-300/70";
 
-    const item = {
-      hidden: { opacity: 0, y: 18 },
-      show: {
-        opacity: 1,
-        y: 0,
-        transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
-      },
-    };
-
     return (
       <motion.form
         onSubmit={onSubmit}
@@ -78,11 +80,11 @@ export default function AuthForm({
         className="mt-10 flex w-full max-w-sm flex-col gap-5"
       >
         {mode === "register" && (
-          <motion.div variants={item}>
+          <motion.div variants={gateItem}>
             <input name="name" placeholder="Имя" required autoComplete="name" className={gateInput} />
           </motion.div>
         )}
-        <motion.div variants={item}>
+        <motion.div variants={gateItem}>
           <input
             name="email"
             type="email"
@@ -92,7 +94,7 @@ export default function AuthForm({
             className={gateInput}
           />
         </motion.div>
-        <motion.div variants={item}>
+        <motion.div variants={gateItem}>
           <input
             name="password"
             type="password"
@@ -104,21 +106,21 @@ export default function AuthForm({
           />
         </motion.div>
         {error && (
-          <motion.p variants={item} className="text-sm text-red-400">
+          <motion.p variants={gateItem} className="text-sm text-red-400">
             {error}
           </motion.p>
         )}
         <motion.button
           type="submit"
           disabled={loading}
-          variants={item}
+          variants={gateItem}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           className="mt-4 w-full rounded-full bg-gradient-to-r from-violet-300 via-violet-200 to-fuchsia-400 py-3.5 text-sm font-semibold text-black shadow-[0_0_40px_rgba(167,139,250,0.4)] disabled:opacity-60"
         >
           {loading ? "…" : mode === "login" ? "Войти" : "Начать"}
         </motion.button>
-        <motion.p variants={item} className="pt-2 text-center text-sm text-slate-500">
+        <motion.p variants={gateItem} className="pt-2 text-center text-sm text-slate-500">
           {mode === "login" ? (
             <Link href="/register" className="text-violet-200/80 transition hover:text-violet-100">
               Создать аккаунт
