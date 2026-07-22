@@ -84,6 +84,12 @@ export interface ModelPart {
   color: string;
   material: string;
   quantity: number;
+  /** Semantic role for structure tree, e.g. foundation, wall, roof, window */
+  role?: string;
+  /** Optional parent part id for hierarchy */
+  parentId?: string | null;
+  /** Group label shown in the structure tree */
+  group?: string;
 }
 
 export interface ThreeDConcept {
@@ -92,6 +98,7 @@ export interface ThreeDConcept {
   units: "m" | "cm" | "mm";
   dimensions: { width: number; height: number; depth: number };
   parts: ModelPart[];
+  structure?: { id: string; label: string; partIds: string[] }[];
   materials: {
     name: string;
     specification: string;

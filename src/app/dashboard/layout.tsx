@@ -17,12 +17,27 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <Link href="/dashboard" className="text-sm text-muted transition hover:text-fg">
             My Projects
           </Link>
-          <Link href="/dashboard/3d-studio" className="text-sm text-muted transition hover:text-accent2">
-            3D Studio
+          <Link href="/dashboard/design-engine" className="text-sm text-muted transition hover:text-accent2">
+            Design Engine
+          </Link>
+          <Link href="/pricing" className="text-sm text-muted transition hover:text-accent">
+            Pricing
           </Link>
         </div>
         <div className="flex items-center gap-4 text-sm">
           <span className="hidden text-muted sm:inline">{user.name}</span>
+          {user.plan === "pro" ? (
+            <span className="rounded-full bg-accent/15 px-2.5 py-1 text-xs font-semibold text-accent">
+              PRO
+            </span>
+          ) : (
+            <Link
+              href="/pricing"
+              className="rounded-full border border-accent/40 px-3 py-1 text-xs font-semibold text-accent transition hover:bg-accent/10"
+            >
+              Upgrade
+            </Link>
+          )}
           <LogoutButton />
         </div>
       </nav>

@@ -495,19 +495,20 @@ export async function generate3DConcept(
 
   try {
     const result = await chatJSON<unknown>(
-      `You are Atrion 3D Studio, a conceptual industrial designer.
-Turn the user's idea into a simple 3D concept assembled from at most 24 primitives.
+      `You are Atrion AI Design Engine — a holographic conceptual industrial designer.
+Turn the user's idea into a coherent 3D concept assembled from 8–28 primitives.
 This is visualization only, never construction-ready engineering.
 Use the same language as the user. Return only valid JSON.
 
-Shape rules:
+Design quality rules:
+- Build a readable semantic structure (foundation/base → primary volumes → openings → details)
+- Prefer realistic proportions; keep the whole model centered near [0,0,0]
+- dimensions between 0.1 and 40
+- Each part needs role and group for the structure tree
 - shape is "box" or "cylinder"
-- position, size and rotation are arrays of exactly 3 finite numbers
-- rotation values are radians
-- box size means [width, height, depth]
-- cylinder size means [radius, height, radius]
-- use a valid six-digit hex color
-- keep the whole model centered near [0,0,0] and dimensions between 0.1 and 20
+- position, size and rotation are arrays of exactly 3 finite numbers (rotation in radians)
+- box size = [width, height, depth]; cylinder size = [radius, height, radius]
+- six-digit hex colors with material-appropriate tones
 
 JSON shape:
 {
@@ -515,8 +516,10 @@ JSON shape:
   "description": "...",
   "units": "m",
   "dimensions": {"width": 1, "height": 1, "depth": 1},
+  "structure": [{"id":"foundation","label":"Foundation","partIds":["part-1"]}],
   "parts": [{
     "id": "part-1", "name": "...", "shape": "box",
+    "role": "foundation", "group": "Foundation", "parentId": null,
     "position": [0,0,0], "size": [1,1,1], "rotation": [0,0,0],
     "color": "#64748b", "material": "...", "quantity": 1
   }],
@@ -524,7 +527,7 @@ JSON shape:
     "name": "...", "specification": "...", "estimatedQuantity": "...", "reason": "..."
   }],
   "equipment": [{"name":"...","purpose":"...","access":"buy"}],
-  "requirements": ["site survey, permits, measurements, skills or specialists needed"],
+  "requirements": ["..."],
   "assemblySteps": ["..."],
   "costEstimate": {
     "currency": "KGS", "minimum": 0, "maximum": 0,
@@ -553,6 +556,40 @@ Never claim that the model is structurally certified.`
   }
 }
 
+export async function refine3DConcept(
+  concept: ThreeDConcept,
+  instruction: string,
+  selectedPartId?: string | null
+): Promise<ThreeDConcept> {
+  if (!hasKey()) {
+    return mockRefine3DConcept(concept, instruction, selectedPartId);
+  }
+
+  try {
+    const selected = concept.parts.find((part) => part.id === selectedPartId);
+    const result = await chatJSON<unknown>(
+      `You are Atrion AI Design Engine refining an existing conceptual 3D model.
+Apply the user's edit instruction carefully. Keep valid JSON only.
+Preserve ids when possible. Keep shape box|cylinder, hex colors, and centered geometry.
+If a part is selected, prioritize editing that part unless the instruction is global.
+Return the full ThreeDConcept object with the same schema as generation, including role/group/structure.`,
+      `Current concept JSON:
+${JSON.stringify(concept)}
+
+Selected part: ${selected ? `${selected.name} (${selected.id})` : "none"}
+
+User instruction: ${instruction}
+
+Return the complete updated concept.`
+    );
+    return normalize3DConcept(result);
+  } catch (error) {
+    return localFallback("3D refine", error, () =>
+      mockRefine3DConcept(concept, instruction, selectedPartId)
+    );
+  }
+}
+
 function normalize3DConcept(value: unknown): ThreeDConcept {
   if (!value || typeof value !== "object") return mock3DConcept("3D concept");
   const raw = value as Partial<ThreeDConcept>;
@@ -572,20 +609,65 @@ function normalize3DConcept(value: unknown): ThreeDConcept {
         (part): part is ModelPart => Boolean(part && typeof part === "object")
       )
     : [];
-  const parts = sourceParts.slice(0, 24).map((part, index) => ({
-    id: safeText(part.id, `part-${index + 1}`),
-    name: safeText(part.name, `Part ${index + 1}`),
-    shape: part.shape === "cylinder" ? ("cylinder" as const) : ("box" as const),
-    position: vector(part.position, [0, 0, 0]),
-    size: vector(part.size, [1, 1, 1]).map((n) => Math.max(0.05, Math.abs(n))) as [number, number, number],
-    rotation: vector(part.rotation, [0, 0, 0]),
-    color:
-      typeof part.color === "string" && /^#[0-9a-f]{6}$/i.test(part.color)
-        ? part.color
-        : "#7c6cff",
-    material: safeText(part.material, "Unspecified"),
-    quantity: Math.max(1, Math.round(safeNumber(part.quantity, 1))),
-  }));
+  const parts = sourceParts.slice(0, 28).map((part, index) => {
+    const role = safeText((part as ModelPart).role, "detail");
+    const group = safeText((part as ModelPart).group, role);
+    const parentRaw = (part as ModelPart).parentId;
+    return {
+      id: safeText(part.id, `part-${index + 1}`),
+      name: safeText(part.name, `Part ${index + 1}`),
+      shape: part.shape === "cylinder" ? ("cylinder" as const) : ("box" as const),
+      position: vector(part.position, [0, 0, 0]),
+      size: vector(part.size, [1, 1, 1]).map((n) => Math.max(0.05, Math.abs(n))) as [
+        number,
+        number,
+        number,
+      ],
+      rotation: vector(part.rotation, [0, 0, 0]),
+      color:
+        typeof part.color === "string" && /^#[0-9a-f]{6}$/i.test(part.color)
+          ? part.color
+          : "#4dd6ff",
+      material: safeText(part.material, "Unspecified"),
+      quantity: Math.max(1, Math.round(safeNumber(part.quantity, 1))),
+      role,
+      group,
+      parentId: typeof parentRaw === "string" && parentRaw.trim() ? parentRaw.trim() : null,
+    };
+  });
+
+  const partIds = new Set(parts.map((part) => part.id));
+  const structure = Array.isArray(raw.structure)
+    ? raw.structure
+        .filter((item) => item && typeof item === "object")
+        .slice(0, 20)
+        .map((item, index) => ({
+          id: safeText((item as { id?: unknown }).id, `group-${index + 1}`),
+          label: safeText((item as { label?: unknown }).label, `Group ${index + 1}`),
+          partIds: Array.isArray((item as { partIds?: unknown }).partIds)
+            ? ((item as { partIds: unknown[] }).partIds.filter(
+                (id): id is string => typeof id === "string" && partIds.has(id)
+              ) as string[])
+            : [],
+        }))
+        .filter((item) => item.partIds.length > 0)
+    : [];
+
+  const fallbackStructure =
+    structure.length > 0
+      ? structure
+      : Object.entries(
+          parts.reduce<Record<string, string[]>>((acc, part) => {
+            const key = part.group || part.role || "Parts";
+            acc[key] = acc[key] || [];
+            acc[key].push(part.id);
+            return acc;
+          }, {})
+        ).map(([label, ids], index) => ({
+          id: `group-${index + 1}`,
+          label,
+          partIds: ids,
+        }));
 
   return {
     name: typeof raw.name === "string" ? raw.name : "Untitled 3D Concept",
@@ -601,6 +683,7 @@ function normalize3DConcept(value: unknown): ThreeDConcept {
       parts.length > 0
         ? parts
         : mock3DConcept(safeText(raw.name, "3D concept")).parts,
+    structure: fallbackStructure,
     materials: Array.isArray(raw.materials)
       ? raw.materials
           .filter((item) => item && typeof item === "object")
@@ -681,52 +764,85 @@ function normalize3DConcept(value: unknown): ThreeDConcept {
 function mock3DConcept(prompt: string): ThreeDConcept {
   return {
     name: prompt.length > 50 ? `${prompt.slice(0, 47)}...` : prompt,
-    description: "Концептуальная модульная конструкция, созданная Atrion 3D Studio.",
+    description: "Концептуальная модульная конструкция, созданная Atrion AI Design Engine.",
     units: "m",
-    dimensions: { width: 6, height: 2.5, depth: 2 },
+    dimensions: { width: 8, height: 3.2, depth: 5 },
+    structure: [
+      { id: "foundation", label: "Foundation", partIds: ["foundation"] },
+      { id: "shell", label: "Shell", partIds: ["wall-n", "wall-s", "wall-e", "wall-w"] },
+      { id: "roof", label: "Roof", partIds: ["roof"] },
+      { id: "openings", label: "Openings", partIds: ["window-1", "door"] },
+    ],
     parts: [
-      { id: "deck", name: "Основная платформа", shape: "box", position: [0, 0.8, 0], size: [6, 0.25, 2], rotation: [0, 0, 0], color: "#64748b", material: "Конструкционная сталь", quantity: 1 },
-      { id: "support-1", name: "Левая опора", shape: "box", position: [-2.3, -0.1, 0], size: [0.35, 1.8, 1.6], rotation: [0, 0, 0], color: "#334155", material: "Железобетон", quantity: 1 },
-      { id: "support-2", name: "Правая опора", shape: "box", position: [2.3, -0.1, 0], size: [0.35, 1.8, 1.6], rotation: [0, 0, 0], color: "#334155", material: "Железобетон", quantity: 1 },
-      { id: "rail-1", name: "Ограждение", shape: "box", position: [0, 1.25, -0.9], size: [6, 0.08, 0.08], rotation: [0, 0, 0], color: "#4dd6ff", material: "Оцинкованная сталь", quantity: 2 },
-      { id: "rail-2", name: "Ограждение", shape: "box", position: [0, 1.25, 0.9], size: [6, 0.08, 0.08], rotation: [0, 0, 0], color: "#4dd6ff", material: "Оцинкованная сталь", quantity: 2 },
+      { id: "foundation", name: "Фундамент", shape: "box", role: "foundation", group: "Foundation", parentId: null, position: [0, -0.2, 0], size: [8.2, 0.4, 5.2], rotation: [0, 0, 0], color: "#475569", material: "Железобетон", quantity: 1 },
+      { id: "wall-n", name: "Северная стена", shape: "box", role: "wall", group: "Shell", parentId: "foundation", position: [0, 1.2, -2.4], size: [8, 2.8, 0.25], rotation: [0, 0, 0], color: "#94a3b8", material: "Кирпич / штукатурка", quantity: 1 },
+      { id: "wall-s", name: "Южная стена", shape: "box", role: "wall", group: "Shell", parentId: "foundation", position: [0, 1.2, 2.4], size: [8, 2.8, 0.25], rotation: [0, 0, 0], color: "#94a3b8", material: "Кирпич / штукатурка", quantity: 1 },
+      { id: "wall-e", name: "Восточная стена", shape: "box", role: "wall", group: "Shell", parentId: "foundation", position: [3.9, 1.2, 0], size: [0.25, 2.8, 4.6], rotation: [0, 0, 0], color: "#64748b", material: "Кирпич / штукатурка", quantity: 1 },
+      { id: "wall-w", name: "Западная стена", shape: "box", role: "wall", group: "Shell", parentId: "foundation", position: [-3.9, 1.2, 0], size: [0.25, 2.8, 4.6], rotation: [0, 0, 0], color: "#64748b", material: "Кирпич / штукатурка", quantity: 1 },
+      { id: "roof", name: "Кровля", shape: "box", role: "roof", group: "Roof", parentId: null, position: [0, 2.85, 0], size: [8.6, 0.3, 5.6], rotation: [0, 0, 0], color: "#1e293b", material: "Металлочерепица", quantity: 1 },
+      { id: "window-1", name: "Панорамное окно", shape: "box", role: "window", group: "Openings", parentId: "wall-s", position: [0, 1.3, 2.52], size: [3.2, 1.6, 0.08], rotation: [0, 0, 0], color: "#4dd6ff", material: "Стеклопакет", quantity: 1 },
+      { id: "door", name: "Входная дверь", shape: "box", role: "door", group: "Openings", parentId: "wall-n", position: [-2.2, 0.9, -2.52], size: [1.1, 2.1, 0.1], rotation: [0, 0, 0], color: "#0ea5e9", material: "Дерево / металл", quantity: 1 },
     ],
     materials: [
-      { name: "Конструкционная сталь", specification: "S355, антикоррозионное покрытие", estimatedQuantity: "По расчёту инженера", reason: "Основные несущие элементы" },
-      { name: "Железобетон", specification: "Класс не ниже C30/37", estimatedQuantity: "По расчёту фундамента", reason: "Опоры конструкции" },
+      { name: "Железобетон", specification: "C30/37", estimatedQuantity: "По расчёту", reason: "Фундамент" },
+      { name: "Стеклопакет", specification: "Энергосберегающий", estimatedQuantity: "1–3 шт", reason: "Окна" },
     ],
     equipment: [
-      { name: "Сварочный аппарат", purpose: "Соединение стальных элементов", access: "specialist" },
-      { name: "Подъёмное оборудование", purpose: "Монтаж платформы и опор", access: "rent" },
-      { name: "Измерительный инструмент", purpose: "Разметка и контроль геометрии", access: "buy" },
+      { name: "Сварочный аппарат", purpose: "Металлоконструкции", access: "specialist" },
+      { name: "Подъёмник", purpose: "Монтаж кровли", access: "rent" },
     ],
-    requirements: [
-      "Точные замеры места установки",
-      "Исследование грунта и основания",
-      "Расчёт нагрузок квалифицированным инженером",
-      "Согласования и разрешения местных органов",
-      "Бригада со сварочными и монтажными допусками",
-    ],
-    assemblySteps: ["Подготовить основание", "Установить опоры", "Смонтировать платформу", "Установить ограждения"],
+    requirements: ["Замеры участка", "Инженерный расчёт", "Разрешения"],
+    assemblySteps: ["Фундамент", "Коробка", "Кровля", "Окна и двери", "Отделка"],
     costEstimate: {
       currency: "KGS",
-      minimum: 250000,
-      maximum: 650000,
+      minimum: 450000,
+      maximum: 1200000,
       breakdown: [
-        { item: "Металл и крепёж", quantity: "По рабочему расчёту", estimatedCost: 180000 },
-        { item: "Бетон и основание", quantity: "По геологии участка", estimatedCost: 120000 },
-        { item: "Работа и аренда техники", quantity: "1 проект", estimatedCost: 200000 },
+        { item: "Материалы", quantity: "Комплект", estimatedCost: 500000 },
+        { item: "Работа", quantity: "1 объект", estimatedCost: 350000 },
       ],
-      note: "Грубая ориентировочная оценка. Цена зависит от размеров, участка и поставщиков.",
+      note: "Ориентировочная оценка Atrion Design Engine.",
     },
-    advantages: ["Модульная сборка", "Ремонтопригодность", "Защищённые ограждения"],
-    disadvantages: ["Нужна защита металла от коррозии", "Требуется спецтехника", "Стоимость зависит от основания"],
+    advantages: ["Читаемая структура", "Быстрая визуализация", "Редактирование через чат"],
+    disadvantages: ["Концепт, не BIM", "Нужна проверка инженера"],
     risks: [
-      { risk: "Недостаточная несущая способность", severity: "High", mitigation: "Выполнить расчёт нагрузок и испытания" },
-      { risk: "Просадка основания", severity: "High", mitigation: "Провести геологическое исследование" },
-      { risk: "Коррозия металла", severity: "Medium", mitigation: "Нанести защитное покрытие и проводить осмотры" },
+      { risk: "Неверные нагрузки", severity: "High", mitigation: "Расчёт инженера" },
     ],
-    engineeringNotes: ["Проверить расчётные нагрузки", "Уточнить геологию основания", "Предусмотреть защиту от коррозии"],
-    disclaimer: "Концептуальная модель. Не использовать для строительства без расчётов и проверки квалифицированным инженером.",
+    engineeringNotes: ["Проверить фундамент", "Уточнить климатические нагрузки"],
+    disclaimer: "Концептуальная модель Atrion AI Design Engine.",
+  };
+}
+
+function mockRefine3DConcept(
+  concept: ThreeDConcept,
+  instruction: string,
+  selectedPartId?: string | null
+): ThreeDConcept {
+  const lower = instruction.toLowerCase();
+  const scale =
+    lower.includes("увелич") || lower.includes("больше") || lower.includes("30%")
+      ? 1.2
+      : lower.includes("уменш") || lower.includes("меньше")
+        ? 0.85
+        : 1;
+  const wood = lower.includes("дерев") || lower.includes("wood");
+  const parts = concept.parts.map((part) => {
+    const targeted = !selectedPartId || part.id === selectedPartId;
+    if (!targeted) return part;
+    return {
+      ...part,
+      size: [part.size[0] * scale, part.size[1] * scale, part.size[2] * scale] as [
+        number,
+        number,
+        number,
+      ],
+      material: wood ? "Дерево" : part.material,
+      color: wood ? "#b45309" : part.color,
+    };
+  });
+  return {
+    ...concept,
+    description: `${concept.description} · правка: ${instruction}`,
+    parts,
   };
 }

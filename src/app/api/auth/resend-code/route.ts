@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
+  canReturnDevVerificationCode,
   createVerificationCode,
   hashVerificationCode,
   RESEND_COOLDOWN_SECONDS,
@@ -46,9 +47,17 @@ export async function POST(req: Request) {
 
   try {
     await sendVerificationEmail(email, code);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      ...(canReturnDevVerificationCode() ? { devCode: code } : {}),
+    });
   } catch (error) {
-    console.error("verification email resend failed", error);
-    return NextResponse.json({ error: "Не удалось отправить письмо" }, { status: 502 });
+    const message =
+      error instanceof Error ? error.message : "Не удалось отправить письмо";
+    console.error("verification email resend failed", message);
+    if (canReturnDevVerificationCode()) {
+      return NextResponse.json({ ok: true, devCode: code, warning: message });
+    }
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

@@ -30,7 +30,7 @@ html {
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-geist, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -82,6 +82,26 @@ body {
 }
 .thinking-dot:nth-child(2) { animation-delay: 0.15s; }
 .thinking-dot:nth-child(3) { animation-delay: 0.3s; }
+
+.holo-ring {
+  width: 120px;
+  height: 120px;
+  border-radius: 9999px;
+  border: 1px solid rgba(77, 214, 255, 0.35);
+  box-shadow:
+    0 0 40px rgba(77, 214, 255, 0.25),
+    inset 0 0 30px rgba(77, 214, 255, 0.12);
+  background:
+    radial-gradient(circle at 30% 30%, rgba(77, 214, 255, 0.25), transparent 45%),
+    radial-gradient(circle at 70% 70%, rgba(124, 108, 255, 0.18), transparent 40%);
+  animation: holo-spin 8s linear infinite;
+}
+
+@keyframes holo-spin {
+  from { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.05); }
+  to { transform: rotate(360deg) scale(1); }
+}
 
 /* score ring */
 @keyframes ring-fill {

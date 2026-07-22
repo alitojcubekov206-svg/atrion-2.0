@@ -9,9 +9,14 @@ function VerifyEmailForm() {
   const router = useRouter();
   const params = useSearchParams();
   const email = params.get("email")?.trim().toLowerCase() ?? "";
-  const [code, setCode] = useState("");
+  const initialDevCode = params.get("devCode")?.replace(/\D/g, "").slice(0, 6) ?? "";
+  const [code, setCode] = useState(initialDevCode);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState("Мы отправили шестизначный код на вашу почту.");
+  const [message, setMessage] = useState(
+    initialDevCode
+      ? `Тестовый режим: код ${initialDevCode}. Письмо может не прийти.`
+      : "Мы отправили шестизначный код на вашу почту."
+  );
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(60);
 
@@ -53,7 +58,12 @@ function VerifyEmailForm() {
       setError(data.error ?? "Не удалось отправить код");
       return;
     }
-    setMessage("Новый код отправлен. Проверьте также папку «Спам».");
+    if (typeof data.devCode === "string") {
+      setCode(data.devCode);
+      setMessage(`Тестовый режим: код ${data.devCode}. Письмо может не прийти.`);
+    } else {
+      setMessage("Новый код отправлен. Проверьте также папку «Спам».");
+    }
     setCooldown(60);
   }
 

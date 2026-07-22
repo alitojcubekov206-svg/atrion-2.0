@@ -29,10 +29,19 @@ export function verificationExpiry() {
   return new Date(Date.now() + VERIFICATION_TTL_MINUTES * 60_000);
 }
 
+export function canReturnDevVerificationCode() {
+  return process.env.RESEND_DEV_RETURN_CODE === "true";
+}
+
 export async function sendVerificationEmail(email: string, code: string) {
   const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
+  if (!apiKey) {
+    throw new Error(
+      "RESEND_API_KEY не настроен в Vercel. Добавьте ключ Resend в Environment Variables."
+    );
+  }
 
+  const from = process.env.EMAIL_FROM || "Atrion <onboarding@resend.dev>";
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -40,7 +49,7 @@ export async function sendVerificationEmail(email: string, code: string) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.EMAIL_FROM || "Atrion <onboarding@resend.dev>",
+      from,
       to: [email],
       subject: `${code} — код подтверждения Atrion`,
       html: `
@@ -57,6 +66,15 @@ export async function sendVerificationEmail(email: string, code: string) {
   if (!response.ok) {
     const details = await response.text();
     console.error("Resend email failed", response.status, details);
-    throw new Error("Email provider rejected the message");
+    const lower = details.toLowerCase();
+    if (lower.includes("only send testing emails") || lower.includes("verify a domain")) {
+      throw new Error(
+        "Resend тестовый режим: письма с onboarding@resend.dev приходят только на email аккаунта Resend. Зарегистрируйся этой же почтой или подтверди свой домен в Resend."
+      );
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error("Неверный RESEND_API_KEY. Создай новый ключ в Resend и обнови его в Vercel.");
+    }
+    throw new Error("Resend отклонил письмо. Проверь EMAIL_FROM и RESEND_API_KEY в Vercel.");
   }
 }

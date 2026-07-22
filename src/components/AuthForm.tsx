@@ -27,7 +27,12 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
 
     if (res.ok) {
       if (data.requiresVerification && data.email) {
-        router.push(`/verify?email=${encodeURIComponent(data.email)}`);
+        const verifyUrl = new URL("/verify", window.location.origin);
+        verifyUrl.searchParams.set("email", data.email);
+        if (typeof data.devCode === "string") {
+          verifyUrl.searchParams.set("devCode", data.devCode);
+        }
+        router.push(`${verifyUrl.pathname}${verifyUrl.search}`);
       } else {
         router.push("/dashboard");
       }

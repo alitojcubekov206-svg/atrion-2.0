@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import {
+  canReturnDevVerificationCode,
   createVerificationCode,
   hashVerificationCode,
   RESEND_COOLDOWN_SECONDS,
@@ -22,9 +23,6 @@ export async function POST(req: Request) {
 
   if (!name || !email || !password) {
     return NextResponse.json({ error: "Заполните все поля" }, { status: 400 });
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json({ error: "Введите корректный email" }, { status: 400 });
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: "Введите корректный email" }, { status: 400 });
@@ -81,12 +79,27 @@ export async function POST(req: Request) {
   try {
     await sendVerificationEmail(email, code);
   } catch (error) {
-    console.error("verification email failed", error);
-    return NextResponse.json(
-      { error: "Не удалось отправить письмо. Проверьте настройки почты и попробуйте ещё раз." },
-      { status: 502 }
-    );
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Не удалось отправить письмо. Проверьте настройки почты и попробуйте ещё раз.";
+    console.error("verification email failed", message);
+    if (canReturnDevVerificationCode()) {
+      return NextResponse.json({
+        ok: true,
+        requiresVerification: true,
+        email,
+        devCode: code,
+        warning: message,
+      });
+    }
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 
-  return NextResponse.json({ ok: true, requiresVerification: true, email });
+  return NextResponse.json({
+    ok: true,
+    requiresVerification: true,
+    email,
+    ...(canReturnDevVerificationCode() ? { devCode: code } : {}),
+  });
 }

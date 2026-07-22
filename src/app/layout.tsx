@@ -1,19 +1,27 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Manrope, Unbounded } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin", "cyrillic"], variable: "--font-geist" });
+const body = Manrope({
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-body",
+});
+
+const display = Unbounded({
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-display",
+});
 
 export const metadata: Metadata = {
-  title: "Atrion 2.0 — Your AI Software Architect",
+  title: "Atrion — AI Design Engine",
   description:
-    "From Idea to Intelligent Architecture. Atrion turns your raw product idea into a complete technical plan: architecture, database, API, roadmap and honest scoring.",
+    "Atrion понимает человека и создаёт вместе с ним: 3D-объекты, архитектура и intelligent design в браузере.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body>{children}</body>
+    <html lang="ru" className={`${body.variable} ${display.variable}`}>
+      <body className="font-[family-name:var(--font-body)] antialiased">{children}</body>
     </html>
   );
 }
