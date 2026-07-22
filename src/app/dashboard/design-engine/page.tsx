@@ -10,7 +10,7 @@ import { download } from "@/lib/export";
 
 const ConceptViewer = dynamic(() => import("@/components/three/ConceptViewer"), {
   ssr: false,
-  loading: () => <div className="h-full animate-pulse bg-[#03060c]" />,
+  loading: () => <div className="h-full animate-pulse bg-[#09060f]" />,
 });
 
 const PIPELINE = [
@@ -198,7 +198,7 @@ export default function DesignEnginePage() {
     questions.length > 0 && questions.every((question) => Boolean(answers[question.id]));
 
   return (
-    <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex bg-[#02050a] text-slate-100">
+    <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex bg-[#09060f] text-slate-100">
       {/* Viewer */}
       <div className={`relative min-w-0 flex-1 ${panelOpen ? "md:w-[80%]" : "w-full"}`}>
         {concept ? (
@@ -215,12 +215,12 @@ export default function DesignEnginePage() {
         ) : (
           <div className="flex h-full flex-col items-center justify-center px-6">
             <div className="holo-ring mb-8" />
-            <p className="text-xs uppercase tracking-[0.35em] text-cyan-300/70">
+            <p className="text-xs uppercase tracking-[0.35em] text-violet-300/70">
               Atrion · Stark Workshop
             </p>
             <h1 className="mt-3 max-w-2xl text-center text-3xl font-semibold tracking-tight md:text-5xl">
               Цельный объект. Сборка в воздухе.
-              <span className="block text-cyan-300/90">Разборка как костюм Iron Man</span>
+              <span className="block text-violet-300/90">Разборка как костюм Iron Man</span>
             </h1>
             <p className="mt-4 max-w-xl text-center text-sm text-slate-400">
               Школа = силуэт школы, не куча коробок. Опиши объект — Engine соберёт модули и сведёт их
@@ -232,7 +232,7 @@ export default function DesignEnginePage() {
                 onChange={(event) => setPrompt(event.target.value)}
                 rows={3}
                 placeholder="Например: двухэтажный дом 12×9 с панорамными окнами на юг..."
-                className="w-full resize-none rounded-2xl border border-cyan-400/20 bg-white/5 px-5 py-4 text-sm outline-none backdrop-blur focus:border-cyan-300/50"
+                className="w-full resize-none rounded-2xl border border-violet-400/20 bg-white/5 px-5 py-4 text-sm outline-none backdrop-blur focus:border-violet-300/50"
               />
               <div className="flex flex-wrap gap-2">
                 {EXAMPLES.map((example) => (
@@ -240,7 +240,7 @@ export default function DesignEnginePage() {
                     key={example}
                     type="button"
                     onClick={() => setPrompt(example)}
-                    className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:border-cyan-400/40 hover:text-cyan-100"
+                    className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:border-violet-400/40 hover:text-violet-100"
                   >
                     {example}
                   </button>
@@ -250,7 +250,7 @@ export default function DesignEnginePage() {
                 type="button"
                 disabled={loading || prompt.trim().length < 10}
                 onClick={startInterview}
-                className="rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 px-6 py-3 text-sm font-semibold text-black shadow-[0_0_30px_rgba(77,214,255,0.35)] disabled:opacity-40"
+                className="rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500 px-6 py-3 text-sm font-semibold text-black shadow-[0_0_30px_rgba(167,139,250,0.35)] disabled:opacity-40"
               >
                 {loading ? "Анализ…" : "Запустить Design Engine →"}
               </button>
@@ -278,7 +278,7 @@ export default function DesignEnginePage() {
                 }}
                 className={`rounded-full px-3 py-1.5 text-xs ${
                   view === value && !exploded
-                    ? "bg-cyan-400/20 text-cyan-100"
+                    ? "bg-violet-400/20 text-violet-100"
                     : "text-slate-400 hover:text-white"
                 }`}
               >
@@ -293,7 +293,7 @@ export default function DesignEnginePage() {
                 setExploded((value) => !value);
               }}
               className={`rounded-full px-3 py-1.5 text-xs ${
-                exploded ? "bg-cyan-400/20 text-cyan-100" : "text-slate-400 hover:text-white"
+                exploded ? "bg-violet-400/20 text-violet-100" : "text-slate-400 hover:text-white"
               }`}
             >
               {exploded ? "Assemble" : "Explode"}
@@ -328,24 +328,24 @@ export default function DesignEnginePage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-30 flex items-center justify-center bg-[#02050a]/55 backdrop-blur-sm"
+              className="absolute inset-0 z-30 flex items-center justify-center bg-[#09060f]/55 backdrop-blur-sm"
             >
-              <div className="w-full max-w-md rounded-3xl border border-cyan-400/20 bg-black/60 p-6">
-                <p className="text-xs uppercase tracking-[0.3em] text-cyan-300/80">Generation</p>
+              <div className="w-full max-w-md rounded-3xl border border-violet-400/20 bg-black/60 p-6">
+                <p className="text-xs uppercase tracking-[0.3em] text-violet-300/80">Generation</p>
                 <ul className="mt-4 space-y-2">
                   {PIPELINE.map((step, index) => (
                     <li
                       key={step}
                       className={`flex items-center gap-3 text-sm ${
-                        index <= pipelineStep ? "text-cyan-100" : "text-slate-500"
+                        index <= pipelineStep ? "text-violet-100" : "text-slate-500"
                       }`}
                     >
                       <span
                         className={`h-2 w-2 rounded-full ${
                           index < pipelineStep
-                            ? "bg-cyan-300"
+                            ? "bg-violet-300"
                             : index === pipelineStep
-                              ? "animate-pulse bg-cyan-400"
+                              ? "animate-pulse bg-violet-400"
                               : "bg-slate-700"
                         }`}
                       />
@@ -361,11 +361,11 @@ export default function DesignEnginePage() {
 
       {/* Side panel */}
       {panelOpen && (
-        <aside className="flex w-full max-w-full flex-col border-l border-cyan-400/15 bg-[#050a12]/90 backdrop-blur-2xl md:w-[min(420px,20%)] md:min-w-[320px]">
+        <aside className="flex w-full max-w-full flex-col border-l border-violet-400/15 bg-[#120e1a]/92 backdrop-blur-2xl md:w-[min(420px,20%)] md:min-w-[320px]">
           <div className="border-b border-white/5 px-4 py-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.28em] text-cyan-300/70">
+                <p className="text-[10px] uppercase tracking-[0.28em] text-violet-300/70">
                   Atrion Core
                 </p>
                 <h2 className="text-lg font-semibold">AI Design Chat</h2>
@@ -380,7 +380,7 @@ export default function DesignEnginePage() {
             <div className="mx-4 mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
               {error}
               {limitReached && (
-                <Link href="/pricing" className="mt-2 block font-semibold text-cyan-200 underline">
+                <Link href="/pricing" className="mt-2 block font-semibold text-violet-200 underline">
                   Перейти на Pro
                 </Link>
               )}
@@ -390,7 +390,7 @@ export default function DesignEnginePage() {
           {/* Interview */}
           {questions.length > 0 && !concept && (
             <div className="flex-1 overflow-y-auto px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/70">Discovery</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-violet-300/70">Discovery</p>
               <div className="mt-3 space-y-4">
                 {questions.map((question) => (
                   <div key={question.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
@@ -405,7 +405,7 @@ export default function DesignEnginePage() {
                           }
                           className={`rounded-full border px-2.5 py-1 text-[11px] ${
                             answers[question.id] === option
-                              ? "border-cyan-300/50 bg-cyan-400/15 text-cyan-100"
+                              ? "border-violet-300/50 bg-violet-400/15 text-violet-100"
                               : "border-white/10 text-slate-400"
                           }`}
                         >
@@ -420,7 +420,7 @@ export default function DesignEnginePage() {
                 type="button"
                 disabled={!allAnswered || loading}
                 onClick={generate}
-                className="mt-4 w-full rounded-full bg-cyan-400 py-3 text-sm font-semibold text-black disabled:opacity-40"
+                className="mt-4 w-full rounded-full bg-violet-400 py-3 text-sm font-semibold text-black disabled:opacity-40"
               >
                 Создать 3D-модель
               </button>
@@ -436,7 +436,7 @@ export default function DesignEnginePage() {
                     key={`${message.role}-${index}`}
                     className={`rounded-2xl px-3 py-2 text-sm ${
                       message.role === "user"
-                        ? "ml-6 bg-cyan-400/15 text-cyan-50"
+                        ? "ml-6 bg-violet-400/15 text-violet-50"
                         : "mr-4 border border-white/10 bg-white/[0.03] text-slate-300"
                     }`}
                   >
@@ -447,7 +447,7 @@ export default function DesignEnginePage() {
                 {concept && (
                   <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/70">
+                      <p className="text-xs uppercase tracking-[0.2em] text-violet-300/70">
                         Structure
                       </p>
                       <button
@@ -476,7 +476,7 @@ export default function DesignEnginePage() {
                                     onClick={() => setSelectedId(part.id)}
                                     className={`block w-full rounded-lg px-2 py-1.5 text-left text-xs ${
                                       selectedId === part.id
-                                        ? "bg-cyan-400/15 text-cyan-100"
+                                        ? "bg-violet-400/15 text-violet-100"
                                         : "text-slate-400 hover:bg-white/5"
                                     }`}
                                   >
@@ -493,8 +493,8 @@ export default function DesignEnginePage() {
                 )}
 
                 {selectedPart && (
-                  <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-3 text-xs text-slate-300">
-                    <p className="font-semibold text-cyan-100">{selectedPart.name}</p>
+                  <div className="rounded-2xl border border-violet-400/20 bg-violet-400/5 p-3 text-xs text-slate-300">
+                    <p className="font-semibold text-violet-100">{selectedPart.name}</p>
                     <p className="mt-1">Материал: {selectedPart.material}</p>
                     <p>
                       Размер: {selectedPart.size.map((n) => n.toFixed(2)).join(" × ")}{" "}
@@ -545,12 +545,12 @@ export default function DesignEnginePage() {
                         : "Сначала создай объект"
                     }
                     disabled={!concept || loading}
-                    className="flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm outline-none focus:border-cyan-400/40 disabled:opacity-40"
+                    className="flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm outline-none focus:border-violet-400/40 disabled:opacity-40"
                   />
                   <button
                     type="submit"
                     disabled={!concept || loading || chatInput.trim().length < 3}
-                    className="rounded-xl bg-cyan-400 px-4 text-sm font-semibold text-black disabled:opacity-40"
+                    className="rounded-xl bg-violet-400 px-4 text-sm font-semibold text-black disabled:opacity-40"
                   >
                     →
                   </button>

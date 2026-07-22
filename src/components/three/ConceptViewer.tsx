@@ -121,9 +121,9 @@ function AnimatedPart({
       <Edges color={selected ? "#e8fbff" : "#0a1520"} threshold={16} />
       {selected && (
         <Html center position={[0, Math.max(0.5, part.size[1] / 2 + 0.45), 0]} distanceFactor={10}>
-          <div className="pointer-events-none whitespace-nowrap rounded-md border border-cyan-300/50 bg-black/80 px-3 py-1.5 text-[11px] tracking-wide text-cyan-50 shadow-[0_0_20px_rgba(77,214,255,0.35)]">
+          <div className="pointer-events-none whitespace-nowrap rounded-md border border-violet-300/50 bg-black/80 px-3 py-1.5 text-[11px] tracking-wide text-violet-50 shadow-[0_0_20px_rgba(167,139,250,0.4)]">
             <span className="font-semibold">{part.name}</span>
-            <span className="ml-2 text-cyan-200/60">{part.material}</span>
+            <span className="ml-2 text-violet-200/60">{part.material}</span>
           </div>
         </Html>
       )}
@@ -165,10 +165,10 @@ export default function ConceptViewer({
   );
 
   return (
-    <div className={`relative h-full min-h-[420px] overflow-hidden bg-[#02060c] ${className}`}>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(77,214,255,0.1),transparent_55%)]" />
+    <div className={`relative h-full min-h-[420px] overflow-hidden bg-[#09060f] ${className}`}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(167,139,250,0.16),transparent_55%)]" />
       {showHint && (
-        <div className="pointer-events-none absolute left-4 top-4 z-10 rounded border border-cyan-400/25 bg-black/50 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-100/80 backdrop-blur">
+        <div className="pointer-events-none absolute left-4 top-4 z-10 rounded border border-violet-400/25 bg-black/50 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-violet-100/80 backdrop-blur">
           {assembling
             ? "ASSEMBLING STRUCTURE…"
             : exploded
@@ -188,15 +188,21 @@ export default function ConceptViewer({
             ? { position: [12, 7, 14], fov: 38 }
             : { position: [0, 0, 18], zoom: 36, near: -200, far: 200 }
         }
+        gl={{
+          antialias: true,
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.25,
+        }}
         onPointerMissed={() => onSelect(null)}
       >
         <CameraRig view={view} maxDimension={maxDimension} />
-        <color attach="background" args={["#02060c"]} />
-        <fog attach="fog" args={["#02060c", 20, 48]} />
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[12, 18, 10]} intensity={2.4} castShadow color="#f2fdff" />
-        <pointLight position={[-10, 8, -6]} intensity={50} color="#4dd6ff" />
-        <pointLight position={[8, 4, 10]} intensity={22} color="#7c6cff" />
+        <color attach="background" args={["#09060f"]} />
+        <fog attach="fog" args={["#09060f", 22, 52]} />
+        <hemisphereLight args={["#e9d5ff", "#1a1028", 0.85]} />
+        <ambientLight intensity={0.9} />
+        <directionalLight position={[12, 18, 10]} intensity={3.2} castShadow color="#faf5ff" />
+        <pointLight position={[-10, 8, -6]} intensity={95} color="#a78bfa" distance={40} decay={1.5} />
+        <pointLight position={[8, 4, 10]} intensity={70} color="#e879f9" distance={35} decay={1.5} />
 
         <SoftSpin enabled={autoRotate && view === "perspective" && !exploded && !assembling}>
           <group position={[0, 0.05, 0]}>
@@ -220,10 +226,10 @@ export default function ConceptViewer({
               args={[50, 50]}
               cellSize={0.5}
               cellThickness={0.5}
-              cellColor="#0d2a3a"
+              cellColor="#2a1f3d"
               sectionSize={2.5}
               sectionThickness={1.1}
-              sectionColor="#1a6f8c"
+              sectionColor="#6d28d9"
               fadeDistance={32}
               fadeStrength={1}
               infiniteGrid

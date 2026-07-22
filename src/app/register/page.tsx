@@ -5,35 +5,43 @@ import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import AuthForm from "@/components/AuthForm";
 
-const StarkAmbient = dynamic(() => import("@/components/three/StarkAmbient"), {
+const EntryGateScene = dynamic(() => import("@/components/three/EntryGateScene"), {
   ssr: false,
+  loading: () => <div className="absolute inset-0 bg-[#09060f]" />,
 });
 
 export default function RegisterPage() {
   return (
-    <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6">
-      <StarkAmbient />
-      <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-        className="relative z-10 w-full max-w-md"
-      >
-        <Link
-          href="/"
-          className="mb-8 block text-center font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight"
+    <main className="relative flex min-h-screen overflow-hidden bg-[#09060f]">
+      <EntryGateScene />
+
+      <div className="relative z-10 flex min-h-screen w-full flex-col justify-center px-6 py-16 md:w-[48%] md:px-12 lg:px-16">
+        <motion.div
+          initial={{ opacity: 0, x: -28 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
         >
-          ATRION <span className="text-cyan-300">2.0</span>
-        </Link>
-        <div className="rounded-3xl border border-cyan-400/20 bg-black/55 p-1 backdrop-blur-xl">
-          <div className="rounded-[22px] border border-white/5 bg-black/40 p-6 md:p-8">
-            <p className="mb-4 text-center font-mono text-[10px] uppercase tracking-[0.3em] text-cyan-300/70">
-              Enroll · Workshop
-            </p>
-            <AuthForm mode="register" />
-          </div>
-        </div>
-      </motion.div>
+          <Link href="/" className="inline-block">
+            <motion.h1
+              initial={{ opacity: 0, letterSpacing: "0.35em" }}
+              animate={{ opacity: 1, letterSpacing: "0.08em" }}
+              transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
+              className="font-[family-name:var(--font-display)] text-5xl font-semibold tracking-tight text-white md:text-6xl lg:text-7xl"
+            >
+              ATRION
+            </motion.h1>
+          </Link>
+
+          <motion.div
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: 1 }}
+            transition={{ delay: 0.25, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+            className="mt-5 h-px w-24 origin-left bg-gradient-to-r from-violet-300 to-transparent"
+          />
+
+          <AuthForm mode="register" variant="gate" />
+        </motion.div>
+      </div>
     </main>
   );
 }

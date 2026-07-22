@@ -3,7 +3,13 @@
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
+
+const EntryGateScene = dynamic(() => import("@/components/three/EntryGateScene"), {
+  ssr: false,
+  loading: () => <div className="absolute inset-0 bg-[#09060f]" />,
+});
 
 function VerifyEmailForm() {
   const router = useRouter();
@@ -13,9 +19,7 @@ function VerifyEmailForm() {
   const [code, setCode] = useState(initialDevCode);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState(
-    initialDevCode
-      ? `Тестовый режим: код ${initialDevCode}. Письмо может не прийти.`
-      : "Мы отправили шестизначный код на вашу почту."
+    initialDevCode ? `Код: ${initialDevCode}` : "Код на почте"
   );
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(60);
@@ -60,19 +64,18 @@ function VerifyEmailForm() {
     }
     if (typeof data.devCode === "string") {
       setCode(data.devCode);
-      setMessage(`Тестовый режим: код ${data.devCode}. Письмо может не прийти.`);
+      setMessage(`Код: ${data.devCode}`);
     } else {
-      setMessage("Новый код отправлен. Проверьте также папку «Спам».");
+      setMessage("Новый код отправлен");
     }
     setCooldown(60);
   }
 
   if (!email) {
     return (
-      <div className="card w-full max-w-md p-8 text-center">
-        <h1 className="text-2xl font-bold">Email не указан</h1>
-        <Link href="/register" className="mt-6 inline-block text-accent hover:underline">
-          Вернуться к регистрации
+      <div className="text-center">
+        <Link href="/register" className="text-violet-200 hover:text-white">
+          Регистрация
         </Link>
       </div>
     );
@@ -80,17 +83,21 @@ function VerifyEmailForm() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="card w-full max-w-md p-8"
+      initial={{ opacity: 0, x: -24 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+      className="w-full max-w-sm"
     >
-      <div className="mb-5 text-4xl">✉️</div>
-      <h1 className="text-2xl font-bold">Подтвердите email</h1>
-      <p className="mt-2 text-sm text-muted">
-        {message} <span className="text-white">{email}</span>
+      <Link href="/">
+        <h1 className="font-[family-name:var(--font-display)] text-5xl font-semibold tracking-tight text-white md:text-6xl">
+          ATRION
+        </h1>
+      </Link>
+      <div className="mt-5 h-px w-24 bg-gradient-to-r from-violet-300 to-transparent" />
+      <p className="mt-8 text-sm text-slate-400">
+        {message} · <span className="text-slate-200">{email}</span>
       </p>
-
-      <form onSubmit={verify} className="mt-8 flex flex-col gap-4">
+      <form onSubmit={verify} className="mt-8 flex flex-col gap-5">
         <input
           value={code}
           onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -99,24 +106,23 @@ function VerifyEmailForm() {
           placeholder="000000"
           required
           pattern="[0-9]{6}"
-          className="w-full rounded-xl border border-line bg-surface2 px-4 py-4 text-center text-2xl tracking-[0.45em] outline-none transition focus:border-accent"
+          className="w-full border-0 border-b border-white/15 bg-transparent py-4 text-center text-3xl tracking-[0.5em] text-white outline-none focus:border-violet-300/70"
         />
         {error && <p className="text-sm text-red-400">{error}</p>}
         <button
           disabled={loading || code.length !== 6}
-          className="btn-primary rounded-xl py-3 font-semibold text-white disabled:opacity-50"
+          className="rounded-full bg-gradient-to-r from-violet-300 to-fuchsia-400 py-3.5 text-sm font-semibold text-black shadow-[0_0_40px_rgba(167,139,250,0.4)] disabled:opacity-50"
         >
-          {loading ? "Проверяем..." : "Подтвердить"}
+          {loading ? "…" : "Войти"}
         </button>
       </form>
-
       <button
         type="button"
         onClick={resend}
         disabled={cooldown > 0}
-        className="mt-5 w-full text-sm text-accent disabled:text-muted"
+        className="mt-6 w-full text-sm text-slate-500 disabled:opacity-50"
       >
-        {cooldown > 0 ? `Отправить снова через ${cooldown} сек.` : "Отправить код снова"}
+        {cooldown > 0 ? `${cooldown}s` : "Снова"}
       </button>
     </motion.div>
   );
@@ -124,10 +130,13 @@ function VerifyEmailForm() {
 
 export default function VerifyEmailPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
-      <Suspense fallback={<div className="text-muted">Загрузка...</div>}>
-        <VerifyEmailForm />
-      </Suspense>
+    <main className="relative flex min-h-screen overflow-hidden bg-[#09060f]">
+      <EntryGateScene />
+      <div className="relative z-10 flex min-h-screen w-full flex-col justify-center px-6 py-16 md:w-[48%] md:px-12 lg:px-16">
+        <Suspense fallback={<div className="text-slate-500">…</div>}>
+          <VerifyEmailForm />
+        </Suspense>
+      </div>
     </main>
   );
 }
