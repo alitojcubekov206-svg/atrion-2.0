@@ -3,7 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
+
+const StarkAmbient = dynamic(() => import("@/components/three/StarkAmbient"), {
+  ssr: false,
+});
 
 const EXAMPLES = [
   "Хочу сделать AI-приложение для обучения детей математике",
@@ -37,50 +42,80 @@ export default function NewProjectPage() {
   }
 
   return (
-    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-2xl">
-      <h1 className="text-3xl font-bold">Опишите вашу идею</h1>
-      <p className="mt-2 text-muted">
-        Одно-два предложения достаточно. Дальше AI проведёт интервью и спроектирует всё сам.
-      </p>
-
-      <textarea
-        value={idea}
-        onChange={(e) => setIdea(e.target.value)}
-        rows={5}
-        placeholder="Я хочу создать приложение для..."
-        className="mt-6 w-full resize-none rounded-2xl border border-line bg-surface2 p-5 text-base outline-none transition focus:border-accent"
-      />
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        {EXAMPLES.map((ex) => (
-          <button
-            key={ex}
-            onClick={() => setIdea(ex)}
-            className="rounded-full border border-line px-3 py-1.5 text-xs text-muted transition hover:border-accent hover:text-fg"
-          >
-            {ex.slice(0, 48)}…
-          </button>
-        ))}
-      </div>
-
-      {error && (
-        <div className="mt-4">
-          <p className="text-sm text-red-400">{error}</p>
-          {limitReached && (
-            <Link href="/pricing" className="mt-2 inline-block text-sm font-semibold text-accent hover:underline">
-              Посмотреть тариф Pro →
-            </Link>
-          )}
-        </div>
-      )}
-
-      <button
-        onClick={create}
-        disabled={loading || idea.trim().length < 10}
-        className="btn-primary mt-6 rounded-full px-8 py-3 font-semibold text-white disabled:opacity-50"
+    <div className="relative min-h-[calc(100vh-65px)]">
+      <StarkAmbient />
+      <motion.div
+        initial={{ opacity: 0, y: 24, rotateX: 10 }}
+        animate={{ opacity: 1, y: 0, rotateX: 0 }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+        style={{ transformPerspective: 1000 }}
+        className="relative z-10 mx-auto max-w-2xl px-6 py-12"
       >
-        {loading ? "Создание..." : "Начать проектирование →"}
-      </button>
-    </motion.div>
+        <div className="rounded-3xl border border-cyan-400/20 bg-black/50 p-6 backdrop-blur-xl md:p-8">
+          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/70">
+            New Construct
+          </p>
+          <h1 className="mt-3 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
+            Опишите вашу идею
+          </h1>
+          <p className="mt-2 text-sm text-slate-400">
+            Одно-два предложения достаточно. Дальше AI проведёт интервью и спроектирует всё сам.
+            Для зданий открой Design Engine — там 3D в стиле Stark.
+          </p>
+
+          <textarea
+            value={idea}
+            onChange={(e) => setIdea(e.target.value)}
+            rows={5}
+            placeholder="Я хочу создать приложение для..."
+            className="mt-6 w-full resize-none rounded-2xl border border-cyan-400/20 bg-white/[0.03] p-5 text-base outline-none transition focus:border-cyan-300/50"
+          />
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {EXAMPLES.map((ex) => (
+              <button
+                key={ex}
+                type="button"
+                onClick={() => setIdea(ex)}
+                className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 transition hover:border-cyan-400/40 hover:text-cyan-100"
+              >
+                {ex.slice(0, 48)}…
+              </button>
+            ))}
+          </div>
+
+          {error && (
+            <div className="mt-4">
+              <p className="text-sm text-red-400">{error}</p>
+              {limitReached && (
+                <Link
+                  href="/pricing"
+                  className="mt-2 inline-block text-sm font-semibold text-cyan-300 hover:underline"
+                >
+                  Посмотреть тариф Pro →
+                </Link>
+              )}
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={create}
+              disabled={loading || idea.trim().length < 10}
+              className="rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 px-8 py-3 font-semibold text-black shadow-[0_0_28px_rgba(77,214,255,0.35)] disabled:opacity-50"
+            >
+              {loading ? "Создание..." : "Начать проектирование →"}
+            </button>
+            <Link
+              href="/dashboard/design-engine"
+              className="rounded-full border border-cyan-400/35 px-6 py-3 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/10"
+            >
+              3D Design Engine
+            </Link>
+          </div>
+        </div>
+      </motion.div>
+    </div>
   );
 }

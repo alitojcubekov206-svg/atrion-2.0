@@ -495,20 +495,27 @@ export async function generate3DConcept(
 
   try {
     const result = await chatJSON<unknown>(
-      `You are Atrion AI Design Engine — a holographic conceptual industrial designer.
-Turn the user's idea into a coherent 3D concept assembled from 8–28 primitives.
+      `You are Atrion AI Design Engine — Tony Stark workshop style holographic CAD.
+Turn the user's idea into ONE recognizable complete object silhouette using 12–28 primitives.
 This is visualization only, never construction-ready engineering.
 Use the same language as the user. Return only valid JSON.
 
-Design quality rules:
-- Build a readable semantic structure (foundation/base → primary volumes → openings → details)
-- Prefer realistic proportions; keep the whole model centered near [0,0,0]
-- dimensions between 0.1 and 40
+CRITICAL SILHOUETTE RULES (Iron Man suit assembly mindset):
+- The assembled model MUST look like the real thing at a glance (school → school massing, house → house, bridge → bridge). NEVER a scattered pile of floating boxes.
+- Start with 1–3 primary mass volumes that form 70–85% of the silhouette (main block / wings / tower). Attach secondary parts flush to those volumes.
+- Parts must touch or slightly overlap adjacent parts (0–0.05 gap max). No floating orphan boxes in empty air when assembled.
+- Windows/doors are thin panels flush on wall faces (z or x offset = wall face ± half wall thickness), never random mid-air slabs.
+- Roofs sit ON TOP of walls (y = wall_top + half_roof_thickness). Pitched roofs = 1–2 rotated thin boxes.
+- Foundation slightly larger than footprint, under the main volume.
+- Center the whole composition near [0, y_ground, 0]; ground plane conceptually at y ≈ -1.5 in the viewer.
+- Prefer realistic proportions (school ~25–60m long, 2–4 storeys; house ~8–16m; desk ~1.2–1.8m).
+- dimensions between 0.1 and 60; part count 12–28 for buildings, 8–18 for furniture/products.
 - Each part needs role and group for the structure tree
 - shape is "box" or "cylinder"
 - position, size and rotation are arrays of exactly 3 finite numbers (rotation in radians)
 - box size = [width, height, depth]; cylinder size = [radius, height, radius]
 - six-digit hex colors with material-appropriate tones
+- For a school: main classroom block + side wing OR entrance pavilion, flat/hip roof, regular window grid on long facade, central entrance door + steps, flagpole optional, canopy over entrance.
 
 JSON shape:
 {
@@ -545,6 +552,8 @@ JSON shape:
 Discovery answers:
 ${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n")}
 
+When assembled, a stranger must instantly recognize the object type from silhouette alone.
+Parts will later explode/reassemble in air like an Iron Man suit — so each part should be a clear logical module (foundation, wing A, window row, roof slab, canopy…).
 Include realistic part quantities, required tools/equipment, prerequisites, 5-10 ordered
 assembly steps, advantages, disadvantages, risks and a rough cost range in Kyrgyz som (KGS).
 Never claim that the model is structurally certified.`
@@ -568,9 +577,9 @@ export async function refine3DConcept(
   try {
     const selected = concept.parts.find((part) => part.id === selectedPartId);
     const result = await chatJSON<unknown>(
-      `You are Atrion AI Design Engine refining an existing conceptual 3D model.
+      `You are Atrion AI Design Engine refining an existing conceptual 3D model in Stark HUD style.
 Apply the user's edit instruction carefully. Keep valid JSON only.
-Preserve ids when possible. Keep shape box|cylinder, hex colors, and centered geometry.
+Preserve ids when possible. Keep shape box|cylinder, hex colors, and a coherent assembled silhouette (parts must stay attached, not float apart).
 If a part is selected, prioritize editing that part unless the instruction is global.
 Return the full ThreeDConcept object with the same schema as generation, including role/group/structure.`,
       `Current concept JSON:
@@ -594,7 +603,7 @@ function normalize3DConcept(value: unknown): ThreeDConcept {
   if (!value || typeof value !== "object") return mock3DConcept("3D concept");
   const raw = value as Partial<ThreeDConcept>;
   const safeNumber = (n: unknown, fallback = 1) =>
-    typeof n === "number" && Number.isFinite(n) ? Math.max(-20, Math.min(20, n)) : fallback;
+    typeof n === "number" && Number.isFinite(n) ? Math.max(-80, Math.min(80, n)) : fallback;
   const safeMoney = (n: unknown) =>
     typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
   const safeText = (value: unknown, fallback: string) =>
@@ -762,6 +771,11 @@ function normalize3DConcept(value: unknown): ThreeDConcept {
 }
 
 function mock3DConcept(prompt: string): ThreeDConcept {
+  const lower = prompt.toLowerCase();
+  if (/школ|school|лицей|гимназ|образоват/i.test(lower)) {
+    return mockSchoolBuilding(prompt);
+  }
+
   return {
     name: prompt.length > 50 ? `${prompt.slice(0, 47)}...` : prompt,
     description: "Концептуальная модульная конструкция, созданная Atrion AI Design Engine.",
@@ -809,6 +823,289 @@ function mock3DConcept(prompt: string): ThreeDConcept {
       { risk: "Неверные нагрузки", severity: "High", mitigation: "Расчёт инженера" },
     ],
     engineeringNotes: ["Проверить фундамент", "Уточнить климатические нагрузки"],
+    disclaimer: "Концептуальная модель Atrion AI Design Engine.",
+  };
+}
+
+/** Coherent school massing — readable as a school when assembled */
+function mockSchoolBuilding(prompt: string): ThreeDConcept {
+  const name =
+    prompt.length > 4 && prompt.length <= 50
+      ? prompt
+      : "Школа — концептуальный корпус";
+  return {
+    name,
+    description:
+      "Цельный силуэт школьного корпуса: главный блок, крыло, входная группа, кровля и регулярные окна.",
+    units: "m",
+    dimensions: { width: 36, height: 12.5, depth: 16 },
+    structure: [
+      { id: "foundation", label: "Foundation", partIds: ["plinth"] },
+      {
+        id: "mass",
+        label: "Primary Mass",
+        partIds: ["main-block", "wing-east", "entrance-pavilion"],
+      },
+      { id: "roof", label: "Roof", partIds: ["roof-main", "roof-wing", "canopy"] },
+      {
+        id: "facade",
+        label: "Facade",
+        partIds: [
+          "win-row-1",
+          "win-row-2",
+          "win-row-3",
+          "win-wing-1",
+          "win-wing-2",
+          "door",
+          "steps",
+          "flagpole",
+        ],
+      },
+    ],
+    parts: [
+      {
+        id: "plinth",
+        name: "Цоколь",
+        shape: "box",
+        role: "foundation",
+        group: "Foundation",
+        parentId: null,
+        position: [0, -0.35, 0],
+        size: [36.5, 0.7, 16.4],
+        rotation: [0, 0, 0],
+        color: "#3d4a5c",
+        material: "Железобетон",
+        quantity: 1,
+      },
+      {
+        id: "main-block",
+        name: "Главный учебный блок",
+        shape: "box",
+        role: "volume",
+        group: "Primary Mass",
+        parentId: "plinth",
+        position: [-4, 4.2, 0],
+        size: [24, 9.5, 14],
+        rotation: [0, 0, 0],
+        color: "#c5d0dc",
+        material: "Штукатурка / кирпич",
+        quantity: 1,
+      },
+      {
+        id: "wing-east",
+        name: "Крыло спортзала",
+        shape: "box",
+        role: "volume",
+        group: "Primary Mass",
+        parentId: "main-block",
+        position: [14, 3.4, 1.5],
+        size: [10, 7.8, 11],
+        rotation: [0, 0, 0],
+        color: "#b0bec9",
+        material: "Штукатурка",
+        quantity: 1,
+      },
+      {
+        id: "entrance-pavilion",
+        name: "Входной павильон",
+        shape: "box",
+        role: "volume",
+        group: "Primary Mass",
+        parentId: "main-block",
+        position: [-4, 2.6, 8.2],
+        size: [8, 5.8, 3.2],
+        rotation: [0, 0, 0],
+        color: "#9eb0c0",
+        material: "Штукатурка / стекло",
+        quantity: 1,
+      },
+      {
+        id: "roof-main",
+        name: "Кровля главного блока",
+        shape: "box",
+        role: "roof",
+        group: "Roof",
+        parentId: "main-block",
+        position: [-4, 9.2, 0],
+        size: [25, 0.45, 15],
+        rotation: [0, 0, 0],
+        color: "#1a2330",
+        material: "Мембрана / металл",
+        quantity: 1,
+      },
+      {
+        id: "roof-wing",
+        name: "Кровля крыла",
+        shape: "box",
+        role: "roof",
+        group: "Roof",
+        parentId: "wing-east",
+        position: [14, 7.55, 1.5],
+        size: [10.6, 0.4, 11.6],
+        rotation: [0, 0, 0],
+        color: "#1a2330",
+        material: "Мембрана / металл",
+        quantity: 1,
+      },
+      {
+        id: "canopy",
+        name: "Козырёк входа",
+        shape: "box",
+        role: "detail",
+        group: "Roof",
+        parentId: "entrance-pavilion",
+        position: [-4, 5.7, 10.3],
+        size: [9, 0.18, 2.4],
+        rotation: [0, 0, 0],
+        color: "#4dd6ff",
+        material: "Сталь / стекло",
+        quantity: 1,
+      },
+      {
+        id: "win-row-1",
+        name: "Окна 1 этаж",
+        shape: "box",
+        role: "window",
+        group: "Facade",
+        parentId: "main-block",
+        position: [-4, 2.2, 7.08],
+        size: [20, 1.4, 0.12],
+        rotation: [0, 0, 0],
+        color: "#5ec8ff",
+        material: "Стеклопакет",
+        quantity: 12,
+      },
+      {
+        id: "win-row-2",
+        name: "Окна 2 этаж",
+        shape: "box",
+        role: "window",
+        group: "Facade",
+        parentId: "main-block",
+        position: [-4, 5.1, 7.08],
+        size: [20, 1.4, 0.12],
+        rotation: [0, 0, 0],
+        color: "#5ec8ff",
+        material: "Стеклопакет",
+        quantity: 12,
+      },
+      {
+        id: "win-row-3",
+        name: "Окна 3 этаж",
+        shape: "box",
+        role: "window",
+        group: "Facade",
+        parentId: "main-block",
+        position: [-4, 7.9, 7.08],
+        size: [20, 1.4, 0.12],
+        rotation: [0, 0, 0],
+        color: "#5ec8ff",
+        material: "Стеклопакет",
+        quantity: 12,
+      },
+      {
+        id: "win-wing-1",
+        name: "Окна крыла низ",
+        shape: "box",
+        role: "window",
+        group: "Facade",
+        parentId: "wing-east",
+        position: [14, 2.4, 7.08],
+        size: [8, 1.6, 0.12],
+        rotation: [0, 0, 0],
+        color: "#7ad4ff",
+        material: "Стеклопакет",
+        quantity: 6,
+      },
+      {
+        id: "win-wing-2",
+        name: "Окна крыла верх",
+        shape: "box",
+        role: "window",
+        group: "Facade",
+        parentId: "wing-east",
+        position: [14, 5.4, 7.08],
+        size: [8, 1.6, 0.12],
+        rotation: [0, 0, 0],
+        color: "#7ad4ff",
+        material: "Стеклопакет",
+        quantity: 6,
+      },
+      {
+        id: "door",
+        name: "Главный вход",
+        shape: "box",
+        role: "door",
+        group: "Facade",
+        parentId: "entrance-pavilion",
+        position: [-4, 1.4, 9.85],
+        size: [2.4, 2.8, 0.15],
+        rotation: [0, 0, 0],
+        color: "#0b3a55",
+        material: "Алюминий / стекло",
+        quantity: 1,
+      },
+      {
+        id: "steps",
+        name: "Крыльцо",
+        shape: "box",
+        role: "detail",
+        group: "Facade",
+        parentId: "entrance-pavilion",
+        position: [-4, 0.15, 10.6],
+        size: [6, 0.35, 2.2],
+        rotation: [0, 0, 0],
+        color: "#6b7788",
+        material: "Гранит / бетон",
+        quantity: 1,
+      },
+      {
+        id: "flagpole",
+        name: "Флагшток",
+        shape: "cylinder",
+        role: "detail",
+        group: "Facade",
+        parentId: null,
+        position: [-10, 4.5, 9.5],
+        size: [0.08, 9, 0.08],
+        rotation: [0, 0, 0],
+        color: "#94a3b8",
+        material: "Сталь",
+        quantity: 1,
+      },
+    ],
+    materials: [
+      { name: "Железобетон", specification: "C30/37", estimatedQuantity: "По расчёту", reason: "Каркас и цоколь" },
+      { name: "Стеклопакет", specification: "Энергосберегающий", estimatedQuantity: "Окна по фасаду", reason: "Естественный свет классов" },
+    ],
+    equipment: [
+      { name: "Башенный кран", purpose: "Монтаж каркаса", access: "rent" },
+      { name: "Фасадные леса", purpose: "Отделка", access: "rent" },
+    ],
+    requirements: ["Генплан участка", "Нормы школ", "Инженерные сети"],
+    assemblySteps: [
+      "Цоколь и фундамент",
+      "Главный учебный блок",
+      "Крыло",
+      "Входная группа",
+      "Кровля и козырёк",
+      "Оконные ряды",
+      "Крыльцо и флагшток",
+    ],
+    costEstimate: {
+      currency: "KGS",
+      minimum: 28000000,
+      maximum: 65000000,
+      breakdown: [
+        { item: "Каркас и стены", quantity: "Объект", estimatedCost: 32000000 },
+        { item: "Фасад и окна", quantity: "Комплект", estimatedCost: 9000000 },
+      ],
+      note: "Ориентировочная оценка Atrion Design Engine для концепта.",
+    },
+    advantages: ["Читаемый силуэт школы", "Модули для explode/assemble", "Регулярный фасад"],
+    disadvantages: ["Концепт, не BIM", "Нужна проверка инженера и норм"],
+    risks: [{ risk: "Неверные нагрузки", severity: "High", mitigation: "Расчёт инженера" }],
+    engineeringNotes: ["Проверить эвакуацию и нормы школ", "Уточнить сейсмику"],
     disclaimer: "Концептуальная модель Atrion AI Design Engine.",
   };
 }

@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { DrawingView } from "@/components/three/ConceptViewer";
 import type { InterviewQuestion, ThreeDConcept } from "@/lib/types";
@@ -19,13 +19,13 @@ const PIPELINE = [
   "Generating Geometry",
   "Adding Materials",
   "Optimization",
-  "Project Ready",
+  "Assembling Model",
 ] as const;
 
 const EXAMPLES = [
+  "Школа на 600 учеников: главный корпус, крыло спортзала, вход с козырьком",
   "Современный двухэтажный дом 12×9 м с панорамными окнами",
   "Пешеходный мост 18 м из стали и дерева",
-  "Минималистичный письменный стол с полками",
 ];
 
 type ChatMessage = { role: "user" | "assistant"; text: string };
@@ -40,17 +40,28 @@ export default function DesignEnginePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<DrawingView>("perspective");
   const [exploded, setExploded] = useState(false);
+  const [assembling, setAssembling] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pipelineStep, setPipelineStep] = useState(-1);
   const [error, setError] = useState<string | null>(null);
   const [limitReached, setLimitReached] = useState(false);
+  const assembleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      text: "Я Atrion Core. Опиши объект обычным языком — соберу структуру, геометрию и материалы.",
+      text: "Я Atrion Core. Опиши объект — соберу цельный силуэт и соберу его в воздухе, как костюм Stark.",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
+
+  function playAssemble(next: ThreeDConcept) {
+    if (assembleTimer.current) clearTimeout(assembleTimer.current);
+    setExploded(false);
+    setView("perspective");
+    setAssembling(true);
+    setConcept(next);
+    assembleTimer.current = setTimeout(() => setAssembling(false), 3400);
+  }
 
   const selectedPart = concept?.parts.find((part) => part.id === selectedId) ?? null;
   const structure = useMemo(() => {
@@ -127,12 +138,12 @@ export default function DesignEnginePage() {
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.concept) {
         setPipelineStep(PIPELINE.length - 1);
-        setConcept(data.concept);
+        playAssemble(data.concept);
         setChat((prev) => [
           ...prev,
           {
             role: "assistant",
-            text: `Готово: ${data.concept.name}. Выбери деталь или скажи, что изменить.`,
+            text: `Готово: ${data.concept.name}. Смотри сборку в воздухе — потом Exploded разберёт модули. Выбери деталь или скажи, что изменить.`,
           },
         ]);
       } else {
@@ -168,10 +179,10 @@ export default function DesignEnginePage() {
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.concept) {
-        setConcept(data.concept);
+        playAssemble(data.concept);
         setChat((prev) => [
           ...prev,
-          { role: "assistant", text: "Правка применена. Можешь продолжать редактирование." },
+          { role: "assistant", text: "Правка применена. Модель пересобрана. Можешь продолжать." },
         ]);
       } else {
         setError(data.error ?? "Не удалось применить правку.");
@@ -197,21 +208,23 @@ export default function DesignEnginePage() {
             onSelect={setSelectedId}
             view={view}
             exploded={exploded}
-            autoRotate={!loading && view === "perspective" && !exploded}
+            assembling={assembling}
+            autoRotate={!loading && !assembling && view === "perspective" && !exploded}
             className="h-full"
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center px-6">
             <div className="holo-ring mb-8" />
             <p className="text-xs uppercase tracking-[0.35em] text-cyan-300/70">
-              Atrion AI Design Engine
+              Atrion · Stark Workshop
             </p>
             <h1 className="mt-3 max-w-2xl text-center text-3xl font-semibold tracking-tight md:text-5xl">
-              Программа понимает человека
-              <span className="block text-cyan-300/90">и создаёт вместе с ним</span>
+              Цельный объект. Сборка в воздухе.
+              <span className="block text-cyan-300/90">Разборка как костюм Iron Man</span>
             </h1>
             <p className="mt-4 max-w-xl text-center text-sm text-slate-400">
-              Опиши здание, мост или изделие. Engine соберёт структуру, геометрию и материалы.
+              Школа = силуэт школы, не куча коробок. Опиши объект — Engine соберёт модули и сведёт их
+              в один объём.
             </p>
             <div className="mt-8 flex w-full max-w-2xl flex-col gap-3">
               <textarea
@@ -276,13 +289,27 @@ export default function DesignEnginePage() {
               type="button"
               onClick={() => {
                 setView("perspective");
+                setAssembling(false);
                 setExploded((value) => !value);
               }}
               className={`rounded-full px-3 py-1.5 text-xs ${
                 exploded ? "bg-cyan-400/20 text-cyan-100" : "text-slate-400 hover:text-white"
               }`}
             >
-              Exploded
+              {exploded ? "Assemble" : "Explode"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!concept) return;
+                setExploded(false);
+                setAssembling(true);
+                if (assembleTimer.current) clearTimeout(assembleTimer.current);
+                assembleTimer.current = setTimeout(() => setAssembling(false), 3400);
+              }}
+              className="rounded-full px-3 py-1.5 text-xs text-slate-400 hover:text-white"
+            >
+              Replay assemble
             </button>
             <button
               type="button"
