@@ -60,7 +60,7 @@ export default function NewProjectPage() {
           </h1>
           <p className="mt-2 text-sm text-slate-400">
             Одно-два предложения достаточно. Дальше AI проведёт интервью и спроектирует всё сам.
-            Для зданий открой Design Engine — там 3D в стиле Stark.
+            Для зданий открой Design Engine.
           </p>
 
           <textarea

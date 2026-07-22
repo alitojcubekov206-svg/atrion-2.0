@@ -9,16 +9,6 @@ import type { ModelPart, ThreeDConcept } from "@/lib/types";
 
 export type DrawingView = "perspective" | "top" | "front" | "side";
 
-function explodeOffset(part: ModelPart, amount: number): [number, number, number] {
-  const len = Math.hypot(part.position[0], part.position[1] * 0.4, part.position[2]) || 1;
-  const boost = 0.55 + Math.min(1.8, Math.max(...part.size) * 0.35);
-  return [
-    (part.position[0] / len) * amount * boost * 2.2,
-    (part.position[1] / len) * amount * boost * 1.4 + amount * 0.35,
-    (part.position[2] / len) * amount * boost * 2.2,
-  ];
-}
-
 function CameraRig({ view, maxDimension }: { view: DrawingView; maxDimension: number }) {
   const { camera } = useThree();
   useEffect(() => {
@@ -47,54 +37,25 @@ function SoftSpin({ enabled, children }: { enabled: boolean; children: ReactNode
   const ref = useRef<Group>(null);
   useFrame((_, delta) => {
     if (!enabled || !ref.current) return;
-    ref.current.rotation.y += delta * 0.05;
+    ref.current.rotation.y += delta * 0.04;
   });
   return <group ref={ref}>{children}</group>;
 }
 
-function AnimatedPart({
+function PartMesh({
   part,
   selected,
-  exploded,
-  assembling,
   onSelect,
 }: {
   part: ModelPart;
   selected: boolean;
-  exploded: boolean;
-  assembling: boolean;
   onSelect: () => void;
 }) {
-  const mesh = useRef<THREE.Mesh>(null);
-  const progress = useRef(exploded ? 0 : 1);
-
-  useEffect(() => {
-    if (assembling) progress.current = 0;
-  }, [assembling, part.id]);
-
-  useFrame((_, delta) => {
-    if (!mesh.current) return;
-    const target = exploded ? 0 : 1;
-    progress.current = THREE.MathUtils.damp(
-      progress.current,
-      target,
-      assembling ? 0.85 : 2.3,
-      delta
-    );
-    const [ox, oy, oz] = explodeOffset(part, 1 - progress.current);
-    mesh.current.position.set(
-      part.position[0] + ox,
-      part.position[1] + oy,
-      part.position[2] + oz
-    );
-  });
-
   const glass = /стекл|glass/i.test(part.material);
   const metal = /стал|металл|алюмин|metal/i.test(part.material);
 
   return (
     <mesh
-      ref={mesh}
       position={part.position}
       rotation={part.rotation}
       onClick={(event) => {
@@ -111,19 +72,18 @@ function AnimatedPart({
       )}
       <meshStandardMaterial
         color={part.color}
-        emissive={selected ? part.color : glass ? part.color : "#02080f"}
-        emissiveIntensity={selected ? 0.55 : glass ? 0.25 : 0.06}
-        roughness={glass ? 0.05 : metal ? 0.28 : 0.48}
-        metalness={metal ? 0.78 : glass ? 0.08 : 0.16}
+        emissive={selected ? part.color : glass ? part.color : "#1a1028"}
+        emissiveIntensity={selected ? 0.45 : glass ? 0.35 : 0.08}
+        roughness={glass ? 0.08 : metal ? 0.3 : 0.5}
+        metalness={metal ? 0.7 : glass ? 0.05 : 0.15}
         transparent={glass}
-        opacity={glass ? 0.42 : 1}
+        opacity={glass ? 0.45 : 1}
       />
-      <Edges color={selected ? "#e8fbff" : "#0a1520"} threshold={16} />
+      <Edges color={selected ? "#f5e9ff" : "#120a1c"} threshold={16} />
       {selected && (
         <Html center position={[0, Math.max(0.5, part.size[1] / 2 + 0.45), 0]} distanceFactor={10}>
-          <div className="pointer-events-none whitespace-nowrap rounded-md border border-violet-300/50 bg-black/80 px-3 py-1.5 text-[11px] tracking-wide text-violet-50 shadow-[0_0_20px_rgba(167,139,250,0.4)]">
+          <div className="pointer-events-none whitespace-nowrap rounded-md border border-violet-300/40 bg-black/80 px-3 py-1.5 text-[11px] tracking-wide text-violet-50">
             <span className="font-semibold">{part.name}</span>
-            <span className="ml-2 text-violet-200/60">{part.material}</span>
           </div>
         </Html>
       )}
@@ -136,22 +96,15 @@ export default function ConceptViewer({
   selectedId,
   onSelect,
   view = "perspective",
-  exploded = false,
-  assembling = false,
   className = "",
   autoRotate = false,
-  showHint = true,
 }: {
   concept: ThreeDConcept;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   view?: DrawingView;
-  exploded?: boolean;
-  /** Play Iron Man style assembly from exploded → solid */
-  assembling?: boolean;
   className?: string;
   autoRotate?: boolean;
-  showHint?: boolean;
 }) {
   const maxDimension = useMemo(
     () =>
@@ -166,18 +119,7 @@ export default function ConceptViewer({
 
   return (
     <div className={`relative h-full min-h-[420px] overflow-hidden bg-[#09060f] ${className}`}>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(167,139,250,0.16),transparent_55%)]" />
-      {showHint && (
-        <div className="pointer-events-none absolute left-4 top-4 z-10 rounded border border-violet-400/25 bg-black/50 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-violet-100/80 backdrop-blur">
-          {assembling
-            ? "ASSEMBLING STRUCTURE…"
-            : exploded
-              ? "EXPLODED MODE · PARTS IN AIR"
-              : view === "perspective"
-                ? "ORBIT · ZOOM · SELECT PART"
-                : "ARCHITECTURAL DRAWING"}
-        </div>
-      )}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(167,139,250,0.14),transparent_55%)]" />
       <Canvas
         key={view}
         shadows={view === "perspective"}
@@ -204,15 +146,13 @@ export default function ConceptViewer({
         <pointLight position={[-10, 8, -6]} intensity={95} color="#a78bfa" distance={40} decay={1.5} />
         <pointLight position={[8, 4, 10]} intensity={70} color="#e879f9" distance={35} decay={1.5} />
 
-        <SoftSpin enabled={autoRotate && view === "perspective" && !exploded && !assembling}>
+        <SoftSpin enabled={autoRotate && view === "perspective"}>
           <group position={[0, 0.05, 0]}>
             {concept.parts.map((part) => (
-              <AnimatedPart
+              <PartMesh
                 key={part.id}
                 part={part}
                 selected={part.id === selectedId}
-                exploded={exploded}
-                assembling={assembling}
                 onSelect={() => onSelect(part.id)}
               />
             ))}
@@ -234,7 +174,7 @@ export default function ConceptViewer({
               fadeStrength={1}
               infiniteGrid
             />
-            <ContactShadows position={[0, -1.45, 0]} opacity={0.55} scale={32} blur={2.8} far={12} />
+            <ContactShadows position={[0, -1.45, 0]} opacity={0.5} scale={32} blur={2.8} far={12} />
           </>
         )}
         <OrbitControls

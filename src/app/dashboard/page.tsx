@@ -50,7 +50,7 @@ export default async function DashboardPage() {
             <p className="mt-2 text-sm text-slate-400">
               {projects.length > 0
                 ? `${projects.length} проект(ов), ${generated.length} с готовым планом`
-                : "Создай проект или открой Design Engine — 3D-студия в стиле Stark"}
+                : "Создай проект или открой Design Engine"}
               {!isPro &&
                 ` · ${Math.min(projects.length, FREE_PROJECT_LIMIT)} / ${FREE_PROJECT_LIMIT} free`}
             </p>
@@ -95,14 +95,13 @@ export default async function DashboardPage() {
           <div className="relative flex flex-wrap items-center justify-between gap-6">
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-violet-300/80">
-                Stark Lab · Full 3D
+                Design Engine
               </p>
               <h2 className="mt-3 font-[family-name:var(--font-display)] text-2xl font-semibold md:text-3xl">
-                Atrion AI Design Engine
+                Just build it.
               </h2>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-400">
-                Школа выглядит как школа. Части летают в воздухе как костюм Тони Старка — разборка и
-                сборка. Орбита, чертежи, chat-правки.
+                Опиши дом или школу — получишь цельную 3D-модель, не кучу коробок.
               </p>
             </div>
             <span className="rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500 px-6 py-2.5 text-sm font-semibold text-black shadow-[0_0_28px_rgba(167,139,250,0.35)]">

@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { DrawingView } from "@/components/three/ConceptViewer";
 import type { InterviewQuestion, ThreeDConcept } from "@/lib/types";
@@ -14,17 +14,16 @@ const ConceptViewer = dynamic(() => import("@/components/three/ConceptViewer"), 
 });
 
 const PIPELINE = [
-  "Analyzing Request",
-  "Creating Structure Tree",
-  "Generating Geometry",
-  "Adding Materials",
-  "Optimization",
-  "Assembling Model",
+  "Analyzing",
+  "Structure",
+  "Geometry",
+  "Materials",
+  "Ready",
 ] as const;
 
 const EXAMPLES = [
-  "Школа на 600 учеников: главный корпус, крыло спортзала, вход с козырьком",
-  "Современный двухэтажный дом 12×9 м с панорамными окнами",
+  "Двухэтажный дом 12×9 м с двускатной крышей и панорамными окнами",
+  "Школа: главный корпус, крыло, вход с козырьком",
   "Пешеходный мост 18 м из стали и дерева",
 ];
 
@@ -39,29 +38,17 @@ export default function DesignEnginePage() {
   const [concept, setConcept] = useState<ThreeDConcept | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<DrawingView>("perspective");
-  const [exploded, setExploded] = useState(false);
-  const [assembling, setAssembling] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pipelineStep, setPipelineStep] = useState(-1);
   const [error, setError] = useState<string | null>(null);
   const [limitReached, setLimitReached] = useState(false);
-  const assembleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      text: "Я Atrion Core. Опиши объект — соберу цельный силуэт и соберу его в воздухе, как костюм Stark.",
+      text: "Опиши объект — соберу цельную 3D-модель. Дом будет выглядеть как дом.",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
-
-  function playAssemble(next: ThreeDConcept) {
-    if (assembleTimer.current) clearTimeout(assembleTimer.current);
-    setExploded(false);
-    setView("perspective");
-    setAssembling(true);
-    setConcept(next);
-    assembleTimer.current = setTimeout(() => setAssembling(false), 3400);
-  }
 
   const selectedPart = concept?.parts.find((part) => part.id === selectedId) ?? null;
   const structure = useMemo(() => {
@@ -82,7 +69,7 @@ export default function DesignEnginePage() {
   async function runPipelineVisual() {
     for (let i = 0; i < PIPELINE.length - 1; i++) {
       setPipelineStep(i);
-      await new Promise((resolve) => setTimeout(resolve, 280));
+      await new Promise((resolve) => setTimeout(resolve, 220));
     }
   }
 
@@ -105,10 +92,7 @@ export default function DesignEnginePage() {
         setQuestions(data.questions);
         setChat((prev) => [
           ...prev,
-          {
-            role: "assistant",
-            text: "Уточню несколько параметров перед генерацией геометрии.",
-          },
+          { role: "assistant", text: "Несколько уточнений — и соберу модель." },
         ]);
       } else {
         setError(data.error ?? "Не удалось подготовить вопросы.");
@@ -138,12 +122,12 @@ export default function DesignEnginePage() {
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.concept) {
         setPipelineStep(PIPELINE.length - 1);
-        playAssemble(data.concept);
+        setConcept(data.concept);
         setChat((prev) => [
           ...prev,
           {
             role: "assistant",
-            text: `Готово: ${data.concept.name}. Смотри сборку в воздухе — потом Exploded разберёт модули. Выбери деталь или скажи, что изменить.`,
+            text: `Готово: ${data.concept.name}. Выбери деталь или напиши, что изменить.`,
           },
         ]);
       } else {
@@ -179,10 +163,10 @@ export default function DesignEnginePage() {
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.concept) {
-        playAssemble(data.concept);
+        setConcept(data.concept);
         setChat((prev) => [
           ...prev,
-          { role: "assistant", text: "Правка применена. Модель пересобрана. Можешь продолжать." },
+          { role: "assistant", text: "Готово. Можешь продолжать." },
         ]);
       } else {
         setError(data.error ?? "Не удалось применить правку.");
@@ -199,7 +183,6 @@ export default function DesignEnginePage() {
 
   return (
     <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex bg-[#09060f] text-slate-100">
-      {/* Viewer */}
       <div className={`relative min-w-0 flex-1 ${panelOpen ? "md:w-[80%]" : "w-full"}`}>
         {concept ? (
           <ConceptViewer
@@ -207,31 +190,23 @@ export default function DesignEnginePage() {
             selectedId={selectedId}
             onSelect={setSelectedId}
             view={view}
-            exploded={exploded}
-            assembling={assembling}
-            autoRotate={!loading && !assembling && view === "perspective" && !exploded}
+            autoRotate={!loading && view === "perspective"}
             className="h-full"
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center px-6">
-            <div className="holo-ring mb-8" />
-            <p className="text-xs uppercase tracking-[0.35em] text-violet-300/70">
-              Atrion · Stark Workshop
-            </p>
-            <h1 className="mt-3 max-w-2xl text-center text-3xl font-semibold tracking-tight md:text-5xl">
-              Цельный объект. Сборка в воздухе.
-              <span className="block text-violet-300/90">Разборка как костюм Iron Man</span>
+            <h1 className="max-w-2xl text-center font-[family-name:var(--font-display)] text-4xl font-semibold tracking-tight md:text-5xl">
+              Just build it.
             </h1>
-            <p className="mt-4 max-w-xl text-center text-sm text-slate-400">
-              Школа = силуэт школы, не куча коробок. Опиши объект — Engine соберёт модули и сведёт их
-              в один объём.
+            <p className="mt-4 max-w-lg text-center text-sm text-slate-400">
+              Опиши дом, школу или мост — получишь цельную 3D-модель.
             </p>
             <div className="mt-8 flex w-full max-w-2xl flex-col gap-3">
               <textarea
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 rows={3}
-                placeholder="Например: двухэтажный дом 12×9 с панорамными окнами на юг..."
+                placeholder="Двухэтажный дом 12×9 с панорамными окнами…"
                 className="w-full resize-none rounded-2xl border border-violet-400/20 bg-white/5 px-5 py-4 text-sm outline-none backdrop-blur focus:border-violet-300/50"
               />
               <div className="flex flex-wrap gap-2">
@@ -242,7 +217,7 @@ export default function DesignEnginePage() {
                     onClick={() => setPrompt(example)}
                     className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:border-violet-400/40 hover:text-violet-100"
                   >
-                    {example}
+                    {example.slice(0, 42)}…
                   </button>
                 ))}
               </div>
@@ -252,13 +227,12 @@ export default function DesignEnginePage() {
                 onClick={startInterview}
                 className="rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500 px-6 py-3 text-sm font-semibold text-black shadow-[0_0_30px_rgba(167,139,250,0.35)] disabled:opacity-40"
               >
-                {loading ? "Анализ…" : "Запустить Design Engine →"}
+                {loading ? "…" : "Создать →"}
               </button>
             </div>
           </div>
         )}
 
-        {/* Camera toolbar */}
         {concept && (
           <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-full border border-white/10 bg-black/50 px-3 py-2 backdrop-blur-xl">
             {(
@@ -272,12 +246,9 @@ export default function DesignEnginePage() {
               <button
                 key={value}
                 type="button"
-                onClick={() => {
-                  setView(value);
-                  setExploded(false);
-                }}
+                onClick={() => setView(value)}
                 className={`rounded-full px-3 py-1.5 text-xs ${
-                  view === value && !exploded
+                  view === value
                     ? "bg-violet-400/20 text-violet-100"
                     : "text-slate-400 hover:text-white"
                 }`}
@@ -287,41 +258,14 @@ export default function DesignEnginePage() {
             ))}
             <button
               type="button"
-              onClick={() => {
-                setView("perspective");
-                setAssembling(false);
-                setExploded((value) => !value);
-              }}
-              className={`rounded-full px-3 py-1.5 text-xs ${
-                exploded ? "bg-violet-400/20 text-violet-100" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              {exploded ? "Assemble" : "Explode"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (!concept) return;
-                setExploded(false);
-                setAssembling(true);
-                if (assembleTimer.current) clearTimeout(assembleTimer.current);
-                assembleTimer.current = setTimeout(() => setAssembling(false), 3400);
-              }}
-              className="rounded-full px-3 py-1.5 text-xs text-slate-400 hover:text-white"
-            >
-              Replay assemble
-            </button>
-            <button
-              type="button"
               onClick={() => setPanelOpen((value) => !value)}
               className="rounded-full px-3 py-1.5 text-xs text-slate-400 hover:text-white"
             >
-              {panelOpen ? "Hide panel" : "Show panel"}
+              {panelOpen ? "Hide" : "Panel"}
             </button>
           </div>
         )}
 
-        {/* Pipeline overlay */}
         <AnimatePresence>
           {loading && pipelineStep >= 0 && (
             <motion.div
@@ -330,9 +274,8 @@ export default function DesignEnginePage() {
               exit={{ opacity: 0 }}
               className="absolute inset-0 z-30 flex items-center justify-center bg-[#09060f]/55 backdrop-blur-sm"
             >
-              <div className="w-full max-w-md rounded-3xl border border-violet-400/20 bg-black/60 p-6">
-                <p className="text-xs uppercase tracking-[0.3em] text-violet-300/80">Generation</p>
-                <ul className="mt-4 space-y-2">
+              <div className="w-full max-w-xs rounded-2xl border border-violet-400/20 bg-black/60 p-5">
+                <ul className="space-y-2">
                   {PIPELINE.map((step, index) => (
                     <li
                       key={step}
@@ -341,12 +284,8 @@ export default function DesignEnginePage() {
                       }`}
                     >
                       <span
-                        className={`h-2 w-2 rounded-full ${
-                          index < pipelineStep
-                            ? "bg-violet-300"
-                            : index === pipelineStep
-                              ? "animate-pulse bg-violet-400"
-                              : "bg-slate-700"
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          index <= pipelineStep ? "bg-violet-300" : "bg-slate-700"
                         }`}
                       />
                       {step}
@@ -359,17 +298,13 @@ export default function DesignEnginePage() {
         </AnimatePresence>
       </div>
 
-      {/* Side panel */}
       {panelOpen && (
         <aside className="flex w-full max-w-full flex-col border-l border-violet-400/15 bg-[#120e1a]/92 backdrop-blur-2xl md:w-[min(420px,20%)] md:min-w-[320px]">
           <div className="border-b border-white/5 px-4 py-4">
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.28em] text-violet-300/70">
-                  Atrion Core
-                </p>
-                <h2 className="text-lg font-semibold">AI Design Chat</h2>
-              </div>
+              <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+                ATRION
+              </h2>
               <Link href="/dashboard" className="text-xs text-slate-400 hover:text-white">
                 Exit
               </Link>
@@ -381,17 +316,15 @@ export default function DesignEnginePage() {
               {error}
               {limitReached && (
                 <Link href="/pricing" className="mt-2 block font-semibold text-violet-200 underline">
-                  Перейти на Pro
+                  Pro
                 </Link>
               )}
             </div>
           )}
 
-          {/* Interview */}
           {questions.length > 0 && !concept && (
             <div className="flex-1 overflow-y-auto px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-violet-300/70">Discovery</p>
-              <div className="mt-3 space-y-4">
+              <div className="space-y-4">
                 {questions.map((question) => (
                   <div key={question.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                     <p className="text-sm font-medium">{question.question}</p>
@@ -422,12 +355,11 @@ export default function DesignEnginePage() {
                 onClick={generate}
                 className="mt-4 w-full rounded-full bg-violet-400 py-3 text-sm font-semibold text-black disabled:opacity-40"
               >
-                Создать 3D-модель
+                Создать 3D
               </button>
             </div>
           )}
 
-          {/* Chat + structure after concept */}
           {(concept || questions.length === 0) && (
             <>
               <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
@@ -447,9 +379,7 @@ export default function DesignEnginePage() {
                 {concept && (
                   <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs uppercase tracking-[0.2em] text-violet-300/70">
-                        Structure
-                      </p>
+                      <p className="text-xs text-slate-500">Parts</p>
                       <button
                         type="button"
                         onClick={() => setTreeOpen((value) => !value)}
@@ -462,9 +392,7 @@ export default function DesignEnginePage() {
                       <div className="mt-3 space-y-2">
                         {structure.map((group) => (
                           <div key={group.id}>
-                            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                              {group.label}
-                            </p>
+                            <p className="text-[11px] font-semibold text-slate-500">{group.label}</p>
                             <div className="mt-1 space-y-1">
                               {group.partIds.map((partId) => {
                                 const part = concept.parts.find((item) => item.id === partId);
@@ -495,11 +423,7 @@ export default function DesignEnginePage() {
                 {selectedPart && (
                   <div className="rounded-2xl border border-violet-400/20 bg-violet-400/5 p-3 text-xs text-slate-300">
                     <p className="font-semibold text-violet-100">{selectedPart.name}</p>
-                    <p className="mt-1">Материал: {selectedPart.material}</p>
-                    <p>
-                      Размер: {selectedPart.size.map((n) => n.toFixed(2)).join(" × ")}{" "}
-                      {concept?.units}
-                    </p>
+                    <p className="mt-1">{selectedPart.material}</p>
                   </div>
                 )}
               </div>
@@ -518,7 +442,7 @@ export default function DesignEnginePage() {
                       }
                       className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-slate-300"
                     >
-                      Export JSON
+                      Export
                     </button>
                     <button
                       type="button"
@@ -531,7 +455,7 @@ export default function DesignEnginePage() {
                       }}
                       className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-slate-300"
                     >
-                      New object
+                      New
                     </button>
                   </div>
                 )}
@@ -539,11 +463,7 @@ export default function DesignEnginePage() {
                   <input
                     value={chatInput}
                     onChange={(event) => setChatInput(event.target.value)}
-                    placeholder={
-                      concept
-                        ? "Сделай окна панорамными / увеличь на 30%..."
-                        : "Сначала создай объект"
-                    }
+                    placeholder={concept ? "Сделай окна шире…" : "Сначала создай объект"}
                     disabled={!concept || loading}
                     className="flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm outline-none focus:border-violet-400/40 disabled:opacity-40"
                   />

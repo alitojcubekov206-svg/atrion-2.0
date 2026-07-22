@@ -36,14 +36,8 @@ function AssemblingTower() {
       if (!mesh) return;
       const base = parts[i];
       if (!base) return;
-      const breathe = Math.sin(t * 0.9 + i * 0.7) * 0.04;
-      const assemble = (Math.sin(t * 0.35 + i) + 1) * 0.5;
-      const fly = (1 - assemble) * (0.35 + i * 0.08);
-      mesh.position.set(
-        base.pos[0] * (1 + fly * 0.08) + Math.sin(t * 0.5 + i) * fly * 0.15,
-        base.pos[1] + breathe + fly * 0.55,
-        base.pos[2] + Math.cos(t * 0.4 + i) * fly * 0.12
-      );
+      const breathe = Math.sin(t * 0.7 + i * 0.45) * 0.03;
+      mesh.position.set(base.pos[0], base.pos[1] + breathe, base.pos[2]);
     });
   });
 

@@ -57,55 +57,78 @@ export default function AuthForm({
     const gateInput =
       "w-full border-0 border-b border-white/15 bg-transparent px-1 py-3.5 text-[15px] text-white outline-none transition placeholder:text-slate-500 focus:border-violet-300/70";
 
+    const item = {
+      hidden: { opacity: 0, y: 18 },
+      show: {
+        opacity: 1,
+        y: 0,
+        transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
+      },
+    };
+
     return (
       <motion.form
         onSubmit={onSubmit}
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        initial="hidden"
+        animate="show"
+        variants={{
+          hidden: {},
+          show: { transition: { staggerChildren: 0.1, delayChildren: 0.45 } },
+        }}
         className="mt-10 flex w-full max-w-sm flex-col gap-5"
       >
         {mode === "register" && (
-          <input name="name" placeholder="Имя" required autoComplete="name" className={gateInput} />
+          <motion.div variants={item}>
+            <input name="name" placeholder="Имя" required autoComplete="name" className={gateInput} />
+          </motion.div>
         )}
-        <input
-          name="email"
-          type="email"
-          placeholder="Email"
-          required
-          autoComplete="email"
-          className={gateInput}
-        />
-        <input
-          name="password"
-          type="password"
-          placeholder="Пароль"
-          required
-          minLength={6}
-          autoComplete={mode === "login" ? "current-password" : "new-password"}
-          className={gateInput}
-        />
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        <motion.div variants={item}>
+          <input
+            name="email"
+            type="email"
+            placeholder="Email"
+            required
+            autoComplete="email"
+            className={gateInput}
+          />
+        </motion.div>
+        <motion.div variants={item}>
+          <input
+            name="password"
+            type="password"
+            placeholder="Пароль"
+            required
+            minLength={6}
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
+            className={gateInput}
+          />
+        </motion.div>
+        {error && (
+          <motion.p variants={item} className="text-sm text-red-400">
+            {error}
+          </motion.p>
+        )}
         <motion.button
           type="submit"
           disabled={loading}
+          variants={item}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           className="mt-4 w-full rounded-full bg-gradient-to-r from-violet-300 via-violet-200 to-fuchsia-400 py-3.5 text-sm font-semibold text-black shadow-[0_0_40px_rgba(167,139,250,0.4)] disabled:opacity-60"
         >
           {loading ? "…" : mode === "login" ? "Войти" : "Начать"}
         </motion.button>
-        <p className="pt-2 text-center text-sm text-slate-500">
+        <motion.p variants={item} className="pt-2 text-center text-sm text-slate-500">
           {mode === "login" ? (
             <Link href="/register" className="text-violet-200/80 transition hover:text-violet-100">
-              Создать доступ
+              Создать аккаунт
             </Link>
           ) : (
             <Link href="/login" className="text-violet-200/80 transition hover:text-violet-100">
-              Уже есть доступ
+              Войти
             </Link>
           )}
-        </p>
+        </motion.p>
       </motion.form>
     );
   }
