@@ -4,6 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   Center,
   ContactShadows,
+  Environment,
   Edges,
   Grid,
   Html,
@@ -22,12 +23,11 @@ function explodeOffset(part: ModelPart, amount: number, index = 0): [number, num
   const py = part.position[1];
   const pz = part.position[2];
   let len = Math.hypot(px, py * 0.45, pz);
-  // Parts at center must still fly out in different directions (Iron Man)
   let dirX = px;
   let dirY = py;
   let dirZ = pz;
   if (len < 0.35) {
-    const a = index * 2.399; // golden-angle spread
+    const a = index * 2.399;
     dirX = Math.cos(a);
     dirY = 0.55 + (index % 3) * 0.25;
     dirZ = Math.sin(a);
@@ -44,20 +44,21 @@ function explodeOffset(part: ModelPart, amount: number, index = 0): [number, num
 function CameraRig({ view, maxDimension }: { view: DrawingView; maxDimension: number }) {
   const { camera } = useThree();
   useEffect(() => {
-    const distance = Math.max(12, maxDimension * 1.75);
+    const distance = Math.max(14, maxDimension * 1.55);
+    const lookY = Math.max(1.2, maxDimension * 0.22);
     const positions: Record<DrawingView, [number, number, number]> = {
-      perspective: [distance * 0.95, distance * 0.55, distance * 1.05],
-      top: [0, distance * 1.45, 0.01],
-      front: [0, maxDimension * 0.4, distance * 1.25],
-      side: [distance * 1.25, maxDimension * 0.4, 0],
+      perspective: [distance * 0.9, distance * 0.48, distance * 1.05],
+      top: [0, distance * 1.35, 0.01],
+      front: [0, lookY, distance * 1.2],
+      side: [distance * 1.2, lookY, 0],
     };
     camera.position.set(...positions[view]);
     camera.up.set(0, view === "top" ? 0 : 1, view === "top" ? -1 : 0);
-    camera.lookAt(0, maxDimension * 0.15, 0);
+    camera.lookAt(0, lookY * 0.7, 0);
     if (view !== "perspective" && "zoom" in camera) {
       (camera as THREE.OrthographicCamera).zoom = Math.max(
-        10,
-        Math.min(120, 480 / Math.max(1, maxDimension))
+        8,
+        Math.min(100, 420 / Math.max(1, maxDimension))
       );
     }
     camera.updateProjectionMatrix();
@@ -69,7 +70,7 @@ function SoftSpin({ enabled, children }: { enabled: boolean; children: ReactNode
   const ref = useRef<Group>(null);
   useFrame((_, delta) => {
     if (!enabled || !ref.current) return;
-    ref.current.rotation.y += delta * 0.045;
+    ref.current.rotation.y += delta * 0.035;
   });
   return <group ref={ref}>{children}</group>;
 }
@@ -113,8 +114,8 @@ function AnimatedPart({
     );
   });
 
-  const glass = /стекл|glass/i.test(part.material);
-  const metal = /стал|металл|алюмин|metal/i.test(part.material);
+  const glass = /стекл|glass|витраж/i.test(part.material);
+  const metal = /стал|металл|алюмин|metal|трос/i.test(part.material);
 
   return (
     <mesh
@@ -129,23 +130,24 @@ function AnimatedPart({
       receiveShadow
     >
       {part.shape === "cylinder" ? (
-        <cylinderGeometry args={[part.size[0], part.size[2], part.size[1], 28]} />
+        <cylinderGeometry args={[part.size[0], part.size[2], part.size[1], 32]} />
       ) : (
         <boxGeometry args={part.size} />
       )}
       <meshStandardMaterial
         color={part.color}
-        emissive={selected ? part.color : glass ? part.color : "#1a1408"}
-        emissiveIntensity={selected ? 0.5 : glass ? 0.3 : 0.08}
-        roughness={glass ? 0.08 : metal ? 0.28 : 0.48}
-        metalness={metal ? 0.72 : glass ? 0.05 : 0.18}
+        emissive={selected ? "#f5c518" : glass ? part.color : "#000000"}
+        emissiveIntensity={selected ? 0.35 : glass ? 0.2 : 0}
+        roughness={glass ? 0.12 : metal ? 0.35 : 0.62}
+        metalness={metal ? 0.55 : glass ? 0.15 : 0.08}
         transparent={glass}
-        opacity={glass ? 0.45 : 1}
+        opacity={glass ? 0.55 : 1}
+        envMapIntensity={glass ? 1.4 : metal ? 1.1 : 0.55}
       />
-      <Edges color={selected ? "#ffe566" : "#120e08"} threshold={16} />
+      <Edges color={selected ? "#f5c518" : "#3a3a3a"} threshold={22} />
       {selected && (
-        <Html center position={[0, Math.max(0.5, part.size[1] / 2 + 0.45), 0]} distanceFactor={10}>
-          <div className="pointer-events-none whitespace-nowrap rounded-md border border-amber-400/40 bg-black/80 px-3 py-1.5 text-[11px] text-amber-50">
+        <Html center position={[0, Math.max(0.5, part.size[1] / 2 + 0.45), 0]} distanceFactor={12}>
+          <div className="pointer-events-none whitespace-nowrap rounded-md border border-amber-400/50 bg-black/75 px-3 py-1.5 text-[11px] text-amber-50">
             <span className="font-semibold">{part.name}</span>
           </div>
         </Html>
@@ -197,44 +199,71 @@ export default function ConceptViewer({
     [concept.dimensions]
   );
 
+  const fogNear = Math.max(18, maxDimension * 1.8);
+  const fogFar = Math.max(45, maxDimension * 4.5);
+  const groundY = -Math.max(1.2, maxDimension * 0.02);
+
   return (
-    <div className={`relative h-full min-h-[420px] overflow-hidden bg-[#07060a] ${className}`}>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(245,197,24,0.12),transparent_55%)]" />
-      <div className="pointer-events-none absolute left-4 top-4 z-10 rounded border border-amber-400/25 bg-black/55 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-amber-100/80 backdrop-blur">
+    <div className={`relative h-full min-h-[420px] overflow-hidden bg-[#2b2d33] ${className}`}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.12),transparent_60%)]" />
+      <div className="pointer-events-none absolute left-4 top-4 z-10 rounded border border-white/15 bg-black/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-white/80 backdrop-blur">
         {assembling
           ? "ASSEMBLING…"
           : exploded
-            ? "EXPLODED · IRON MAN MODE"
-            : hasMesh
-              ? "MESH · ORBIT"
-              : "ORBIT · SELECT"}
+            ? "EXPLODED · IRON MAN"
+            : "ORBIT · ZOOM · SELECT"}
       </div>
       <Canvas
-        key={`${view}-${hasMesh ? "mesh" : "parts"}`}
+        key={`${view}-${hasMesh ? "mesh" : "parts"}-${concept.name}`}
         shadows={view === "perspective"}
         orthographic={view !== "perspective"}
-        dpr={[1, 1.5]}
+        dpr={[1, 1.6]}
         camera={
           view === "perspective"
-            ? { position: [12, 7, 14], fov: 38 }
-            : { position: [0, 0, 18], zoom: 36, near: -200, far: 200 }
+            ? { position: [14, 8, 16], fov: 40, near: 0.1, far: 500 }
+            : { position: [0, 0, 20], zoom: 32, near: -400, far: 400 }
         }
         gl={{
           antialias: true,
           powerPreference: "high-performance",
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.2,
+          toneMappingExposure: 1.55,
+          outputColorSpace: THREE.SRGBColorSpace,
         }}
         onPointerMissed={() => onSelect(null)}
       >
         <CameraRig view={view} maxDimension={hasMesh ? 8 : maxDimension} />
-        <color attach="background" args={["#07060a"]} />
-        <fog attach="fog" args={["#07060a", 22, 52]} />
-        <hemisphereLight args={["#fff4d6", "#1a1408", 0.85]} />
-        <ambientLight intensity={0.85} />
-        <directionalLight position={[12, 18, 10]} intensity={3} castShadow color="#fff8e8" />
-        <pointLight position={[-8, 6, -4]} intensity={80} color="#f5c518" distance={36} decay={1.5} />
-        <pointLight position={[6, 3, 8]} intensity={45} color="#a78bfa" distance={30} decay={1.5} />
+        {/* Studio look like Meshy — light gray, not black void */}
+        <color attach="background" args={["#32353c"]} />
+        <fog attach="fog" args={["#32353c", fogNear, fogFar]} />
+
+        <hemisphereLight args={["#ffffff", "#8a909a", 1.35]} />
+        <ambientLight intensity={1.25} />
+        <directionalLight
+          position={[maxDimension * 0.8, maxDimension * 1.4, maxDimension * 0.6]}
+          intensity={2.8}
+          castShadow
+          color="#fff7ea"
+          shadow-mapSize-width={1024}
+          shadow-mapSize-height={1024}
+        />
+        <directionalLight
+          position={[-maxDimension * 0.7, maxDimension * 0.6, -maxDimension * 0.5]}
+          intensity={1.35}
+          color="#d8e4ff"
+        />
+        <directionalLight position={[0, maxDimension * 0.4, maxDimension]} intensity={1.1} color="#ffffff" />
+        <pointLight
+          position={[0, maxDimension * 0.9, 0]}
+          intensity={40}
+          distance={maxDimension * 4}
+          decay={1.6}
+          color="#ffe9b0"
+        />
+
+        <Suspense fallback={null}>
+          <Environment preset="city" />
+        </Suspense>
 
         <SoftSpin
           enabled={autoRotate && view === "perspective" && !exploded && !assembling}
@@ -263,28 +292,35 @@ export default function ConceptViewer({
         {view === "perspective" && (
           <>
             <Grid
-              position={[0, -1.5, 0]}
-              args={[50, 50]}
-              cellSize={0.5}
-              cellThickness={0.45}
-              cellColor="#2a2418"
-              sectionSize={2.5}
-              sectionThickness={1}
-              sectionColor="#8a7010"
-              fadeDistance={32}
+              position={[0, groundY, 0]}
+              args={[Math.max(40, maxDimension * 4), Math.max(40, maxDimension * 4)]}
+              cellSize={Math.max(0.5, maxDimension / 24)}
+              cellThickness={0.6}
+              cellColor="#4a4e56"
+              sectionSize={Math.max(2, maxDimension / 6)}
+              sectionThickness={1.1}
+              sectionColor="#6a707a"
+              fadeDistance={Math.max(28, maxDimension * 3)}
               fadeStrength={1}
               infiniteGrid
             />
-            <ContactShadows position={[0, -1.45, 0]} opacity={0.5} scale={32} blur={2.8} far={12} />
+            <ContactShadows
+              position={[0, groundY + 0.02, 0]}
+              opacity={0.45}
+              scale={Math.max(24, maxDimension * 2.5)}
+              blur={2.5}
+              far={Math.max(10, maxDimension)}
+            />
           </>
         )}
         <OrbitControls
           makeDefault
           enabled={view === "perspective"}
           enablePan
-          minDistance={3}
-          maxDistance={Math.max(28, maxDimension * 3.2)}
-          maxPolarAngle={Math.PI * 0.49}
+          minDistance={2}
+          maxDistance={Math.max(40, maxDimension * 3.5)}
+          maxPolarAngle={Math.PI * 0.495}
+          target={[0, Math.max(1, maxDimension * 0.2), 0]}
         />
       </Canvas>
     </div>

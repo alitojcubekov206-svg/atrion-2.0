@@ -10,7 +10,7 @@ import { download } from "@/lib/export";
 
 const ConceptViewer = dynamic(() => import("@/components/three/ConceptViewer"), {
   ssr: false,
-  loading: () => <div className="h-full animate-pulse bg-[#07060a]" />,
+  loading: () => <div className="h-full animate-pulse bg-[#2b2d33]" />,
 });
 
 const PIPELINE = [
@@ -197,7 +197,7 @@ export default function DesignEnginePage() {
     questions.length > 0 && questions.every((question) => Boolean(answers[question.id]));
 
   return (
-    <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex bg-[#07060a] text-slate-100">
+    <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex bg-[#2b2d33] text-slate-100">
       <div className={`relative min-w-0 flex-1 ${panelOpen ? "md:w-[80%]" : "w-full"}`}>
         {concept ? (
           <ConceptViewer

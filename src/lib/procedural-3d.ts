@@ -114,7 +114,7 @@ export function buildHouse(prompt: string): ThreeDConcept {
       position: [-0.6, 5.95, -1.55],
       size: [11.2, 0.28, 5.4],
       rotation: [0.42, 0, 0],
-      color: "#3d3228",
+      color: "#9a7a3a",
       material: "Черепица",
     }),
     part("roof-r", "Скат крыши R", {
@@ -124,7 +124,7 @@ export function buildHouse(prompt: string): ThreeDConcept {
       position: [-0.6, 5.95, 1.55],
       size: [11.2, 0.28, 5.4],
       rotation: [-0.42, 0, 0],
-      color: "#3d3228",
+      color: "#9a7a3a",
       material: "Черепица",
     }),
     part("chimney", "Дымоход", {
@@ -226,7 +226,7 @@ export function buildSchool(prompt: string): ThreeDConcept {
       group: "Foundation",
       position: [0, -0.35, 0],
       size: [36.5, 0.7, 16.4],
-      color: "#3d4a5c",
+      color: "#7a8796",
       material: "Железобетон",
     }),
     part("main", "Главный блок", {
@@ -262,7 +262,7 @@ export function buildSchool(prompt: string): ThreeDConcept {
       parentId: "main",
       position: [-4, 9.2, 0],
       size: [25, 0.45, 15],
-      color: "#1a2330",
+      color: "#5a6574",
       material: "Мембрана",
     }),
     part("roof-w", "Кровля крыла", {
@@ -271,7 +271,7 @@ export function buildSchool(prompt: string): ThreeDConcept {
       parentId: "wing",
       position: [14, 7.55, 1.5],
       size: [10.6, 0.4, 11.6],
-      color: "#1a2330",
+      color: "#5a6574",
       material: "Мембрана",
     }),
     part("canopy", "Козырёк", {
@@ -316,7 +316,7 @@ export function buildSchool(prompt: string): ThreeDConcept {
       parentId: "entrance",
       position: [-4, 1.4, 9.85],
       size: [2.4, 2.8, 0.15],
-      color: "#0b3a55",
+      color: "#3a6f8a",
       material: "Алюминий",
     }),
     part("steps", "Крыльцо", {
@@ -445,7 +445,7 @@ export function buildDesk(prompt: string): ThreeDConcept {
       group: "Legs",
       position: [-0.6, 0.35, 0.28],
       size: [0.06, 0.7, 0.06],
-      color: "#2a2a2a",
+      color: "#666666",
       material: "Металл",
     }),
     part("leg-fr", "Ножка FR", {
@@ -453,7 +453,7 @@ export function buildDesk(prompt: string): ThreeDConcept {
       group: "Legs",
       position: [0.6, 0.35, 0.28],
       size: [0.06, 0.7, 0.06],
-      color: "#2a2a2a",
+      color: "#666666",
       material: "Металл",
     }),
     part("leg-bl", "Ножка BL", {
@@ -461,7 +461,7 @@ export function buildDesk(prompt: string): ThreeDConcept {
       group: "Legs",
       position: [-0.6, 0.35, -0.28],
       size: [0.06, 0.7, 0.06],
-      color: "#2a2a2a",
+      color: "#666666",
       material: "Металл",
     }),
     part("leg-br", "Ножка BR", {
@@ -469,7 +469,7 @@ export function buildDesk(prompt: string): ThreeDConcept {
       group: "Legs",
       position: [0.6, 0.35, -0.28],
       size: [0.06, 0.7, 0.06],
-      color: "#2a2a2a",
+      color: "#666666",
       material: "Металл",
     }),
     part("shelf", "Полка", {
@@ -503,7 +503,7 @@ export function buildTower(prompt: string): ThreeDConcept {
       group: "Base",
       position: [0, -0.4, 0],
       size: [14, 0.8, 14],
-      color: "#3d4450",
+      color: "#6a7380",
       material: "Бетон",
     }),
     part("core", "Ствол", {
@@ -574,7 +574,7 @@ export function buildOffice(prompt: string): ThreeDConcept {
       group: "Base",
       position: [0, -0.3, 0],
       size: [28, 0.6, 16],
-      color: "#4a5160",
+      color: "#7a8494",
       material: "Бетон",
     }),
     part("block-a", "Корпус A", {
@@ -598,7 +598,7 @@ export function buildOffice(prompt: string): ThreeDConcept {
       group: "Roof",
       position: [-6, 12.3, 0],
       size: [14.6, 0.4, 14.6],
-      color: "#2a3038",
+      color: "#5a6572",
       material: "Мембрана",
     }),
     part("roof-b", "Кровля B", {
@@ -606,7 +606,7 @@ export function buildOffice(prompt: string): ThreeDConcept {
       group: "Roof",
       position: [9, 9.2, 1],
       size: [10.5, 0.35, 12.5],
-      color: "#2a3038",
+      color: "#5a6572",
       material: "Мембрана",
     }),
     part("glass-a", "Витраж A", {
@@ -638,7 +638,7 @@ export function buildOffice(prompt: string): ThreeDConcept {
       group: "Facade",
       position: [-6, 1.2, 9.75],
       size: [2.4, 2.6, 0.15],
-      color: "#1a2838",
+      color: "#4a6078",
       material: "Стекло",
     }),
   ];
@@ -690,7 +690,7 @@ export function buildCar(prompt: string): ThreeDConcept {
       position: [1.3, 0.35, 0.95],
       size: [0.35, 0.25, 0.35],
       rotation: [Math.PI / 2, 0, 0],
-      color: "#1a1a1a",
+      color: "#444444",
       material: "Резина",
     }),
     part("w-fr", "Колесо FR", {
@@ -700,7 +700,7 @@ export function buildCar(prompt: string): ThreeDConcept {
       position: [1.3, 0.35, -0.95],
       size: [0.35, 0.25, 0.35],
       rotation: [Math.PI / 2, 0, 0],
-      color: "#1a1a1a",
+      color: "#444444",
       material: "Резина",
     }),
     part("w-bl", "Колесо BL", {
@@ -710,7 +710,7 @@ export function buildCar(prompt: string): ThreeDConcept {
       position: [-1.3, 0.35, 0.95],
       size: [0.35, 0.25, 0.35],
       rotation: [Math.PI / 2, 0, 0],
-      color: "#1a1a1a",
+      color: "#444444",
       material: "Резина",
     }),
     part("w-br", "Колесо BR", {
@@ -720,7 +720,7 @@ export function buildCar(prompt: string): ThreeDConcept {
       position: [-1.3, 0.35, -0.95],
       size: [0.35, 0.25, 0.35],
       rotation: [Math.PI / 2, 0, 0],
-      color: "#1a1a1a",
+      color: "#444444",
       material: "Резина",
     }),
   ];
@@ -752,7 +752,7 @@ export function buildGenericMassing(prompt: string): ThreeDConcept {
       group: "Base",
       position: [0, -0.3, 0],
       size: [width + 1.2, 0.6, depth + 1.2],
-      color: "#4a5160",
+      color: "#7a8494",
       material: "Бетон",
     }),
     part("body", "Основной объём", {
@@ -779,7 +779,7 @@ export function buildGenericMassing(prompt: string): ThreeDConcept {
       parentId: "body",
       position: [0, h + 0.25, 0],
       size: [width + 0.8, 0.4, depth + 0.8],
-      color: "#2a3038",
+      color: "#5a6572",
       material: "Кровля",
     }),
     part("canopy", "Козырёк", {
@@ -797,7 +797,7 @@ export function buildGenericMassing(prompt: string): ThreeDConcept {
       parentId: "body",
       position: [0, 1.2, depth / 2 + 0.08],
       size: [2.2, 2.4, 0.12],
-      color: "#1a2838",
+      color: "#4a6078",
       material: "Дверь",
     }),
     part("steps", "Крыльцо", {
