@@ -209,12 +209,14 @@ export default function ConceptViewer({
       <div className="pointer-events-none absolute left-4 top-4 z-10 rounded border border-white/15 bg-black/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-white/80 backdrop-blur">
         {assembling
           ? "ASSEMBLING…"
-          : exploded
-            ? "EXPLODED · IRON MAN"
-            : "ORBIT · ZOOM · SELECT"}
+          : hasMesh
+            ? "TRIPO MESH · ORBIT"
+            : exploded
+              ? "EXPLODED · IRON MAN"
+              : "ORBIT · ZOOM · SELECT"}
       </div>
       <Canvas
-        key={`${view}-${hasMesh ? "mesh" : "parts"}-${concept.name}`}
+        key={`${view}-${hasMesh ? "mesh" : "parts"}-${concept.name}-${concept.parts.length}`}
         shadows={view === "perspective"}
         orthographic={view !== "perspective"}
         dpr={[1, 1.6]}

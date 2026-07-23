@@ -17,15 +17,30 @@ type AIProvider = {
   name: "primary" | "fallback";
 };
 
-const hasKey = () => Boolean(process.env.OPENAI_API_KEY);
+const hasKey = () =>
+  Boolean(
+    process.env.OPENAI_API_KEY?.trim() ||
+      process.env.GROQ_API_KEY?.trim() ||
+      process.env.AI_API_KEY?.trim()
+  );
 
 function primaryProvider(): AIProvider | null {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey =
+    process.env.OPENAI_API_KEY?.trim() ||
+    process.env.GROQ_API_KEY?.trim() ||
+    process.env.AI_API_KEY?.trim();
   if (!apiKey) return null;
+
+  // Groq-compatible if only GROQ_API_KEY is set
+  const isGroqOnly = !process.env.OPENAI_API_KEY?.trim() && Boolean(process.env.GROQ_API_KEY?.trim());
   return {
     apiKey,
-    baseURL: process.env.OPENAI_BASE_URL || undefined,
-    model: process.env.OPENAI_MODEL || "gpt-4o",
+    baseURL:
+      process.env.OPENAI_BASE_URL ||
+      (isGroqOnly ? "https://api.groq.com/openai/v1" : undefined),
+    model:
+      process.env.OPENAI_MODEL ||
+      (isGroqOnly ? "llama-3.3-70b-versatile" : "gpt-4o"),
     name: "primary",
   };
 }
@@ -527,13 +542,10 @@ export async function generate3DConcept(
   prompt: string,
   answers: { question: string; answer: string }[] = []
 ): Promise<ThreeDConcept> {
-  const category = detectCategory(prompt);
-  const discovery =
-    answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- none";
+  // Solid silhouette from prompt category — AI freeform parts become cube piles.
+  const solid = buildFromPrompt(prompt);
 
-  // No AI key → category silhouette only. With key → AI builds parts for THIS prompt.
   if (!hasKey()) {
-    const solid = buildFromPrompt(prompt);
     if (answers.length) {
       return {
         ...solid,
@@ -543,104 +555,127 @@ export async function generate3DConcept(
     return solid;
   }
 
-  const system = `You are Atrion 3D Design Engine. Return ONLY valid JSON for a conceptual 3D model of box/cylinder parts.
-
-ABSOLUTE RULE: Build EXACTLY what the user asked for. Hint: "${category}".
-- character/anime/girl/person → humanoid (head, hair, eyes, torso, arms, legs, clothes). NEVER a building/school/house.
-- room/interior → floor, walls, ceiling, furniture. NOT an exterior building.
-- animal → body, head, legs, tail. NOT architecture.
-- car → body, cabin, wheels. NOT a building.
-- school/house/bridge/office → that building only.
-If user asks for X, parts MUST be X. Never default to architecture.
-
-Rules: 8-24 connected parts; Y up; meters; scale fits object (person ~1.6m, room ~3m, car ~4m long).
-Each part: id, name, shape ("box"|"cylinder"), position, size, rotation, color "#rrggbb", material, role, group, parentId.
-Also: name, description, units, dimensions, structure, materials, assemblySteps, costEstimate (KGS), advantages, disadvantages, risks, engineeringNotes, disclaimer.
-Same language as user.`;
-
   try {
-    let result = await chatJSON<unknown>(
-      system,
-      `User request (build THIS object): ${prompt}
-
+    const result = await chatJSON<unknown>(
+      `You are Atrion. Return ONLY JSON metadata for a 3D concept.
+Do NOT invent parts/geometry — server already built a solid silhouette for the user request.
+Same language as user.
+Fill: name, description, materials, equipment, requirements, assemblySteps, costEstimate (KGS),
+advantages, disadvantages, risks, engineeringNotes, disclaimer.
+Omit parts/structure/dimensions.`,
+      `User asked for: ${prompt}
 Discovery:
-${discovery}
-
-Return full concept JSON with parts that match the request.`
+${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- none"}`
     );
 
-    let concept = normalize3DConcept(result);
-
-    if (isPromptMismatch(prompt, category, concept)) {
-      result = await chatJSON<unknown>(
-        `${system}\nPREVIOUS OUTPUT WAS THE WRONG OBJECT. Rebuild for: "${prompt}". Stay category "${category}".`,
-        `FIX NOW. User asked: ${prompt}\nAnswers:\n${discovery}`
-      );
-      concept = normalize3DConcept(result);
-    }
-
-    if (isPromptMismatch(prompt, category, concept) || concept.parts.length < 4) {
-      const fallback = buildFromPrompt(prompt);
-      return {
-        ...fallback,
-        name: concept.name !== "Untitled 3D Concept" ? concept.name : fallback.name,
-        description: `${fallback.description} (for: ${prompt.slice(0, 80)})`,
-      };
-    }
-
-    return concept;
+    const meta = normalize3DConcept(result);
+    return {
+      ...solid,
+      name: meta.name && meta.name !== "Untitled 3D Concept" ? meta.name : solid.name,
+      description: meta.description || solid.description,
+      materials: meta.materials.length ? meta.materials : solid.materials,
+      equipment: meta.equipment.length ? meta.equipment : solid.equipment,
+      requirements: meta.requirements.length ? meta.requirements : solid.requirements,
+      assemblySteps: meta.assemblySteps.length ? meta.assemblySteps : solid.assemblySteps,
+      costEstimate: meta.costEstimate.maximum ? meta.costEstimate : solid.costEstimate,
+      advantages: meta.advantages.length ? meta.advantages : solid.advantages,
+      disadvantages: meta.disadvantages.length ? meta.disadvantages : solid.disadvantages,
+      risks: meta.risks.length ? meta.risks : solid.risks,
+      engineeringNotes: meta.engineeringNotes.length
+        ? meta.engineeringNotes
+        : solid.engineeringNotes,
+      disclaimer: meta.disclaimer || solid.disclaimer,
+      parts: solid.parts,
+      structure: solid.structure,
+      dimensions: solid.dimensions,
+      units: solid.units,
+    };
   } catch (error) {
-    return localFallback("3D concept", error, () => buildFromPrompt(prompt));
+    return localFallback("3D concept", error, () => solid);
   }
 }
 
-function isPromptMismatch(
-  prompt: string,
-  category: ReturnType<typeof detectCategory>,
-  concept: ThreeDConcept
-): boolean {
-  const blob = [
-    concept.name,
-    concept.description,
-    ...concept.parts.map((p) => `${p.name} ${p.role} ${p.group}`),
-  ]
-    .join(" ")
-    .toLowerCase();
+export async function chatAboutConcept(input: {
+  message: string;
+  prompt: string;
+  concept: {
+    name?: string;
+    description?: string;
+    parts?: { name: string }[];
+    dimensions?: { width: number; height: number; depth: number };
+  } | null;
+}): Promise<{ reply: string; shouldRefine: boolean; refineInstruction?: string }> {
+  const fallback = () => {
+    const name = input.concept?.name || "модель";
+    const lower = input.message.toLowerCase();
+    if (/привет|здравств|hello|hi\b/i.test(lower)) {
+      return {
+        reply: `Привет. Я Atrion. Сейчас перед нами «${name}». Скажи, что изменить, или опиши новый объект.`,
+        shouldRefine: false as boolean,
+      };
+    }
+    if (/что это|расскажи|опиши|что за/i.test(lower)) {
+      return {
+        reply:
+          input.concept?.description?.slice(0, 280) ||
+          `Это концепт «${name}». Могу Explode или править по голосу.`,
+        shouldRefine: false,
+      };
+    }
+    const wantsEdit = /сделай|поменя|добав|убери|цвет|увелич|уменш|больше|меньше/i.test(lower);
+    return {
+      reply: wantsEdit
+        ? `Ок, применяю к «${name}»: ${input.message.slice(0, 100)}`
+        : `По «${name}» услышал. Уточни, что поменять — или спроси про модель.`,
+      shouldRefine: wantsEdit,
+      refineInstruction: wantsEdit ? input.message : undefined,
+    };
+  };
 
-  const buildingScore = (
-    blob.match(
-      /foundation|цокол|крыш|roof|этаж|фасад|стен[аыу]|wall|фундамент|корпус|здание|школ|башн|плинт|canopy|plinth/gi
-    ) || []
-  ).length;
-  const characterScore = (
-    blob.match(
-      /head|hair|torso|arm|leg|eye|голова|волос|торс|рук|ног|глаз|юбк|skirt|шея|neck|персонаж|аниме|girl|девуш/gi
-    ) || []
-  ).length;
-  const roomScore = (
-    blob.match(/floor|пол\b|потолок|ceiling|кровать|bed|интерьер|комнат|wall-l|wall-r/gi) || []
-  ).length;
-  const vehicleScore = (blob.match(/wheel|колёс|кабин|кузов|chassis|бампер|car\b|авто/gi) || [])
-    .length;
+  if (!hasKey()) return fallback();
 
-  if (category === "character") return characterScore < 3 || buildingScore >= 4;
-  if (category === "room") return roomScore < 2 || (buildingScore >= 5 && roomScore < 3);
-  if (category === "animal") return buildingScore >= 4 && characterScore < 2;
-  if (category === "vehicle") return vehicleScore < 1 && buildingScore >= 3;
-  if (
-    ["house", "school", "office", "hospital", "tower", "stadium", "bridge", "building"].includes(
-      category
-    )
-  ) {
-    return characterScore >= 5 && buildingScore < 2;
-  }
-  if (category === "product" || category === "furniture") {
-    const asksBuilding = /здан|школ|дом|башн|офис|мост|стадион|house|school|tower|bridge/i.test(
-      prompt
+  try {
+    const data = await chatJSON<{
+      reply?: string;
+      shouldRefine?: boolean;
+      refineInstruction?: string;
+    }>(
+      `You are Atrion voice co-pilot (ChatGPT-style voice) for a 3D design studio.
+Reply in the user's language. Keep reply SHORT for speech: 1-3 sentences, no markdown.
+Discuss the current 3D concept. If user asks to change the model, shouldRefine=true and refineInstruction=clear edit.
+If greeting/question only, shouldRefine=false.
+Return JSON: {"reply":"...","shouldRefine":false,"refineInstruction":""}`,
+      `Original prompt: ${input.prompt || "—"}
+Current: ${
+        input.concept
+          ? JSON.stringify({
+              name: input.concept.name,
+              description: input.concept.description,
+              dimensions: input.concept.dimensions,
+              parts: input.concept.parts?.slice(0, 16).map((p) => p.name),
+            })
+          : "none"
+      }
+User said: ${input.message}`
     );
-    if (!asksBuilding && buildingScore >= 5 && concept.dimensions.height > 8) return true;
+
+    const reply =
+      typeof data.reply === "string" && data.reply.trim()
+        ? data.reply.trim().slice(0, 500)
+        : fallback().reply;
+    return {
+      reply,
+      shouldRefine: Boolean(data.shouldRefine),
+      refineInstruction:
+        typeof data.refineInstruction === "string" && data.refineInstruction.trim()
+          ? data.refineInstruction.trim().slice(0, 400)
+          : data.shouldRefine
+            ? input.message
+            : undefined,
+    };
+  } catch (error) {
+    return localFallback("voice chat", error, fallback);
   }
-  return false;
 }
 
 export async function refine3DConcept(
@@ -648,40 +683,42 @@ export async function refine3DConcept(
   instruction: string,
   selectedPartId?: string | null
 ): Promise<ThreeDConcept> {
-  const safe = mockRefine3DConcept(concept, instruction, selectedPartId);
-  if (!hasKey()) return safe;
+  // New object request → rebuild solid silhouette (no AI cube piles)
+  const rebuild =
+    /сделай\s+(мне\s+)?|построй|замени на|вместо|новый объект|переделай в/i.test(instruction) &&
+    instruction.trim().length > 12;
+  const base = rebuild
+    ? buildFromPrompt(instruction)
+    : mockRefine3DConcept(concept, instruction, selectedPartId);
+
+  if (!hasKey()) {
+    return rebuild
+      ? { ...base, description: `${base.description} · ${instruction}` }
+      : base;
+  }
 
   try {
-    const selected = concept.parts.find((part) => part.id === selectedPartId);
     const result = await chatJSON<unknown>(
-      `You refine an Atrion 3D concept. Same language as user.
-You MAY change parts geometry when asked (color, size, add/remove, reshape).
-Keep the SAME object type unless user explicitly changes it (never turn a character into a building).
-Return full JSON with parts: id, name, shape box|cylinder, position, size, rotation, color #hex, material, role, group, parentId.`,
-      `Current:
-${JSON.stringify({
-        name: concept.name,
-        description: concept.description,
-        dimensions: concept.dimensions,
-        parts: concept.parts,
-        structure: concept.structure,
-      })}
-
-Selected: ${selected ? `${selected.name} (${selected.id})` : "none"}
+      `You refine METADATA only for a 3D concept (name, description, materials, costs, notes).
+Do NOT invent parts geometry. Same language as user.
+Return JSON metadata fields; parts may be omitted.`,
+      `Concept: ${concept.name}
 Instruction: ${instruction}
-
-Return updated concept JSON.`
+Keep object type unless user asked to rebuild into something else.`
     );
-    const normalized = normalize3DConcept(result);
-    if (normalized.parts.length >= 4) {
-      return {
-        ...normalized,
-        name: normalized.name !== "Untitled 3D Concept" ? normalized.name : concept.name,
-      };
-    }
-    return safe;
+    const meta = normalize3DConcept(result);
+    return {
+      ...base,
+      name: meta.name && meta.name !== "Untitled 3D Concept" ? meta.name : base.name,
+      description: meta.description || `${base.description} · ${instruction}`,
+      materials: meta.materials.length ? meta.materials : base.materials,
+      parts: base.parts,
+      structure: base.structure,
+      dimensions: base.dimensions,
+      units: base.units,
+    };
   } catch (error) {
-    return localFallback("3D refine", error, () => safe);
+    return localFallback("3D refine", error, () => base);
   }
 }
 

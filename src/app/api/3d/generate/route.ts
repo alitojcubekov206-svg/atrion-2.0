@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId, getUserPlan } from "@/lib/auth";
 import { generate3DConcept } from "@/lib/ai";
-import { attachMeshUrl, generateMeshyGlb, isMeshyConfigured } from "@/lib/meshy";
+import { attachMeshUrl as attachMeshyUrl, generateMeshyGlb, isMeshyConfigured } from "@/lib/meshy";
+import {
+  attachMeshUrl as attachTripoUrl,
+  generateTripoGlb,
+  isTripoConfigured,
+  isTripoEnabled,
+} from "@/lib/tripo";
 import { db } from "@/lib/db";
 
 export const maxDuration = 300;
@@ -73,34 +79,60 @@ export async function POST(req: Request) {
       : [];
 
     let concept = await generate3DConcept(prompt.trim(), safeAnswers);
-    let meshyError: string | null = null;
+    let meshError: string | null = null;
+    let meshProvider: "tripo" | "meshy" | null = null;
 
-    const useMeshy =
-      wantMesh === true && isMeshyConfigured() && process.env.MESHY_ENABLED === "true";
-    if (useMeshy) {
+    const meshPrompt = [
+      prompt.trim(),
+      ...safeAnswers.map((a) => `${a.question}: ${a.answer}`),
+    ]
+      .join(". ")
+      .slice(0, 1000);
+
+    // wantMesh !== false → try real mesh when a provider is configured
+    const requestMesh = wantMesh !== false;
+
+    if (requestMesh && isTripoEnabled()) {
       try {
-        const meshPrompt = [
-          prompt.trim(),
-          ...safeAnswers.map((a) => `${a.question}: ${a.answer}`),
-        ]
-          .join(". ")
-          .slice(0, 580);
-        const glb = await generateMeshyGlb(meshPrompt);
-        concept = attachMeshUrl(concept, glb);
+        const glb = await generateTripoGlb(meshPrompt);
+        concept = attachTripoUrl(concept, glb);
+        meshProvider = "tripo";
       } catch (error) {
-        meshyError =
-          error instanceof Error
-            ? error.message
-            : "Meshy mesh failed — показана концепт-модель";
+        meshError =
+          error instanceof Error ? error.message : "Tripo mesh failed — силуэт";
+        console.error("Tripo generation failed", error);
+      }
+    }
+
+    if (
+      !concept.meshUrl &&
+      requestMesh &&
+      isMeshyConfigured() &&
+      process.env.MESHY_ENABLED === "true"
+    ) {
+      try {
+        const glb = await generateMeshyGlb(meshPrompt.slice(0, 580));
+        concept = attachMeshyUrl(concept, glb);
+        meshProvider = "meshy";
+        meshError = null;
+      } catch (error) {
+        meshError =
+          error instanceof Error ? error.message : "Meshy mesh failed — силуэт";
         console.error("Meshy generation failed", error);
       }
     }
 
     return NextResponse.json({
       concept,
-      meshy: Boolean(concept.meshUrl),
+      mesh: Boolean(concept.meshUrl),
+      meshProvider,
+      tripoConfigured: isTripoConfigured(),
+      tripoEnabled: isTripoEnabled(),
       meshyConfigured: isMeshyConfigured(),
-      meshyError,
+      meshError,
+      // legacy keys for older clients
+      meshy: Boolean(concept.meshUrl),
+      meshyError: meshError,
     });
   } catch (error) {
     if (freeGenerationReserved) {

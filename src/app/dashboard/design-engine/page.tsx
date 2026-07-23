@@ -8,6 +8,7 @@ import type { DrawingView } from "@/components/three/ConceptViewer";
 import type { InterviewQuestion, ThreeDConcept } from "@/lib/types";
 import { download } from "@/lib/export";
 import { loadSettings, speakText, stopSpeaking } from "@/lib/settings";
+import VoiceMode from "@/components/VoiceMode";
 
 const ConceptViewer = dynamic(() => import("@/components/three/ConceptViewer"), {
   ssr: false,
@@ -53,20 +54,26 @@ export default function DesignEnginePage() {
   const [chat, setChat] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      text: "Пиши что нужно — соберу ЭТО. Школа→школа, комната→комната, персонаж→персонаж. Без подмены.",
+      text: "Опиши объект — при TRIPO_API_KEY соберу реальный GLB mesh (как Meshy). Без ключа — силуэт.",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
+  const [voiceMode, setVoiceMode] = useState(false);
 
   function playAssemble(next: ThreeDConcept) {
     if (assembleTimer.current) clearTimeout(assembleTimer.current);
     setExploded(false);
     setView("perspective");
-    setShowMesh(false); // always show solid parts (templates), not empty/broken mesh
+    // Show Tripo/Meshy GLB when present; otherwise solid parts silhouette
+    setShowMesh(Boolean(next.meshUrl));
     setSelectedId(null);
     setConcept(next);
-    setAssembling(true);
-    assembleTimer.current = setTimeout(() => setAssembling(false), 3400);
+    setAssembling(!next.meshUrl); // assemble animation for parts only
+    if (!next.meshUrl) {
+      assembleTimer.current = setTimeout(() => setAssembling(false), 3400);
+    } else {
+      setAssembling(false);
+    }
     const settings = loadSettings();
     if (settings.voiceEnabled && settings.voiceAuto) {
       speakText(`${next.name}. ${next.description}`);
@@ -140,17 +147,24 @@ export default function DesignEnginePage() {
       const response = await fetch("/api/3d/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, answers: interviewAnswers, wantMesh: false }),
+        body: JSON.stringify({ prompt, answers: interviewAnswers, wantMesh: true }),
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.concept) {
         setPipelineStep(PIPELINE.length - 1);
         playAssemble(data.concept);
+        const meshNote = data.concept.meshUrl
+          ? data.meshProvider === "tripo"
+            ? " Tripo mesh готов."
+            : " Mesh готов."
+          : data.meshError
+            ? ` Mesh: ${data.meshError}`
+            : " Силуэт (добавь TRIPO_API_KEY для реального mesh).";
         setChat((prev) => [
           ...prev,
           {
             role: "assistant",
-            text: `Готово: ${data.concept.name} (${data.concept.parts?.length ?? 0} частей). Сначала сборка — потом Explode разберёт в воздухе.`,
+            text: `Готово: ${data.concept.name} (${data.concept.parts?.length ?? 0} частей).${meshNote}`,
           },
         ]);
       } else {
@@ -163,6 +177,71 @@ export default function DesignEnginePage() {
       setError("Соединение прервалось.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleVoiceUtterance(text: string): Promise<string> {
+    setChat((prev) => [...prev, { role: "user", text }]);
+
+    // No concept yet → treat speech as create prompt
+    if (!concept) {
+      if (text.trim().length >= 10) {
+        setPrompt(text.trim());
+        setChat((prev) => [
+          ...prev,
+          { role: "assistant", text: "Ок, запускаю. Ответь на уточнения или скажи «создай»." },
+        ]);
+        return "Ок, записал идею. Нажми создать или ответь на вопросы.";
+      }
+      return "Скажи подробнее, что построить — хотя бы пару слов.";
+    }
+
+    try {
+      const response = await fetch("/api/3d/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          prompt,
+          concept: {
+            name: concept.name,
+            description: concept.description,
+            dimensions: concept.dimensions,
+            parts: concept.parts.map((p) => ({ name: p.name })),
+          },
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const err = data.error ?? "Не понял, повтори.";
+        setChat((prev) => [...prev, { role: "assistant", text: err }]);
+        return err;
+      }
+
+      const reply = typeof data.reply === "string" ? data.reply : "Готово.";
+      setChat((prev) => [...prev, { role: "assistant", text: reply }]);
+
+      if (data.shouldRefine && data.refineInstruction) {
+        const refineRes = await fetch("/api/3d/refine", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            concept,
+            instruction: data.refineInstruction,
+            selectedPartId: selectedId,
+          }),
+        });
+        const refineData = await refineRes.json().catch(() => ({}));
+        if (refineRes.ok && refineData.concept) {
+          playAssemble(refineData.concept);
+        }
+      }
+
+      return reply;
+    } catch {
+      const err = "Связь оборвалась.";
+      setChat((prev) => [...prev, { role: "assistant", text: err }]);
+      return err;
     }
   }
 
@@ -328,7 +407,27 @@ export default function DesignEnginePage() {
                 }}
                 className="rounded-full px-3 py-1.5 text-xs text-[#8f8a82] hover:text-white"
               >
-                Voice
+                Speak
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setVoiceMode((v) => !v)}
+              className={`rounded-full px-3 py-1.5 text-xs transition ${
+                voiceMode ? "bg-violet-400/25 text-violet-200" : "text-[#8f8a82] hover:text-white"
+              }`}
+            >
+              Mic
+            </button>
+            {concept?.meshUrl && (
+              <button
+                type="button"
+                onClick={() => setShowMesh((v) => !v)}
+                className={`rounded-full px-3 py-1.5 text-xs transition ${
+                  showMesh ? "bg-violet-400/25 text-violet-200" : "text-[#8f8a82] hover:text-white"
+                }`}
+              >
+                {showMesh ? "Mesh" : "Parts"}
               </button>
             )}
             <button
@@ -351,7 +450,7 @@ export default function DesignEnginePage() {
             >
               <div className="w-full max-w-xs rounded-2xl border border-[#a78bfa]/25 bg-[#121214]/95 p-5 shadow-[0_0_50px_rgba(167,139,250,0.15)]">
                 <p className="mb-3 text-[10px] uppercase tracking-[0.28em] text-[#a78bfa]/80">
-                  Building
+                  Building{pipelineStep >= 2 ? " · Tripo mesh…" : ""}
                 </p>
                 <ul className="space-y-2">
                   {PIPELINE.map((step, index) => (
@@ -513,6 +612,14 @@ export default function DesignEnginePage() {
               </div>
 
               <form onSubmit={refine} className="border-t border-white/[0.06] p-4">
+                <div className="mb-3">
+                  <VoiceMode
+                    enabled={voiceMode}
+                    onToggle={setVoiceMode}
+                    busy={loading}
+                    onUtterance={handleVoiceUtterance}
+                  />
+                </div>
                 {concept && (
                   <div className="mb-3 flex gap-2">
                     <button

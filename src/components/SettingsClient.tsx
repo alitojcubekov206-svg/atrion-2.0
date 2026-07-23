@@ -53,8 +53,8 @@ export default function SettingsClient() {
 
         <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-white/10 px-4 py-3">
           <div>
-            <p className="text-sm font-medium">Голосовая озвучка</p>
-            <p className="text-xs text-slate-500">Озвучивать описание модели (как у Meshy)</p>
+            <p className="text-sm font-medium">Голосовой режим</p>
+            <p className="text-xs text-slate-500">Как ChatGPT: микрофон → ответ голосом</p>
           </div>
           <input
             type="checkbox"
