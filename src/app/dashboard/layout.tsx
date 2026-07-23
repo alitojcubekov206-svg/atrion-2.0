@@ -27,6 +27,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
             Design Engine
           </Link>
           <Link
+            href="/dashboard/settings"
+            className="hidden text-[11px] uppercase tracking-[0.2em] text-[#8f8a82] transition hover:text-white sm:inline"
+          >
+            Settings
+          </Link>
+          <Link
             href="/pricing"
             className="hidden text-[11px] uppercase tracking-[0.2em] text-[#8f8a82] transition hover:text-white sm:inline"
           >

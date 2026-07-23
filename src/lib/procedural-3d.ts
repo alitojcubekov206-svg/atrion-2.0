@@ -1099,38 +1099,560 @@ export function buildHospital(prompt: string): ThreeDConcept {
   };
 }
 
-/** Pick best free procedural template — ANY request gets a solid lit form */
-export function buildFromPrompt(prompt: string): ThreeDConcept {
+/** Stylized humanoid / anime figure — readable as a person, not a building */
+export function buildCharacter(prompt: string): ThreeDConcept {
+  const lower = prompt.toLowerCase();
+  const feminine =
+    /девуш|девоч|женщин|girl|woman|waifu|тян|школьниц|maid|idol|princess|аниме.?девуш/i.test(
+      lower
+    );
+  const anime = /аниме|anime|manga|waifu|тян|кун|семпай/i.test(lower);
+  const hairColor = anime ? "#6b4cff" : feminine ? "#2a1a12" : "#1a1a1a";
+  const skin = "#f0c9a8";
+  const outfit = feminine ? (anime ? "#ff6bb5" : "#7c5cff") : "#3d4a6b";
+  const name =
+    prompt.length > 4 && prompt.length <= 60
+      ? prompt.slice(0, 60)
+      : feminine
+        ? anime
+          ? "Аниме-девушка"
+          : "Девушка"
+        : "Персонаж";
+
+  const parts = [
+    part("pelvis", "Таз", {
+      role: "volume",
+      group: "Body",
+      position: [0, 0.72, 0],
+      size: [0.34, 0.18, 0.22],
+      color: outfit,
+      material: "Одежда",
+    }),
+    part("torso", "Торс", {
+      role: "volume",
+      group: "Body",
+      parentId: "pelvis",
+      position: [0, 1.05, 0],
+      size: [0.38, 0.42, 0.22],
+      color: outfit,
+      material: "Одежда",
+    }),
+    part("chest", "Грудь / верх", {
+      role: "detail",
+      group: "Body",
+      parentId: "torso",
+      position: [0, 1.18, 0.04],
+      size: feminine ? [0.34, 0.16, 0.18] : [0.36, 0.14, 0.2],
+      color: feminine ? "#ff8ec8" : outfit,
+      material: "Одежда",
+    }),
+    part("neck", "Шея", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Head",
+      parentId: "torso",
+      position: [0, 1.32, 0],
+      size: [0.07, 0.1, 0.07],
+      color: skin,
+      material: "Кожа",
+    }),
+    part("head", "Голова", {
+      shape: "cylinder",
+      role: "volume",
+      group: "Head",
+      parentId: "neck",
+      position: [0, 1.5, 0],
+      size: [0.16, 0.22, 0.16],
+      color: skin,
+      material: "Кожа",
+    }),
+    part("hair-top", "Волосы верх", {
+      role: "detail",
+      group: "Hair",
+      parentId: "head",
+      position: [0, 1.62, -0.02],
+      size: [0.22, 0.12, 0.2],
+      color: hairColor,
+      material: "Волосы",
+    }),
+    part("hair-back", "Волосы сзади", {
+      role: "detail",
+      group: "Hair",
+      parentId: "head",
+      position: [0, 1.45, -0.12],
+      size: [0.2, 0.35, 0.1],
+      color: hairColor,
+      material: "Волосы",
+    }),
+    ...(anime
+      ? [
+          part("tail-l", "Хвостик L", {
+            role: "detail",
+            group: "Hair",
+            parentId: "head",
+            position: [-0.18, 1.55, -0.05],
+            size: [0.08, 0.35, 0.08],
+            color: hairColor,
+            material: "Волосы",
+          }),
+          part("tail-r", "Хвостик R", {
+            role: "detail",
+            group: "Hair",
+            parentId: "head",
+            position: [0.18, 1.55, -0.05],
+            size: [0.08, 0.35, 0.08],
+            color: hairColor,
+            material: "Волосы",
+          }),
+        ]
+      : []),
+    part("eye-l", "Глаз L", {
+      role: "detail",
+      group: "Face",
+      parentId: "head",
+      position: [-0.06, 1.5, 0.14],
+      size: [0.05, anime ? 0.07 : 0.04, 0.02],
+      color: anime ? "#5ec8ff" : "#222222",
+      material: "Глаза",
+    }),
+    part("eye-r", "Глаз R", {
+      role: "detail",
+      group: "Face",
+      parentId: "head",
+      position: [0.06, 1.5, 0.14],
+      size: [0.05, anime ? 0.07 : 0.04, 0.02],
+      color: anime ? "#5ec8ff" : "#222222",
+      material: "Глаза",
+    }),
+    part("arm-l", "Рука L", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Arms",
+      parentId: "torso",
+      position: [-0.28, 1.0, 0],
+      size: [0.06, 0.45, 0.06],
+      color: skin,
+      material: "Кожа",
+    }),
+    part("arm-r", "Рука R", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Arms",
+      parentId: "torso",
+      position: [0.28, 1.0, 0],
+      size: [0.06, 0.45, 0.06],
+      color: skin,
+      material: "Кожа",
+    }),
+    part("skirt", feminine ? "Юбка / низ" : "Шорты", {
+      role: "volume",
+      group: "Body",
+      parentId: "pelvis",
+      position: [0, 0.55, 0],
+      size: feminine ? [0.42, 0.28, 0.28] : [0.34, 0.22, 0.24],
+      color: feminine ? (anime ? "#9b5cff" : "#4a3a8a") : "#2a3348",
+      material: "Одежда",
+    }),
+    part("leg-l", "Нога L", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Legs",
+      parentId: "pelvis",
+      position: [-0.1, 0.28, 0],
+      size: [0.08, 0.5, 0.08],
+      color: skin,
+      material: "Кожа",
+    }),
+    part("leg-r", "Нога R", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Legs",
+      parentId: "pelvis",
+      position: [0.1, 0.28, 0],
+      size: [0.08, 0.5, 0.08],
+      color: skin,
+      material: "Кожа",
+    }),
+    part("shoe-l", "Обувь L", {
+      role: "detail",
+      group: "Legs",
+      parentId: "leg-l",
+      position: [-0.1, 0.04, 0.04],
+      size: [0.12, 0.08, 0.2],
+      color: "#222222",
+      material: "Обувь",
+    }),
+    part("shoe-r", "Обувь R", {
+      role: "detail",
+      group: "Legs",
+      parentId: "leg-r",
+      position: [0.1, 0.04, 0.04],
+      size: [0.12, 0.08, 0.2],
+      color: "#222222",
+      material: "Обувь",
+    }),
+  ];
+
+  return wrap(
+    name,
+    feminine
+      ? anime
+        ? "Аниме-персонаж: голова, волосы, торс, руки, ноги — цельный силуэт фигуры."
+        : "Персонаж-девушка: читаемый humanoid силуэт."
+      : "Персонаж: humanoid силуэт для Explode / Orbit.",
+    { width: 0.9, height: 1.7, depth: 0.5 },
+    [
+      {
+        id: "head",
+        label: "Head",
+        partIds: parts.filter((p) => p.group === "Head" || p.group === "Hair" || p.group === "Face").map((p) => p.id),
+      },
+      {
+        id: "body",
+        label: "Body",
+        partIds: parts.filter((p) => p.group === "Body").map((p) => p.id),
+      },
+      {
+        id: "arms",
+        label: "Arms",
+        partIds: parts.filter((p) => p.group === "Arms").map((p) => p.id),
+      },
+      {
+        id: "legs",
+        label: "Legs",
+        partIds: parts.filter((p) => p.group === "Legs").map((p) => p.id),
+      },
+    ],
+    parts
+  );
+}
+
+/** Interior room box — walls + floor, not an exterior building */
+export function buildRoom(prompt: string): ThreeDConcept {
+  const name = prompt.length > 4 && prompt.length <= 55 ? prompt : "Комната";
+  const parts = [
+    part("floor", "Пол", {
+      role: "foundation",
+      group: "Shell",
+      position: [0, 0, 0],
+      size: [6, 0.12, 5],
+      color: "#8b6914",
+      material: "Дерево / плитка",
+    }),
+    part("wall-back", "Задняя стена", {
+      role: "wall",
+      group: "Shell",
+      parentId: "floor",
+      position: [0, 1.4, -2.45],
+      size: [6, 2.8, 0.12],
+      color: "#e8e0d4",
+      material: "Штукатурка",
+    }),
+    part("wall-l", "Стена L", {
+      role: "wall",
+      group: "Shell",
+      parentId: "floor",
+      position: [-2.95, 1.4, 0],
+      size: [0.12, 2.8, 5],
+      color: "#ddd5c8",
+      material: "Штукатурка",
+    }),
+    part("wall-r", "Стена R", {
+      role: "wall",
+      group: "Shell",
+      parentId: "floor",
+      position: [2.95, 1.4, 0],
+      size: [0.12, 2.8, 5],
+      color: "#ddd5c8",
+      material: "Штукатурка",
+    }),
+    part("ceiling", "Потолок", {
+      role: "roof",
+      group: "Shell",
+      parentId: "wall-back",
+      position: [0, 2.85, 0],
+      size: [6, 0.1, 5],
+      color: "#f5f2ea",
+      material: "Гипсокартон",
+    }),
+    part("window", "Окно", {
+      role: "window",
+      group: "Facade",
+      parentId: "wall-back",
+      position: [0, 1.5, -2.38],
+      size: [2.2, 1.4, 0.08],
+      color: "#7ec8ff",
+      material: "Стекло",
+    }),
+    part("door", "Дверь", {
+      role: "door",
+      group: "Facade",
+      parentId: "wall-l",
+      position: [-2.88, 1.05, 1.2],
+      size: [0.08, 2.1, 0.9],
+      color: "#6b4423",
+      material: "Дерево",
+    }),
+    part("bed", "Кровать / зона", {
+      role: "volume",
+      group: "Furniture",
+      parentId: "floor",
+      position: [1.4, 0.35, -0.8],
+      size: [1.6, 0.5, 2.2],
+      color: "#6b8cae",
+      material: "Мебель",
+    }),
+    part("desk", "Стол", {
+      role: "volume",
+      group: "Furniture",
+      parentId: "floor",
+      position: [-1.6, 0.4, -1.5],
+      size: [1.4, 0.08, 0.7],
+      color: "#a08060",
+      material: "Дерево",
+    }),
+    part("lamp", "Лампа", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Furniture",
+      parentId: "desk",
+      position: [-1.1, 0.75, -1.5],
+      size: [0.08, 0.55, 0.08],
+      color: "#f5e6a3",
+      material: "Металл",
+    }),
+  ];
+  return wrap(
+    name,
+    "Интерьер комнаты: пол, стены, окно, мебель — не фасад здания.",
+    { width: 6.2, height: 3, depth: 5.2 },
+    [
+      { id: "shell", label: "Shell", partIds: ["floor", "wall-back", "wall-l", "wall-r", "ceiling"] },
+      { id: "openings", label: "Openings", partIds: ["window", "door"] },
+      { id: "furniture", label: "Furniture", partIds: ["bed", "desk", "lamp"] },
+    ],
+    parts
+  );
+}
+
+export function buildAnimal(prompt: string): ThreeDConcept {
+  const name = prompt.length > 4 && prompt.length <= 55 ? prompt : "Животное";
+  const parts = [
+    part("body", "Туловище", {
+      role: "volume",
+      group: "Body",
+      position: [0, 0.55, 0],
+      size: [0.9, 0.45, 0.5],
+      color: "#c4a574",
+      material: "Шерсть",
+    }),
+    part("head", "Голова", {
+      shape: "cylinder",
+      role: "volume",
+      group: "Head",
+      parentId: "body",
+      position: [0.55, 0.7, 0],
+      size: [0.22, 0.28, 0.22],
+      color: "#d4b584",
+      material: "Шерсть",
+    }),
+    part("ear-l", "Ухо L", {
+      role: "detail",
+      group: "Head",
+      parentId: "head",
+      position: [0.5, 0.95, -0.12],
+      size: [0.08, 0.16, 0.06],
+      color: "#b8956a",
+      material: "Шерсть",
+    }),
+    part("ear-r", "Ухо R", {
+      role: "detail",
+      group: "Head",
+      parentId: "head",
+      position: [0.5, 0.95, 0.12],
+      size: [0.08, 0.16, 0.06],
+      color: "#b8956a",
+      material: "Шерсть",
+    }),
+    part("leg-1", "Лапа 1", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Legs",
+      position: [-0.3, 0.2, 0.15],
+      size: [0.08, 0.35, 0.08],
+      color: "#a88858",
+      material: "Шерсть",
+    }),
+    part("leg-2", "Лапа 2", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Legs",
+      position: [-0.3, 0.2, -0.15],
+      size: [0.08, 0.35, 0.08],
+      color: "#a88858",
+      material: "Шерсть",
+    }),
+    part("leg-3", "Лапа 3", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Legs",
+      position: [0.25, 0.2, 0.15],
+      size: [0.08, 0.35, 0.08],
+      color: "#a88858",
+      material: "Шерсть",
+    }),
+    part("leg-4", "Лапа 4", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Legs",
+      position: [0.25, 0.2, -0.15],
+      size: [0.08, 0.35, 0.08],
+      color: "#a88858",
+      material: "Шерсть",
+    }),
+    part("tail", "Хвост", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Body",
+      parentId: "body",
+      position: [-0.55, 0.65, 0],
+      size: [0.06, 0.4, 0.06],
+      rotation: [0, 0, 0.8],
+      color: "#c4a574",
+      material: "Шерсть",
+    }),
+  ];
+  return wrap(
+    name,
+    "Животное: туловище, голова, лапы — силуэт, не здание.",
+    { width: 1.3, height: 1.0, depth: 0.7 },
+    [
+      { id: "body", label: "Body", partIds: ["body", "tail"] },
+      { id: "head", label: "Head", partIds: ["head", "ear-l", "ear-r"] },
+      { id: "legs", label: "Legs", partIds: ["leg-1", "leg-2", "leg-3", "leg-4"] },
+    ],
+    parts
+  );
+}
+
+export type ConceptCategory =
+  | "character"
+  | "animal"
+  | "vehicle"
+  | "furniture"
+  | "product"
+  | "room"
+  | "house"
+  | "school"
+  | "bridge"
+  | "tower"
+  | "office"
+  | "stadium"
+  | "hospital"
+  | "building";
+
+/**
+ * Detect category from USER prompt only.
+ * Order matters: schoolgirl ≠ school, room ≠ office building.
+ */
+export function detectCategory(prompt: string): ConceptCategory {
   const lower = prompt.toLowerCase();
 
-  if (/школ|school|лицей|гимназ|образоват|универ|колледж|садик|детсад/i.test(lower))
-    return buildSchool(prompt);
-  if (/мост|bridge|эстакад|переход|виадук/i.test(lower)) return buildBridge(prompt);
-  if (/башн|tower|небоскреб|skyscraper|высотк/i.test(lower)) return buildTower(prompt);
-  if (/офис|office|бизнес.?центр|бц\b|коворкинг/i.test(lower)) return buildOffice(prompt);
-  if (/стадион|stadium|арены|спорткомплекс/i.test(lower)) return buildStadium(prompt);
-  if (/больниц|hospital|клиник|поликлиник|медцентр/i.test(lower)) return buildHospital(prompt);
-  if (/машин|автомоб|car\b|vehicle|спорткар|джип|truck|грузовик/i.test(lower))
-    return buildCar(prompt);
-  if (/диван|sofa|couch|кресл/i.test(lower)) return buildSofa(prompt);
-  if (/стол|desk|table|мебел|стул|chair|шкаф|shelf/i.test(lower)) return buildDesk(prompt);
-  if (/дом|house|коттедж|вилл|особняк|жиль|cottage|квартир|жилкомплекс|жк\b/i.test(lower))
-    return buildHouse(prompt);
+  // People / anime FIRST (before school/house)
   if (
-    /телефон|phone|ноутбук|laptop|робот|robot|лампа|lamp|часы|гаджет|устройство|прибор|дрон|drone|колонк|наушник/i.test(
+    /девуш|девоч|парен|мальчик|женщин|мужчина|человек|персонаж|аниме|anime|manga|waifu|girl|boy|woman|man\b|character|humanoid|avatar|фигур[аыу]|hero|герой|idol|воин|маг|школьниц|schoolgirl|семпай|тян|кун|npc|скин/i.test(
       lower
     )
-  )
-    return buildProduct(prompt);
-  if (/завод|factory|склад|цех|ангар|магазин|молл|mall|тц\b|торговый/i.test(lower))
-    return buildGenericMassing(prompt);
-  if (/здан|строен|корпус|комплекс|центр|павильон|музей|театр|гостиниц|отель|hotel/i.test(lower))
-    return buildGenericMassing(prompt);
+  ) {
+    return "character";
+  }
 
-  // Unknown idea: still multi-part object (product-scale if short/small words, else building)
-  if (/маленьк|мини|гаджет|игрушк|предмет|издели/i.test(lower) || prompt.length < 28)
-    return buildProduct(prompt);
-  return buildGenericMassing(prompt);
+  if (
+    /кот\b|кошк|собак|пёс|пес\b|лошад|конь|птиц|dragon|дракон|звер|animal|wolf|лис[аы]|медвед|кролик|bunny|cat\b|dog\b/i.test(
+      lower
+    )
+  ) {
+    return "animal";
+  }
+
+  if (/машин|автомоб|car\b|vehicle|спорткар|джип|truck|грузовик|мото|bike|велосипед/i.test(lower)) {
+    return "vehicle";
+  }
+
+  if (
+    /комнат|спальн|кухн|гостиная|ванн|санузел|интерьер|interior|\broom\b|bedroom|kitchen|living.?room|офисная.?комнат|кабинет/i.test(
+      lower
+    )
+  ) {
+    return "room";
+  }
+
+  if (/диван|sofa|couch|кресл/i.test(lower)) return "furniture";
+  if (/стол|desk|table|стул|chair|шкаф|shelf|мебел/i.test(lower)) return "furniture";
+
+  if (
+    /телефон|phone|ноутбук|laptop|робот|robot|лампа|lamp|часы|гаджет|устройство|прибор|дрон|drone|колонк|наушник|игрушк|предмет|издели/i.test(
+      lower
+    )
+  ) {
+    return "product";
+  }
+
+  // Architecture only with clear building words (schoolgirl already handled)
+  if (/школ|school|лицей|гимназ|образоват|универ|колледж|садик|детсад/i.test(lower)) return "school";
+  if (/мост|bridge|эстакад|переход|виадук/i.test(lower)) return "bridge";
+  if (/башн|tower|небоскреб|skyscraper|высотк/i.test(lower)) return "tower";
+  if (/офис|office|бизнес.?центр|бц\b|коворкинг/i.test(lower)) return "office";
+  if (/стадион|stadium|арены|спорткомплекс/i.test(lower)) return "stadium";
+  if (/больниц|hospital|клиник|поликлиник|медцентр/i.test(lower)) return "hospital";
+  if (/дом|house|коттедж|вилл|особняк|cottage|жилкомплекс|жк\b/i.test(lower)) return "house";
+  if (
+    /завод|factory|склад|цех|ангар|магазин|молл|mall|тц\b|здан|строен|корпус|комплекс|павильон|музей|театр|гостиниц|отель|hotel|небоскр/i.test(
+      lower
+    )
+  ) {
+    return "building";
+  }
+
+  // Default: product / abstract object — NEVER dump unknown prompts into a building
+  return "product";
+}
+
+/** Pick best free procedural template — matches what the user asked for */
+export function buildFromPrompt(prompt: string): ThreeDConcept {
+  const category = detectCategory(prompt);
+  switch (category) {
+    case "character":
+      return buildCharacter(prompt);
+    case "animal":
+      return buildAnimal(prompt);
+    case "vehicle":
+      return buildCar(prompt);
+    case "room":
+      return buildRoom(prompt);
+    case "furniture":
+      return /диван|sofa|couch|кресл/i.test(prompt) ? buildSofa(prompt) : buildDesk(prompt);
+    case "product":
+      return buildProduct(prompt);
+    case "school":
+      return buildSchool(prompt);
+    case "bridge":
+      return buildBridge(prompt);
+    case "tower":
+      return buildTower(prompt);
+    case "office":
+      return buildOffice(prompt);
+    case "stadium":
+      return buildStadium(prompt);
+    case "hospital":
+      return buildHospital(prompt);
+    case "house":
+      return buildHouse(prompt);
+    case "building":
+      return buildGenericMassing(prompt);
+    default:
+      return buildProduct(prompt);
+  }
 }
 
 /** True if parts look like a connected object (not a random pile) */

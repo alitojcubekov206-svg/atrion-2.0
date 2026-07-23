@@ -8,7 +8,7 @@ import type {
   StarterKit,
   ThreeDConcept,
 } from "./types";
-import { buildFromPrompt } from "./procedural-3d";
+import { buildFromPrompt, detectCategory } from "./procedural-3d";
 
 type AIProvider = {
   apiKey: string;
@@ -430,27 +430,27 @@ Return JSON:
 // ---------- 3D Concept Studio ----------
 
 export async function generate3DInterview(prompt: string): Promise<InterviewQuestion[]> {
-  if (!hasKey()) return mock3DInterview();
+  const category = detectCategory(prompt);
+  if (!hasKey()) return mock3DInterview(category);
 
   try {
     const data = await chatJSON<{ questions: InterviewQuestion[] }>(
-      `You are an industrial designer preparing a conceptual 3D model.
-Ask exactly 6 concise, project-specific questions before designing.
-Questions must clarify dimensions, intended use/load, installation environment,
-preferred materials, budget, available equipment or specialists, and other critical unknowns.
-Provide 3 practical options per question. For measurable questions, use concrete values
-with units appropriate to the object (for example 1.5 m, 2 m, 3 m), not vague words.
-Do not add an "Other" option because the interface adds a custom text field automatically.
-Respond in the user's language.
+      `You are a 3D concept designer. Detected category: ${category}.
+Ask exactly 5 concise questions that fit THIS category (not buildings if category is character/room/product/animal).
+Examples:
+- character: pose, outfit, hair, style (anime/realistic), scale
+- room: size, style, furniture, lighting, purpose
+- house/school: floors, size, materials, budget
+Provide 3 practical options per question. Same language as user.
 Return JSON: {"questions":[{"id":"q1","question":"...","options":["..."]}]}`,
-      `Object requested by the user: ${prompt}`
+      `User request: ${prompt}`
     );
 
     if (!data || typeof data !== "object" || !("questions" in data)) {
-      return mock3DInterview();
+      return mock3DInterview(category);
     }
     const rawQuestions = (data as { questions?: unknown }).questions;
-    if (!Array.isArray(rawQuestions)) return mock3DInterview();
+    if (!Array.isArray(rawQuestions)) return mock3DInterview(category);
     const questionItems: unknown[] = rawQuestions;
     const questions = questionItems
       .filter((item): item is { id: string; question: string; options: unknown[] } => {
@@ -471,20 +471,55 @@ Return JSON: {"questions":[{"id":"q1","question":"...","options":["..."]}]}`,
           .slice(0, 4),
       }))
       .filter((item) => item.options.length > 0);
-    return questions.length > 0 ? questions : mock3DInterview();
+    return questions.length > 0 ? questions : mock3DInterview(category);
   } catch (error) {
-    return localFallback("3D interview", error, mock3DInterview);
+    return localFallback("3D interview", error, () => mock3DInterview(category));
   }
 }
 
-function mock3DInterview(): InterviewQuestion[] {
+function mock3DInterview(category = "product"): InterviewQuestion[] {
+  if (category === "character") {
+    return [
+      { id: "style", question: "Какой стиль персонажа?", options: ["Аниме", "Реализм", "Стилизованный"] },
+      { id: "pose", question: "Какая поза?", options: ["Стоя", "Динамичная", "Сидеть"] },
+      { id: "outfit", question: "Одежда / образ?", options: ["Повседневная", "Школьная форма", "Фэнтези"] },
+      { id: "hair", question: "Волосы?", options: ["Короткие", "Длинные", "Хвостики"] },
+      { id: "scale", question: "Масштаб модели?", options: ["Фигурка ~20 см", "Рост человека", "Крупный герой"] },
+    ];
+  }
+  if (category === "room") {
+    return [
+      { id: "size", question: "Размер комнаты?", options: ["Маленькая", "Средняя 4×5 м", "Просторная"] },
+      { id: "style", question: "Стиль интерьера?", options: ["Минимализм", "Уютный", "Современный"] },
+      { id: "furniture", question: "Мебель?", options: ["Кровать+стол", "Гостиная", "Минимум"] },
+      { id: "light", question: "Свет?", options: ["Дневной", "Тёплый", "Неон"] },
+      { id: "purpose", question: "Назначение?", options: ["Спальня", "Кабинет", "Игровая"] },
+    ];
+  }
+  if (category === "animal") {
+    return [
+      { id: "species", question: "Кто это ближе?", options: ["Кошка", "Собака", "Фэнтези-зверь"] },
+      { id: "pose", question: "Поза?", options: ["Стоит", "Сидит", "Бежит"] },
+      { id: "style", question: "Стиль?", options: ["Милый", "Реализм", "Аниме"] },
+      { id: "size", question: "Размер?", options: ["Маленький", "Средний", "Крупный"] },
+      { id: "detail", question: "Детали?", options: ["Простой силуэт", "Больше деталей", "С аксессуаром"] },
+    ];
+  }
+  if (["house", "school", "office", "hospital", "tower", "stadium", "bridge", "building"].includes(category)) {
+    return [
+      { id: "dimensions", question: "Какая основная длина объекта нужна?", options: ["12 м", "30 м", "60 м"] },
+      { id: "floors", question: "Сколько этажей / уровней?", options: ["1–2", "3–5", "Высотное"] },
+      { id: "material", question: "Материалы?", options: ["Бетон", "Стекло+сталь", "Дерево"] },
+      { id: "budget", question: "Бюджет ориентир?", options: ["До 200 000", "200к–1млн", "Более 1 млн"] },
+      { id: "detail", question: "Уровень детализации?", options: ["Силуэт", "Средний", "Максимум"] },
+    ];
+  }
   return [
-    { id: "dimensions", question: "Какая основная длина объекта нужна?", options: ["1.5 метра", "3 метра", "5 метров"] },
-    { id: "usage", question: "Для чего и кем будет использоваться объект?", options: ["Людьми", "Транспортом", "Для хранения"] },
-    { id: "location", question: "Где объект будет установлен?", options: ["В помещении", "На улице", "Над водой"] },
-    { id: "material", question: "Какие материалы предпочтительны?", options: ["Металл", "Дерево", "Бетон"] },
-    { id: "budget", question: "Какой ориентировочный бюджет?", options: ["До 50 000 сом", "50 000–200 000 сом", "Более 200 000 сом"] },
-    { id: "equipment", question: "Какое оборудование доступно?", options: ["Только ручной инструмент", "Сварка и электроинструмент", "Будут работать специалисты"] },
+    { id: "size", question: "Размер объекта?", options: ["Карманный", "Настольный", "Крупный"] },
+    { id: "usage", question: "Для чего?", options: ["Декор", "Функциональный", "Прототип"] },
+    { id: "material", question: "Материалы?", options: ["Пластик", "Металл", "Смешанные"] },
+    { id: "style", question: "Стиль?", options: ["Минимализм", "Техно", "Органика"] },
+    { id: "color", question: "Цвета?", options: ["Нейтральные", "Яркие", "Тёмные"] },
   ];
 }
 
@@ -492,52 +527,120 @@ export async function generate3DConcept(
   prompt: string,
   answers: { question: string; answer: string }[] = []
 ): Promise<ThreeDConcept> {
-  // Free path: ALWAYS solid silhouette for ANY request.
-  const fullPrompt = [prompt, ...answers.map((a) => `${a.question} ${a.answer}`)].join(" ");
-  const solid = buildFromPrompt(fullPrompt);
+  const category = detectCategory(prompt);
+  const discovery =
+    answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- none";
 
-  if (!hasKey()) return solid;
+  // No AI key → category silhouette only. With key → AI builds parts for THIS prompt.
+  if (!hasKey()) {
+    const solid = buildFromPrompt(prompt);
+    if (answers.length) {
+      return {
+        ...solid,
+        description: `${solid.description} Уточнения: ${answers.map((a) => a.answer).join("; ")}.`,
+      };
+    }
+    return solid;
+  }
+
+  const system = `You are Atrion 3D Design Engine. Return ONLY valid JSON for a conceptual 3D model of box/cylinder parts.
+
+ABSOLUTE RULE: Build EXACTLY what the user asked for. Hint: "${category}".
+- character/anime/girl/person → humanoid (head, hair, eyes, torso, arms, legs, clothes). NEVER a building/school/house.
+- room/interior → floor, walls, ceiling, furniture. NOT an exterior building.
+- animal → body, head, legs, tail. NOT architecture.
+- car → body, cabin, wheels. NOT a building.
+- school/house/bridge/office → that building only.
+If user asks for X, parts MUST be X. Never default to architecture.
+
+Rules: 8-24 connected parts; Y up; meters; scale fits object (person ~1.6m, room ~3m, car ~4m long).
+Each part: id, name, shape ("box"|"cylinder"), position, size, rotation, color "#rrggbb", material, role, group, parentId.
+Also: name, description, units, dimensions, structure, materials, assemblySteps, costEstimate (KGS), advantages, disadvantages, risks, engineeringNotes, disclaimer.
+Same language as user.`;
 
   try {
-    const result = await chatJSON<unknown>(
-      `You are Atrion. Return ONLY JSON metadata for a 3D concept (NO inventing bad geometry).
-Use the same language as the user.
-Fill: name, description, materials, equipment, requirements, assemblySteps, costEstimate (KGS),
-advantages, disadvantages, risks, engineeringNotes, disclaimer.
-You may omit parts/structure/dimensions — server injects solid geometry.`,
-      `Object idea: ${prompt}
+    let result = await chatJSON<unknown>(
+      system,
+      `User request (build THIS object): ${prompt}
 
 Discovery:
-${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- none"}
+${discovery}
 
-Return JSON with name, description, materials, costEstimate, assemblySteps, etc.`
+Return full concept JSON with parts that match the request.`
     );
 
-    const meta = normalize3DConcept(result);
-    return {
-      ...solid,
-      name: meta.name && meta.name !== "Untitled 3D Concept" ? meta.name : solid.name,
-      description: meta.description || solid.description,
-      materials: meta.materials.length ? meta.materials : solid.materials,
-      equipment: meta.equipment.length ? meta.equipment : solid.equipment,
-      requirements: meta.requirements.length ? meta.requirements : solid.requirements,
-      assemblySteps: meta.assemblySteps.length ? meta.assemblySteps : solid.assemblySteps,
-      costEstimate: meta.costEstimate.maximum ? meta.costEstimate : solid.costEstimate,
-      advantages: meta.advantages.length ? meta.advantages : solid.advantages,
-      disadvantages: meta.disadvantages.length ? meta.disadvantages : solid.disadvantages,
-      risks: meta.risks.length ? meta.risks : solid.risks,
-      engineeringNotes: meta.engineeringNotes.length
-        ? meta.engineeringNotes
-        : solid.engineeringNotes,
-      // geometry ALWAYS from solid template
-      parts: solid.parts,
-      structure: solid.structure,
-      dimensions: solid.dimensions,
-      units: solid.units,
-    };
+    let concept = normalize3DConcept(result);
+
+    if (isPromptMismatch(prompt, category, concept)) {
+      result = await chatJSON<unknown>(
+        `${system}\nPREVIOUS OUTPUT WAS THE WRONG OBJECT. Rebuild for: "${prompt}". Stay category "${category}".`,
+        `FIX NOW. User asked: ${prompt}\nAnswers:\n${discovery}`
+      );
+      concept = normalize3DConcept(result);
+    }
+
+    if (isPromptMismatch(prompt, category, concept) || concept.parts.length < 4) {
+      const fallback = buildFromPrompt(prompt);
+      return {
+        ...fallback,
+        name: concept.name !== "Untitled 3D Concept" ? concept.name : fallback.name,
+        description: `${fallback.description} (for: ${prompt.slice(0, 80)})`,
+      };
+    }
+
+    return concept;
   } catch (error) {
-    return localFallback("3D concept", error, () => solid);
+    return localFallback("3D concept", error, () => buildFromPrompt(prompt));
   }
+}
+
+function isPromptMismatch(
+  prompt: string,
+  category: ReturnType<typeof detectCategory>,
+  concept: ThreeDConcept
+): boolean {
+  const blob = [
+    concept.name,
+    concept.description,
+    ...concept.parts.map((p) => `${p.name} ${p.role} ${p.group}`),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const buildingScore = (
+    blob.match(
+      /foundation|цокол|крыш|roof|этаж|фасад|стен[аыу]|wall|фундамент|корпус|здание|школ|башн|плинт|canopy|plinth/gi
+    ) || []
+  ).length;
+  const characterScore = (
+    blob.match(
+      /head|hair|torso|arm|leg|eye|голова|волос|торс|рук|ног|глаз|юбк|skirt|шея|neck|персонаж|аниме|girl|девуш/gi
+    ) || []
+  ).length;
+  const roomScore = (
+    blob.match(/floor|пол\b|потолок|ceiling|кровать|bed|интерьер|комнат|wall-l|wall-r/gi) || []
+  ).length;
+  const vehicleScore = (blob.match(/wheel|колёс|кабин|кузов|chassis|бампер|car\b|авто/gi) || [])
+    .length;
+
+  if (category === "character") return characterScore < 3 || buildingScore >= 4;
+  if (category === "room") return roomScore < 2 || (buildingScore >= 5 && roomScore < 3);
+  if (category === "animal") return buildingScore >= 4 && characterScore < 2;
+  if (category === "vehicle") return vehicleScore < 1 && buildingScore >= 3;
+  if (
+    ["house", "school", "office", "hospital", "tower", "stadium", "bridge", "building"].includes(
+      category
+    )
+  ) {
+    return characterScore >= 5 && buildingScore < 2;
+  }
+  if (category === "product" || category === "furniture") {
+    const asksBuilding = /здан|школ|дом|башн|офис|мост|стадион|house|school|tower|bridge/i.test(
+      prompt
+    );
+    if (!asksBuilding && buildingScore >= 5 && concept.dimensions.height > 8) return true;
+  }
+  return false;
 }
 
 export async function refine3DConcept(
@@ -545,35 +648,38 @@ export async function refine3DConcept(
   instruction: string,
   selectedPartId?: string | null
 ): Promise<ThreeDConcept> {
-  // Keep solid geometry — never let AI replace a good model with a cube pile
   const safe = mockRefine3DConcept(concept, instruction, selectedPartId);
   if (!hasKey()) return safe;
 
   try {
     const selected = concept.parts.find((part) => part.id === selectedPartId);
     const result = await chatJSON<unknown>(
-      `You refine METADATA only for a 3D concept (name, description, materials, costs, notes).
-Do NOT invent new parts geometry. Return full JSON but keep parts/structure/dimensions identical to input.
-Same language as user.`,
-      `Current concept:
-${JSON.stringify(concept)}
+      `You refine an Atrion 3D concept. Same language as user.
+You MAY change parts geometry when asked (color, size, add/remove, reshape).
+Keep the SAME object type unless user explicitly changes it (never turn a character into a building).
+Return full JSON with parts: id, name, shape box|cylinder, position, size, rotation, color #hex, material, role, group, parentId.`,
+      `Current:
+${JSON.stringify({
+        name: concept.name,
+        description: concept.description,
+        dimensions: concept.dimensions,
+        parts: concept.parts,
+        structure: concept.structure,
+      })}
 
-Selected part: ${selected ? `${selected.name} (${selected.id})` : "none"}
-User instruction: ${instruction}
+Selected: ${selected ? `${selected.name} (${selected.id})` : "none"}
+Instruction: ${instruction}
 
-Return updated concept JSON. Preserve parts array exactly unless instruction is a simple scale of selected part.`
+Return updated concept JSON.`
     );
     const normalized = normalize3DConcept(result);
-    // Geometry lock: always keep original (or mock-refined) parts
-    return {
-      ...normalized,
-      parts: safe.parts,
-      structure: safe.structure ?? concept.structure,
-      dimensions: safe.dimensions,
-      units: concept.units,
-      name: normalized.name || safe.name,
-      description: normalized.description || safe.description,
-    };
+    if (normalized.parts.length >= 4) {
+      return {
+        ...normalized,
+        name: normalized.name !== "Untitled 3D Concept" ? normalized.name : concept.name,
+      };
+    }
+    return safe;
   } catch (error) {
     return localFallback("3D refine", error, () => safe);
   }

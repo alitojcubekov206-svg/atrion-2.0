@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { DrawingView } from "@/components/three/ConceptViewer";
 import type { InterviewQuestion, ThreeDConcept } from "@/lib/types";
 import { download } from "@/lib/export";
+import { loadSettings, speakText, stopSpeaking } from "@/lib/settings";
 
 const ConceptViewer = dynamic(() => import("@/components/three/ConceptViewer"), {
   ssr: false,
@@ -22,12 +23,12 @@ const PIPELINE = [
 ] as const;
 
 const EXAMPLES = [
-  "Двухэтажный дом 12×9 м с двускатной крышей и панорамными окнами",
+  "Аниме девушка 3D модель с длинными волосами",
+  "Уютная спальня 4×5 м с кроватью и столом",
+  "Двухэтажный дом 12×9 м с двускатной крышей",
   "Школа 4 этажа ширина 60 длина 120",
-  "Пешеходный мост 18 м из стали и дерева",
-  "Офисная башня 20 этажей",
-  "Стадион с трибунами",
   "Красный спорткар",
+  "Кот сидит",
 ];
 
 type ChatMessage = { role: "user" | "assistant"; text: string };
@@ -52,7 +53,7 @@ export default function DesignEnginePage() {
   const [chat, setChat] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      text: "Опиши что угодно — дом, мост, школу, машину, гаджет. Соберу цельный объект: свет, орбита, Explode.",
+      text: "Пиши что нужно — соберу ЭТО. Школа→школа, комната→комната, персонаж→персонаж. Без подмены.",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -66,6 +67,10 @@ export default function DesignEnginePage() {
     setConcept(next);
     setAssembling(true);
     assembleTimer.current = setTimeout(() => setAssembling(false), 3400);
+    const settings = loadSettings();
+    if (settings.voiceEnabled && settings.voiceAuto) {
+      speakText(`${next.name}. ${next.description}`);
+    }
   }
 
   const selectedPart = concept?.parts.find((part) => part.id === selectedId) ?? null;
@@ -236,7 +241,7 @@ export default function DesignEnginePage() {
               </p>
               <div className="gold-line mt-6 w-16" />
               <p className="mt-5 max-w-md text-center text-sm leading-relaxed text-[#8f8a82]">
-                Опиши что угодно — соберу цельный 3D. Крути. Explode. Прави чатом.
+                Девушка → фигура. Комната → интерьер. Школа → школа. Не здание «на всякий».
               </p>
               <div className="mt-9 w-full space-y-3">
                 <textarea
@@ -314,6 +319,18 @@ export default function DesignEnginePage() {
             >
               {exploded ? "Assemble" : "Explode"}
             </button>
+            {concept && (
+              <button
+                type="button"
+                onClick={() => {
+                  stopSpeaking();
+                  speakText(`${concept.name}. ${concept.description}`);
+                }}
+                className="rounded-full px-3 py-1.5 text-xs text-[#8f8a82] hover:text-white"
+              >
+                Voice
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setPanelOpen((value) => !value)}
