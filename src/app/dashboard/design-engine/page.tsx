@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { DrawingView } from "@/components/three/ConceptViewer";
 import type { InterviewQuestion, ThreeDConcept } from "@/lib/types";
@@ -10,7 +10,7 @@ import { download } from "@/lib/export";
 
 const ConceptViewer = dynamic(() => import("@/components/three/ConceptViewer"), {
   ssr: false,
-  loading: () => <div className="h-full animate-pulse bg-[#09060f]" />,
+  loading: () => <div className="h-full animate-pulse bg-[#07060a]" />,
 });
 
 const PIPELINE = [
@@ -38,17 +38,35 @@ export default function DesignEnginePage() {
   const [concept, setConcept] = useState<ThreeDConcept | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<DrawingView>("perspective");
+  const [exploded, setExploded] = useState(false);
+  const [assembling, setAssembling] = useState(false);
+  const [showMesh, setShowMesh] = useState(true);
   const [loading, setLoading] = useState(false);
   const [pipelineStep, setPipelineStep] = useState(-1);
   const [error, setError] = useState<string | null>(null);
   const [limitReached, setLimitReached] = useState(false);
+  const assembleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      text: "Опиши объект — соберу цельную 3D-модель. Дом будет выглядеть как дом.",
+      text: "Опиши объект. Соберу модель — крути, разбирай в воздухе как в Iron Man, правь чатом.",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
+
+  function playAssemble(next: ThreeDConcept) {
+    if (assembleTimer.current) clearTimeout(assembleTimer.current);
+    setExploded(false);
+    setView("perspective");
+    setShowMesh(Boolean(next.meshUrl));
+    setConcept(next);
+    if (!next.meshUrl) {
+      setAssembling(true);
+      assembleTimer.current = setTimeout(() => setAssembling(false), 3200);
+    } else {
+      setAssembling(false);
+    }
+  }
 
   const selectedPart = concept?.parts.find((part) => part.id === selectedId) ?? null;
   const structure = useMemo(() => {
@@ -117,17 +135,17 @@ export default function DesignEnginePage() {
       const response = await fetch("/api/3d/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, answers: interviewAnswers }),
+        body: JSON.stringify({ prompt, answers: interviewAnswers, wantMesh: false }),
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.concept) {
         setPipelineStep(PIPELINE.length - 1);
-        setConcept(data.concept);
+        playAssemble(data.concept);
         setChat((prev) => [
           ...prev,
           {
             role: "assistant",
-            text: `Готово: ${data.concept.name}. Выбери деталь или напиши, что изменить.`,
+            text: `Готово: ${data.concept.name}. Крути модель · Explode — разборка в воздухе · правь чатом.`,
           },
         ]);
       } else {
@@ -163,10 +181,10 @@ export default function DesignEnginePage() {
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.concept) {
-        setConcept(data.concept);
+        playAssemble(data.concept);
         setChat((prev) => [
           ...prev,
-          { role: "assistant", text: "Готово. Можешь продолжать." },
+          { role: "assistant", text: "Правка применена." },
         ]);
       } else {
         setError(data.error ?? "Не удалось применить правку.");
@@ -182,7 +200,7 @@ export default function DesignEnginePage() {
     questions.length > 0 && questions.every((question) => Boolean(answers[question.id]));
 
   return (
-    <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex bg-[#09060f] text-slate-100">
+    <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex bg-[#07060a] text-slate-100">
       <div className={`relative min-w-0 flex-1 ${panelOpen ? "md:w-[80%]" : "w-full"}`}>
         {concept ? (
           <ConceptViewer
@@ -190,16 +208,19 @@ export default function DesignEnginePage() {
             selectedId={selectedId}
             onSelect={setSelectedId}
             view={view}
-            autoRotate={!loading && view === "perspective"}
+            exploded={exploded}
+            assembling={assembling}
+            showMesh={showMesh}
+            autoRotate={!loading && !assembling && view === "perspective" && !exploded}
             className="h-full"
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center px-6">
-            <h1 className="max-w-2xl text-center font-[family-name:var(--font-display)] text-4xl font-semibold tracking-tight md:text-5xl">
+            <h1 className="max-w-2xl text-center font-[family-name:var(--font-display)] text-4xl font-semibold tracking-tight text-amber-300 md:text-5xl">
               Just build it.
             </h1>
             <p className="mt-4 max-w-lg text-center text-sm text-slate-400">
-              Опиши дом, школу или мост — получишь цельную 3D-модель.
+              Бесплатно: дом как дом, школа как школа. Крути, разбирай в воздухе, правь чатом.
             </p>
             <div className="mt-8 flex w-full max-w-2xl flex-col gap-3">
               <textarea
@@ -207,7 +228,7 @@ export default function DesignEnginePage() {
                 onChange={(event) => setPrompt(event.target.value)}
                 rows={3}
                 placeholder="Двухэтажный дом 12×9 с панорамными окнами…"
-                className="w-full resize-none rounded-2xl border border-violet-400/20 bg-white/5 px-5 py-4 text-sm outline-none backdrop-blur focus:border-violet-300/50"
+                className="w-full resize-none rounded-2xl border border-amber-400/25 bg-white/5 px-5 py-4 text-sm outline-none backdrop-blur focus:border-amber-300/50"
               />
               <div className="flex flex-wrap gap-2">
                 {EXAMPLES.map((example) => (
@@ -215,7 +236,7 @@ export default function DesignEnginePage() {
                     key={example}
                     type="button"
                     onClick={() => setPrompt(example)}
-                    className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:border-violet-400/40 hover:text-violet-100"
+                    className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:border-amber-400/40 hover:text-amber-100"
                   >
                     {example.slice(0, 42)}…
                   </button>
@@ -225,7 +246,7 @@ export default function DesignEnginePage() {
                 type="button"
                 disabled={loading || prompt.trim().length < 10}
                 onClick={startInterview}
-                className="rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500 px-6 py-3 text-sm font-semibold text-black shadow-[0_0_30px_rgba(167,139,250,0.35)] disabled:opacity-40"
+                className="rounded-full bg-gradient-to-r from-amber-300 to-amber-500 px-6 py-3 text-sm font-semibold text-black shadow-[0_0_30px_rgba(245,197,24,0.35)] disabled:opacity-40"
               >
                 {loading ? "…" : "Создать →"}
               </button>
@@ -234,7 +255,7 @@ export default function DesignEnginePage() {
         )}
 
         {concept && (
-          <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-full border border-white/10 bg-black/50 px-3 py-2 backdrop-blur-xl">
+          <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-full border border-white/10 bg-black/55 px-3 py-2 backdrop-blur-xl">
             {(
               [
                 ["perspective", "Orbit"],
@@ -246,16 +267,45 @@ export default function DesignEnginePage() {
               <button
                 key={value}
                 type="button"
-                onClick={() => setView(value)}
+                onClick={() => {
+                  setView(value);
+                  setExploded(false);
+                }}
                 className={`rounded-full px-3 py-1.5 text-xs ${
-                  view === value
-                    ? "bg-violet-400/20 text-violet-100"
+                  view === value && !exploded
+                    ? "bg-amber-400/20 text-amber-100"
                     : "text-slate-400 hover:text-white"
                 }`}
               >
                 {label}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                setView("perspective");
+                setShowMesh(false);
+                setAssembling(false);
+                setExploded((v) => !v);
+              }}
+              className={`rounded-full px-3 py-1.5 text-xs ${
+                exploded ? "bg-amber-400/25 text-amber-100" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              {exploded ? "Assemble" : "Explode"}
+            </button>
+            {concept.meshUrl && (
+              <button
+                type="button"
+                onClick={() => {
+                  setExploded(false);
+                  setShowMesh((v) => !v);
+                }}
+                className="rounded-full px-3 py-1.5 text-xs text-slate-400 hover:text-white"
+              >
+                {showMesh ? "Parts" : "Mesh"}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setPanelOpen((value) => !value)}
@@ -272,20 +322,23 @@ export default function DesignEnginePage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-30 flex items-center justify-center bg-[#09060f]/55 backdrop-blur-sm"
+              className="absolute inset-0 z-30 flex items-center justify-center bg-[#07060a]/55 backdrop-blur-sm"
             >
-              <div className="w-full max-w-xs rounded-2xl border border-violet-400/20 bg-black/60 p-5">
+              <div className="w-full max-w-xs rounded-2xl border border-amber-400/25 bg-black/65 p-5">
+                <p className="mb-3 text-[10px] uppercase tracking-[0.25em] text-amber-300/80">
+                  Building
+                </p>
                 <ul className="space-y-2">
                   {PIPELINE.map((step, index) => (
                     <li
                       key={step}
                       className={`flex items-center gap-3 text-sm ${
-                        index <= pipelineStep ? "text-violet-100" : "text-slate-500"
+                        index <= pipelineStep ? "text-amber-100" : "text-slate-500"
                       }`}
                     >
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${
-                          index <= pipelineStep ? "bg-violet-300" : "bg-slate-700"
+                          index <= pipelineStep ? "bg-amber-300" : "bg-slate-700"
                         }`}
                       />
                       {step}
@@ -353,7 +406,7 @@ export default function DesignEnginePage() {
                 type="button"
                 disabled={!allAnswered || loading}
                 onClick={generate}
-                className="mt-4 w-full rounded-full bg-violet-400 py-3 text-sm font-semibold text-black disabled:opacity-40"
+                className="mt-4 w-full rounded-full bg-amber-400 py-3 text-sm font-semibold text-black disabled:opacity-40"
               >
                 Создать 3D
               </button>

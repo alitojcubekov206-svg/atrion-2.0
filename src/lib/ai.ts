@@ -8,6 +8,7 @@ import type {
   StarterKit,
   ThreeDConcept,
 } from "./types";
+import { buildFromPrompt, isCoherentConcept } from "./procedural-3d";
 
 type AIProvider = {
   apiKey: string;
@@ -491,7 +492,9 @@ export async function generate3DConcept(
   prompt: string,
   answers: { question: string; answer: string }[] = []
 ): Promise<ThreeDConcept> {
-  if (!hasKey()) return mock3DConcept(prompt);
+  const freeSolid = buildFromPrompt(prompt);
+
+  if (!hasKey()) return freeSolid;
 
   try {
     const result = await chatJSON<unknown>(
@@ -556,9 +559,30 @@ Include realistic part quantities, tools, 5-10 assembly steps, advantages, disad
 Never claim that the model is structurally certified.`
     );
 
-    return normalize3DConcept(result);
+    const normalized = normalize3DConcept(result);
+    // Free guarantee: if AI returns a messy pile, keep solid template geometry
+    if (!isCoherentConcept(normalized)) {
+      return {
+        ...freeSolid,
+        name: normalized.name || freeSolid.name,
+        description: normalized.description || freeSolid.description,
+        materials: normalized.materials.length ? normalized.materials : freeSolid.materials,
+        costEstimate: normalized.costEstimate.maximum
+          ? normalized.costEstimate
+          : freeSolid.costEstimate,
+        assemblySteps: normalized.assemblySteps.length
+          ? normalized.assemblySteps
+          : freeSolid.assemblySteps,
+        advantages: normalized.advantages.length ? normalized.advantages : freeSolid.advantages,
+        disadvantages: normalized.disadvantages.length
+          ? normalized.disadvantages
+          : freeSolid.disadvantages,
+        risks: normalized.risks.length ? normalized.risks : freeSolid.risks,
+      };
+    }
+    return normalized;
   } catch (error) {
-    return localFallback("3D concept", error, () => mock3DConcept(prompt));
+    return localFallback("3D concept", error, () => freeSolid);
   }
 }
 
@@ -768,15 +792,7 @@ function normalize3DConcept(value: unknown): ThreeDConcept {
 }
 
 function mock3DConcept(prompt: string): ThreeDConcept {
-  const lower = prompt.toLowerCase();
-  if (/школ|school|лицей|гимназ|образоват/i.test(lower)) {
-    return mockSchoolBuilding(prompt);
-  }
-  if (/дом|house|коттедж|вилл|здан|build|жиль/i.test(lower) || lower.length < 12) {
-    return mockHouseBuilding(prompt);
-  }
-
-  return mockHouseBuilding(prompt);
+  return buildFromPrompt(prompt);
 }
 
 /** Readable two-storey house silhouette */

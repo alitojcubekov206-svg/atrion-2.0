@@ -132,6 +132,8 @@ export interface ThreeDConcept {
   }[];
   engineeringNotes: string[];
   disclaimer: string;
+  /** Optional Meshy (or other) textured GLB URL — real mesh, not boxes */
+  meshUrl?: string;
 }
 
 export type ExpertRole =

@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId, getUserPlan } from "@/lib/auth";
 import { generate3DConcept } from "@/lib/ai";
+import { attachMeshUrl, generateMeshyGlb, isMeshyConfigured } from "@/lib/meshy";
 import { db } from "@/lib/db";
+
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const userId = await getSessionUserId();
@@ -11,10 +14,12 @@ export async function POST(req: Request) {
 
   let prompt: unknown;
   let answers: unknown;
+  let wantMesh: unknown;
   try {
     const body = await req.json();
     prompt = body?.prompt;
     answers = body?.answers;
+    wantMesh = body?.wantMesh;
   } catch {
     return NextResponse.json({ error: "Некорректный запрос." }, { status: 400 });
   }
@@ -45,7 +50,8 @@ export async function POST(req: Request) {
     if (reservation.count === 0) {
       return NextResponse.json(
         {
-          error: "Бесплатная 3D-генерация уже использована. Перейдите на Pro для расширенного доступа.",
+          error:
+            "Бесплатная 3D-генерация уже использована. Перейдите на Pro для расширенного доступа.",
           code: "THREE_D_LIMIT_REACHED",
         },
         { status: 403 }
@@ -65,8 +71,37 @@ export async function POST(req: Request) {
           )
           .slice(0, 10)
       : [];
-    const concept = await generate3DConcept(prompt.trim(), safeAnswers);
-    return NextResponse.json({ concept });
+
+    let concept = await generate3DConcept(prompt.trim(), safeAnswers);
+    let meshyError: string | null = null;
+
+    const useMeshy =
+      wantMesh === true && isMeshyConfigured() && process.env.MESHY_ENABLED === "true";
+    if (useMeshy) {
+      try {
+        const meshPrompt = [
+          prompt.trim(),
+          ...safeAnswers.map((a) => `${a.question}: ${a.answer}`),
+        ]
+          .join(". ")
+          .slice(0, 580);
+        const glb = await generateMeshyGlb(meshPrompt);
+        concept = attachMeshUrl(concept, glb);
+      } catch (error) {
+        meshyError =
+          error instanceof Error
+            ? error.message
+            : "Meshy mesh failed — показана концепт-модель";
+        console.error("Meshy generation failed", error);
+      }
+    }
+
+    return NextResponse.json({
+      concept,
+      meshy: Boolean(concept.meshUrl),
+      meshyConfigured: isMeshyConfigured(),
+      meshyError,
+    });
   } catch (error) {
     if (freeGenerationReserved) {
       await db.user
@@ -74,7 +109,9 @@ export async function POST(req: Request) {
           where: { id: userId, threeDGenerations: { gt: 0 } },
           data: { threeDGenerations: { decrement: 1 } },
         })
-        .catch((rollbackError) => console.error("3D quota rollback failed", rollbackError));
+        .catch((rollbackError) =>
+          console.error("3D quota rollback failed", rollbackError)
+        );
     }
     console.error("3D concept generation failed", error);
     return NextResponse.json(

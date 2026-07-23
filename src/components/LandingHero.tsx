@@ -17,7 +17,7 @@ export default function LandingHero({ loggedIn }: { loggedIn: boolean }) {
           animate="show"
           variants={{
             hidden: {},
-            show: { transition: { staggerChildren: 0.12, delayChildren: 0.1 } },
+            show: { transition: { staggerChildren: 0.12, delayChildren: 0.08 } },
           }}
           className="max-w-3xl"
         >
@@ -46,9 +46,20 @@ export default function LandingHero({ loggedIn }: { loggedIn: boolean }) {
                 transition: { duration: 0.9, ease },
               },
             }}
-            className="mt-7 font-[family-name:var(--font-display)] text-2xl text-violet-200 md:text-4xl"
+            className="mt-7 font-[family-name:var(--font-display)] text-2xl text-amber-300 md:text-4xl"
           >
             Just build it.
+          </motion.p>
+
+          <motion.p
+            variants={{
+              hidden: { opacity: 0, y: 12 },
+              show: { opacity: 1, y: 0, transition: { duration: 0.75, ease } },
+            }}
+            className="mt-5 max-w-md text-sm leading-relaxed text-slate-400 md:text-base"
+          >
+            Говори — получается цельный 3D. Крути, разбирай в воздухе как Iron Man, правь чатом.
+            Без платных mesh API.
           </motion.p>
 
           <motion.div
@@ -60,7 +71,7 @@ export default function LandingHero({ loggedIn }: { loggedIn: boolean }) {
                 transition: { duration: 0.75, ease },
               },
             }}
-            className="mt-6 h-px w-28 origin-left bg-gradient-to-r from-violet-300 to-transparent"
+            className="mt-6 h-px w-28 origin-left bg-gradient-to-r from-amber-400 to-transparent"
           />
 
           <motion.div
@@ -73,7 +84,7 @@ export default function LandingHero({ loggedIn }: { loggedIn: boolean }) {
             <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
               <Link
                 href={loggedIn ? "/dashboard/design-engine" : "/register"}
-                className="inline-block rounded-full bg-gradient-to-r from-violet-300 to-fuchsia-400 px-9 py-3.5 text-sm font-semibold text-black shadow-[0_0_45px_rgba(167,139,250,0.4)]"
+                className="inline-block rounded-full bg-gradient-to-r from-amber-300 to-amber-500 px-9 py-3.5 text-sm font-semibold text-black shadow-[0_0_45px_rgba(245,197,24,0.4)]"
               >
                 {loggedIn ? "Engine" : "Start"}
               </Link>
@@ -82,7 +93,7 @@ export default function LandingHero({ loggedIn }: { loggedIn: boolean }) {
               <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
                 <Link
                   href="/login"
-                  className="inline-block rounded-full border border-white/20 px-7 py-3.5 text-sm text-white/90 backdrop-blur transition hover:border-violet-300/50"
+                  className="inline-block rounded-full border border-white/20 px-7 py-3.5 text-sm text-white/90 backdrop-blur transition hover:border-amber-300/50"
                 >
                   Sign in
                 </Link>

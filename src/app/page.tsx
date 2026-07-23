@@ -6,7 +6,7 @@ export default async function Home() {
   const user = await getCurrentUser();
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#03060c]">
+    <main className="relative min-h-screen overflow-hidden bg-[#07060a]">
       <nav className="fixed top-0 z-50 flex w-full items-center justify-between px-6 py-5 md:px-10">
         <Link
           href="/"
@@ -18,7 +18,7 @@ export default async function Home() {
           {user ? (
             <Link
               href="/dashboard/design-engine"
-              className="rounded-full bg-violet-300 px-5 py-2 font-semibold text-black shadow-[0_0_24px_rgba(167,139,250,0.35)]"
+              className="rounded-full bg-amber-300 px-5 py-2 font-semibold text-black shadow-[0_0_24px_rgba(245,197,24,0.35)]"
             >
               Engine
             </Link>
@@ -29,7 +29,7 @@ export default async function Home() {
               </Link>
               <Link
                 href="/register"
-                className="rounded-full border border-white/20 px-5 py-2 text-white backdrop-blur transition hover:border-violet-300/50"
+                className="rounded-full border border-white/20 px-5 py-2 text-white backdrop-blur transition hover:border-amber-300/50"
               >
                 Start
               </Link>

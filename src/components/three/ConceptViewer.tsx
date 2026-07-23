@@ -1,13 +1,31 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { ContactShadows, Edges, Grid, Html, OrbitControls } from "@react-three/drei";
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import {
+  Center,
+  ContactShadows,
+  Edges,
+  Grid,
+  Html,
+  OrbitControls,
+  useGLTF,
+} from "@react-three/drei";
+import { Suspense, useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { Group } from "three";
 import * as THREE from "three";
 import type { ModelPart, ThreeDConcept } from "@/lib/types";
 
 export type DrawingView = "perspective" | "top" | "front" | "side";
+
+function explodeOffset(part: ModelPart, amount: number): [number, number, number] {
+  const len = Math.hypot(part.position[0], part.position[1] * 0.4, part.position[2]) || 1;
+  const boost = 0.55 + Math.min(1.8, Math.max(...part.size) * 0.35);
+  return [
+    (part.position[0] / len) * amount * boost * 2.2,
+    (part.position[1] / len) * amount * boost * 1.4 + amount * 0.4,
+    (part.position[2] / len) * amount * boost * 2.2,
+  ];
+}
 
 function CameraRig({ view, maxDimension }: { view: DrawingView; maxDimension: number }) {
   const { camera } = useThree();
@@ -37,25 +55,54 @@ function SoftSpin({ enabled, children }: { enabled: boolean; children: ReactNode
   const ref = useRef<Group>(null);
   useFrame((_, delta) => {
     if (!enabled || !ref.current) return;
-    ref.current.rotation.y += delta * 0.04;
+    ref.current.rotation.y += delta * 0.045;
   });
   return <group ref={ref}>{children}</group>;
 }
 
-function PartMesh({
+function AnimatedPart({
   part,
   selected,
+  exploded,
+  assembling,
   onSelect,
 }: {
   part: ModelPart;
   selected: boolean;
+  exploded: boolean;
+  assembling: boolean;
   onSelect: () => void;
 }) {
+  const mesh = useRef<THREE.Mesh>(null);
+  const progress = useRef(exploded ? 0 : 1);
+
+  useEffect(() => {
+    if (assembling) progress.current = 0;
+  }, [assembling, part.id]);
+
+  useFrame((_, delta) => {
+    if (!mesh.current) return;
+    const target = exploded ? 0 : 1;
+    progress.current = THREE.MathUtils.damp(
+      progress.current,
+      target,
+      assembling ? 0.9 : 2.4,
+      delta
+    );
+    const [ox, oy, oz] = explodeOffset(part, 1 - progress.current);
+    mesh.current.position.set(
+      part.position[0] + ox,
+      part.position[1] + oy,
+      part.position[2] + oz
+    );
+  });
+
   const glass = /стекл|glass/i.test(part.material);
   const metal = /стал|металл|алюмин|metal/i.test(part.material);
 
   return (
     <mesh
+      ref={mesh}
       position={part.position}
       rotation={part.rotation}
       onClick={(event) => {
@@ -66,23 +113,23 @@ function PartMesh({
       receiveShadow
     >
       {part.shape === "cylinder" ? (
-        <cylinderGeometry args={[part.size[0], part.size[2], part.size[1], 32]} />
+        <cylinderGeometry args={[part.size[0], part.size[2], part.size[1], 28]} />
       ) : (
         <boxGeometry args={part.size} />
       )}
       <meshStandardMaterial
         color={part.color}
-        emissive={selected ? part.color : glass ? part.color : "#1a1028"}
-        emissiveIntensity={selected ? 0.45 : glass ? 0.35 : 0.08}
-        roughness={glass ? 0.08 : metal ? 0.3 : 0.5}
-        metalness={metal ? 0.7 : glass ? 0.05 : 0.15}
+        emissive={selected ? part.color : glass ? part.color : "#1a1408"}
+        emissiveIntensity={selected ? 0.5 : glass ? 0.3 : 0.08}
+        roughness={glass ? 0.08 : metal ? 0.28 : 0.48}
+        metalness={metal ? 0.72 : glass ? 0.05 : 0.18}
         transparent={glass}
         opacity={glass ? 0.45 : 1}
       />
-      <Edges color={selected ? "#f5e9ff" : "#120a1c"} threshold={16} />
+      <Edges color={selected ? "#ffe566" : "#120e08"} threshold={16} />
       {selected && (
         <Html center position={[0, Math.max(0.5, part.size[1] / 2 + 0.45), 0]} distanceFactor={10}>
-          <div className="pointer-events-none whitespace-nowrap rounded-md border border-violet-300/40 bg-black/80 px-3 py-1.5 text-[11px] tracking-wide text-violet-50">
+          <div className="pointer-events-none whitespace-nowrap rounded-md border border-amber-400/40 bg-black/80 px-3 py-1.5 text-[11px] text-amber-50">
             <span className="font-semibold">{part.name}</span>
           </div>
         </Html>
@@ -91,21 +138,38 @@ function PartMesh({
   );
 }
 
+function GlbModel({ url }: { url: string }) {
+  const { scene } = useGLTF(url);
+  const cloned = useMemo(() => scene.clone(true), [scene]);
+  return (
+    <Center>
+      <primitive object={cloned} scale={1.2} />
+    </Center>
+  );
+}
+
 export default function ConceptViewer({
   concept,
   selectedId,
   onSelect,
   view = "perspective",
+  exploded = false,
+  assembling = false,
   className = "",
   autoRotate = false,
+  showMesh = true,
 }: {
   concept: ThreeDConcept;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   view?: DrawingView;
+  exploded?: boolean;
+  assembling?: boolean;
   className?: string;
   autoRotate?: boolean;
+  showMesh?: boolean;
 }) {
+  const hasMesh = Boolean(showMesh && concept.meshUrl);
   const maxDimension = useMemo(
     () =>
       Math.max(
@@ -118,13 +182,22 @@ export default function ConceptViewer({
   );
 
   return (
-    <div className={`relative h-full min-h-[420px] overflow-hidden bg-[#09060f] ${className}`}>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(167,139,250,0.14),transparent_55%)]" />
+    <div className={`relative h-full min-h-[420px] overflow-hidden bg-[#07060a] ${className}`}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(245,197,24,0.12),transparent_55%)]" />
+      <div className="pointer-events-none absolute left-4 top-4 z-10 rounded border border-amber-400/25 bg-black/55 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-amber-100/80 backdrop-blur">
+        {assembling
+          ? "ASSEMBLING…"
+          : exploded
+            ? "EXPLODED · IRON MAN MODE"
+            : hasMesh
+              ? "MESH · ORBIT"
+              : "ORBIT · SELECT"}
+      </div>
       <Canvas
-        key={view}
+        key={`${view}-${hasMesh ? "mesh" : "parts"}`}
         shadows={view === "perspective"}
         orthographic={view !== "perspective"}
-        dpr={[1, 1.75]}
+        dpr={[1, 1.5]}
         camera={
           view === "perspective"
             ? { position: [12, 7, 14], fov: 38 }
@@ -132,31 +205,42 @@ export default function ConceptViewer({
         }
         gl={{
           antialias: true,
+          powerPreference: "high-performance",
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.25,
+          toneMappingExposure: 1.2,
         }}
         onPointerMissed={() => onSelect(null)}
       >
-        <CameraRig view={view} maxDimension={maxDimension} />
-        <color attach="background" args={["#09060f"]} />
-        <fog attach="fog" args={["#09060f", 22, 52]} />
-        <hemisphereLight args={["#e9d5ff", "#1a1028", 0.85]} />
-        <ambientLight intensity={0.9} />
-        <directionalLight position={[12, 18, 10]} intensity={3.2} castShadow color="#faf5ff" />
-        <pointLight position={[-10, 8, -6]} intensity={95} color="#a78bfa" distance={40} decay={1.5} />
-        <pointLight position={[8, 4, 10]} intensity={70} color="#e879f9" distance={35} decay={1.5} />
+        <CameraRig view={view} maxDimension={hasMesh ? 8 : maxDimension} />
+        <color attach="background" args={["#07060a"]} />
+        <fog attach="fog" args={["#07060a", 22, 52]} />
+        <hemisphereLight args={["#fff4d6", "#1a1408", 0.85]} />
+        <ambientLight intensity={0.85} />
+        <directionalLight position={[12, 18, 10]} intensity={3} castShadow color="#fff8e8" />
+        <pointLight position={[-8, 6, -4]} intensity={80} color="#f5c518" distance={36} decay={1.5} />
+        <pointLight position={[6, 3, 8]} intensity={45} color="#a78bfa" distance={30} decay={1.5} />
 
-        <SoftSpin enabled={autoRotate && view === "perspective"}>
-          <group position={[0, 0.05, 0]}>
-            {concept.parts.map((part) => (
-              <PartMesh
-                key={part.id}
-                part={part}
-                selected={part.id === selectedId}
-                onSelect={() => onSelect(part.id)}
-              />
-            ))}
-          </group>
+        <SoftSpin
+          enabled={autoRotate && view === "perspective" && !exploded && !assembling}
+        >
+          {hasMesh && concept.meshUrl ? (
+            <Suspense fallback={null}>
+              <GlbModel url={concept.meshUrl} />
+            </Suspense>
+          ) : (
+            <group position={[0, 0.05, 0]}>
+              {concept.parts.map((part) => (
+                <AnimatedPart
+                  key={part.id}
+                  part={part}
+                  selected={part.id === selectedId}
+                  exploded={exploded}
+                  assembling={assembling}
+                  onSelect={() => onSelect(part.id)}
+                />
+              ))}
+            </group>
+          )}
         </SoftSpin>
 
         {view === "perspective" && (
@@ -165,11 +249,11 @@ export default function ConceptViewer({
               position={[0, -1.5, 0]}
               args={[50, 50]}
               cellSize={0.5}
-              cellThickness={0.5}
-              cellColor="#2a1f3d"
+              cellThickness={0.45}
+              cellColor="#2a2418"
               sectionSize={2.5}
-              sectionThickness={1.1}
-              sectionColor="#6d28d9"
+              sectionThickness={1}
+              sectionColor="#8a7010"
               fadeDistance={32}
               fadeStrength={1}
               infiniteGrid
@@ -181,7 +265,7 @@ export default function ConceptViewer({
           makeDefault
           enabled={view === "perspective"}
           enablePan
-          minDistance={4}
+          minDistance={3}
           maxDistance={Math.max(28, maxDimension * 3.2)}
           maxPolarAngle={Math.PI * 0.49}
         />

@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #09060f;
-  --surface: #120e1a;
-  --surface-2: #1a1424;
+  --bg: #07060a;
+  --surface: #121018;
+  --surface-2: #1a1620;
   --border: rgba(255, 255, 255, 0.08);
-  --text: #f3eefc;
-  --muted: #9b8fb3;
-  --accent: #a78bfa;
-  --accent-2: #e879f9;
+  --text: #f5f0e8;
+  --muted: #9a9188;
+  --accent: #f5c518;
+  --accent-2: #a78bfa;
 }
 
 @theme inline {
@@ -35,7 +35,7 @@ body {
 }
 
 ::selection {
-  background: rgba(167, 139, 250, 0.4);
+  background: rgba(245, 197, 24, 0.35);
 }
 
 .glass {
@@ -52,12 +52,13 @@ body {
 }
 
 .btn-primary {
-  background: linear-gradient(120deg, var(--accent), #7c3aed);
-  box-shadow: 0 0 24px rgba(167, 139, 250, 0.4);
+  background: linear-gradient(120deg, var(--accent), #e8a317);
+  box-shadow: 0 0 24px rgba(245, 197, 24, 0.35);
+  color: #0a0908;
   transition: box-shadow 0.3s, transform 0.15s;
 }
 .btn-primary:hover {
-  box-shadow: 0 0 40px rgba(232, 121, 249, 0.55);
+  box-shadow: 0 0 40px rgba(245, 197, 24, 0.55);
   transform: translateY(-1px);
 }
 
@@ -68,8 +69,8 @@ body {
   transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
 }
 .card:hover {
-  border-color: rgba(167, 139, 250, 0.45);
-  box-shadow: 0 8px 40px rgba(167, 139, 250, 0.1);
+  border-color: rgba(245, 197, 24, 0.4);
+  box-shadow: 0 8px 40px rgba(245, 197, 24, 0.08);
 }
 
 @keyframes pulse-dot {
@@ -86,13 +87,13 @@ body {
   width: 120px;
   height: 120px;
   border-radius: 9999px;
-  border: 1px solid rgba(167, 139, 250, 0.45);
+  border: 1px solid rgba(245, 197, 24, 0.4);
   box-shadow:
-    0 0 40px rgba(167, 139, 250, 0.35),
-    inset 0 0 30px rgba(232, 121, 249, 0.15);
+    0 0 40px rgba(245, 197, 24, 0.3),
+    inset 0 0 30px rgba(167, 139, 250, 0.12);
   background:
-    radial-gradient(circle at 30% 30%, rgba(167, 139, 250, 0.35), transparent 45%),
-    radial-gradient(circle at 70% 70%, rgba(232, 121, 249, 0.22), transparent 40%);
+    radial-gradient(circle at 30% 30%, rgba(245, 197, 24, 0.28), transparent 45%),
+    radial-gradient(circle at 70% 70%, rgba(167, 139, 250, 0.18), transparent 40%);
   animation: holo-spin 8s linear infinite;
 }
 
@@ -100,6 +101,15 @@ body {
   from { transform: rotate(0deg) scale(1); }
   50% { transform: rotate(180deg) scale(1.05); }
   to { transform: rotate(360deg) scale(1); }
+}
+
+@keyframes gateFloat {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-18px) rotate(2deg); }
+}
+@keyframes gateSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @keyframes ring-fill {

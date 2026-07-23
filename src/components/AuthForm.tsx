@@ -66,7 +66,7 @@ export default function AuthForm({
 
   if (variant === "gate") {
     const gateInput =
-      "w-full border-0 border-b border-white/15 bg-transparent px-1 py-3.5 text-[15px] text-white outline-none transition placeholder:text-slate-500 focus:border-violet-300/70";
+      "w-full border-0 border-b border-white/15 bg-transparent px-1 py-3.5 text-[15px] text-white outline-none transition placeholder:text-slate-500 focus:border-amber-300/70";
 
     return (
       <motion.form
@@ -116,17 +116,17 @@ export default function AuthForm({
           variants={gateItem}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
-          className="mt-4 w-full rounded-full bg-gradient-to-r from-violet-300 via-violet-200 to-fuchsia-400 py-3.5 text-sm font-semibold text-black shadow-[0_0_40px_rgba(167,139,250,0.4)] disabled:opacity-60"
+          className="mt-4 w-full rounded-full bg-gradient-to-r from-amber-300 via-amber-200 to-yellow-400 py-3.5 text-sm font-semibold text-black shadow-[0_0_40px_rgba(245,197,24,0.4)] disabled:opacity-60"
         >
           {loading ? "…" : mode === "login" ? "Войти" : "Начать"}
         </motion.button>
         <motion.p variants={gateItem} className="pt-2 text-center text-sm text-slate-500">
           {mode === "login" ? (
-            <Link href="/register" className="text-violet-200/80 transition hover:text-violet-100">
+            <Link href="/register" className="text-amber-200/80 transition hover:text-amber-100">
               Создать аккаунт
             </Link>
           ) : (
-            <Link href="/login" className="text-violet-200/80 transition hover:text-violet-100">
+            <Link href="/login" className="text-amber-200/80 transition hover:text-amber-100">
               Войти
             </Link>
           )}
