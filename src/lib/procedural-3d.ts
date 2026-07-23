@@ -844,17 +844,292 @@ export function buildGenericMassing(prompt: string): ThreeDConcept {
   );
 }
 
-/** Pick best free procedural template from prompt — ANY idea gets a solid form */
+export function buildStadium(prompt: string): ThreeDConcept {
+  const name = prompt.length > 4 && prompt.length <= 55 ? prompt : "Стадион";
+  const parts = [
+    part("field", "Поле", {
+      role: "foundation",
+      group: "Field",
+      position: [0, -0.15, 0],
+      size: [28, 0.25, 18],
+      color: "#3d9a4a",
+      material: "Газон",
+    }),
+    part("stand-n", "Трибуна N", {
+      role: "volume",
+      group: "Stands",
+      position: [0, 3.2, -11],
+      size: [30, 6.5, 4],
+      color: "#c8d0d8",
+      material: "Бетон",
+    }),
+    part("stand-s", "Трибуна S", {
+      role: "volume",
+      group: "Stands",
+      position: [0, 3.2, 11],
+      size: [30, 6.5, 4],
+      color: "#c8d0d8",
+      material: "Бетон",
+    }),
+    part("stand-e", "Трибуна E", {
+      role: "volume",
+      group: "Stands",
+      position: [16, 2.8, 0],
+      size: [4, 5.8, 18],
+      color: "#b8c4d0",
+      material: "Бетон",
+    }),
+    part("stand-w", "Трибуна W", {
+      role: "volume",
+      group: "Stands",
+      position: [-16, 2.8, 0],
+      size: [4, 5.8, 18],
+      color: "#b8c4d0",
+      material: "Бетон",
+    }),
+    part("roof-ring", "Козырёк", {
+      role: "roof",
+      group: "Roof",
+      position: [0, 7.2, 0],
+      size: [34, 0.35, 24],
+      color: "#f5c518",
+      material: "Сталь / мембрана",
+    }),
+    part("light-1", "Прожектор 1", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Lights",
+      position: [14, 9, 10],
+      size: [0.2, 3.5, 0.2],
+      color: "#eeeeee",
+      material: "Сталь",
+    }),
+    part("light-2", "Прожектор 2", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Lights",
+      position: [-14, 9, -10],
+      size: [0.2, 3.5, 0.2],
+      color: "#eeeeee",
+      material: "Сталь",
+    }),
+  ];
+  return wrap(
+    name,
+    "Стадион: поле, трибуны, козырёк.",
+    { width: 36, height: 11, depth: 26 },
+    [
+      { id: "field", label: "Field", partIds: ["field"] },
+      { id: "stands", label: "Stands", partIds: ["stand-n", "stand-s", "stand-e", "stand-w"] },
+      { id: "roof", label: "Roof", partIds: ["roof-ring"] },
+      { id: "lights", label: "Lights", partIds: ["light-1", "light-2"] },
+    ],
+    parts
+  );
+}
+
+export function buildProduct(prompt: string): ThreeDConcept {
+  const name = prompt.length > 4 && prompt.length <= 55 ? prompt : "Изделие";
+  const parts = [
+    part("base", "Основание", {
+      role: "foundation",
+      group: "Base",
+      position: [0, 0.08, 0],
+      size: [1.4, 0.16, 1.0],
+      color: "#8a9098",
+      material: "Пластик / металл",
+    }),
+    part("body", "Корпус", {
+      role: "volume",
+      group: "Body",
+      parentId: "base",
+      position: [0, 0.55, 0],
+      size: [1.1, 0.75, 0.75],
+      color: "#d0d6de",
+      material: "Корпус",
+    }),
+    part("screen", "Панель / экран", {
+      role: "window",
+      group: "Face",
+      parentId: "body",
+      position: [0, 0.6, 0.4],
+      size: [0.85, 0.5, 0.05],
+      color: "#5ec8ff",
+      material: "Стекло",
+    }),
+    part("cap", "Верх", {
+      role: "roof",
+      group: "Body",
+      parentId: "body",
+      position: [0, 1.0, 0],
+      size: [0.95, 0.12, 0.65],
+      color: "#f5c518",
+      material: "Акцент",
+    }),
+    part("leg-l", "Опора L", {
+      role: "detail",
+      group: "Base",
+      position: [-0.45, 0.28, 0.3],
+      size: [0.1, 0.4, 0.1],
+      color: "#555555",
+      material: "Металл",
+    }),
+    part("leg-r", "Опора R", {
+      role: "detail",
+      group: "Base",
+      position: [0.45, 0.28, 0.3],
+      size: [0.1, 0.4, 0.1],
+      color: "#555555",
+      material: "Металл",
+    }),
+    part("antenna", "Элемент", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Face",
+      position: [0.4, 1.25, 0],
+      size: [0.04, 0.35, 0.04],
+      color: "#cccccc",
+      material: "Металл",
+    }),
+  ];
+  return wrap(
+    name,
+    "Изделие: корпус, панель, опоры — цельный силуэт.",
+    { width: 1.5, height: 1.5, depth: 1.1 },
+    [
+      { id: "base", label: "Base", partIds: ["base", "leg-l", "leg-r"] },
+      { id: "body", label: "Body", partIds: ["body", "cap"] },
+      { id: "face", label: "Face", partIds: ["screen", "antenna"] },
+    ],
+    parts
+  );
+}
+
+export function buildSofa(prompt: string): ThreeDConcept {
+  const name = prompt.length > 4 && prompt.length <= 55 ? prompt : "Диван";
+  const parts = [
+    part("seat", "Сиденье", {
+      role: "volume",
+      group: "Seat",
+      position: [0, 0.35, 0],
+      size: [2.0, 0.35, 0.9],
+      color: "#6b8cae",
+      material: "Ткань",
+    }),
+    part("back", "Спинка", {
+      role: "volume",
+      group: "Seat",
+      position: [0, 0.75, -0.35],
+      size: [2.0, 0.7, 0.22],
+      color: "#5a7a9a",
+      material: "Ткань",
+    }),
+    part("arm-l", "Подлокотник L", {
+      role: "detail",
+      group: "Arms",
+      position: [-1.05, 0.5, 0],
+      size: [0.22, 0.45, 0.9],
+      color: "#5a7a9a",
+      material: "Ткань",
+    }),
+    part("arm-r", "Подлокотник R", {
+      role: "detail",
+      group: "Arms",
+      position: [1.05, 0.5, 0],
+      size: [0.22, 0.45, 0.9],
+      color: "#5a7a9a",
+      material: "Ткань",
+    }),
+    part("leg-1", "Ножка 1", {
+      role: "detail",
+      group: "Legs",
+      position: [-0.85, 0.1, 0.35],
+      size: [0.08, 0.2, 0.08],
+      color: "#8b6914",
+      material: "Дерево",
+    }),
+    part("leg-2", "Ножка 2", {
+      role: "detail",
+      group: "Legs",
+      position: [0.85, 0.1, 0.35],
+      size: [0.08, 0.2, 0.08],
+      color: "#8b6914",
+      material: "Дерево",
+    }),
+    part("leg-3", "Ножка 3", {
+      role: "detail",
+      group: "Legs",
+      position: [-0.85, 0.1, -0.35],
+      size: [0.08, 0.2, 0.08],
+      color: "#8b6914",
+      material: "Дерево",
+    }),
+    part("leg-4", "Ножка 4", {
+      role: "detail",
+      group: "Legs",
+      position: [0.85, 0.1, -0.35],
+      size: [0.08, 0.2, 0.08],
+      color: "#8b6914",
+      material: "Дерево",
+    }),
+  ];
+  return wrap(
+    name,
+    "Диван: сиденье, спинка, подлокотники.",
+    { width: 2.3, height: 1.1, depth: 1.0 },
+    [
+      { id: "seat", label: "Seat", partIds: ["seat", "back"] },
+      { id: "arms", label: "Arms", partIds: ["arm-l", "arm-r"] },
+      { id: "legs", label: "Legs", partIds: ["leg-1", "leg-2", "leg-3", "leg-4"] },
+    ],
+    parts
+  );
+}
+
+export function buildHospital(prompt: string): ThreeDConcept {
+  const name = prompt.length > 4 && prompt.length <= 55 ? prompt : "Больница";
+  const base = buildGenericMassing(`5 этажей ширина 40 длина 22 ${prompt}`);
+  return {
+    ...base,
+    name,
+    description: "Медкомплекс: корпус, крыло, входная группа.",
+    parts: base.parts.map((p) =>
+      p.id === "canopy" ? { ...p, color: "#e8f4ff" } : p.id === "body" ? { ...p, color: "#e8eef4" } : p
+    ),
+  };
+}
+
+/** Pick best free procedural template — ANY request gets a solid lit form */
 export function buildFromPrompt(prompt: string): ThreeDConcept {
   const lower = prompt.toLowerCase();
-  if (/школ|school|лицей|гимназ|образоват|универ|колледж/i.test(lower)) return buildSchool(prompt);
-  if (/мост|bridge|эстакад|переход/i.test(lower)) return buildBridge(prompt);
+
+  if (/школ|school|лицей|гимназ|образоват|универ|колледж|садик|детсад/i.test(lower))
+    return buildSchool(prompt);
+  if (/мост|bridge|эстакад|переход|виадук/i.test(lower)) return buildBridge(prompt);
   if (/башн|tower|небоскреб|skyscraper|высотк/i.test(lower)) return buildTower(prompt);
-  if (/офис|office|бизнес.?центр|бц\b/i.test(lower)) return buildOffice(prompt);
-  if (/машин|автомоб|car\b|vehicle|спорткар/i.test(lower)) return buildCar(prompt);
-  if (/стол|desk|table|мебел|стул|chair/i.test(lower)) return buildDesk(prompt);
-  if (/дом|house|коттедж|вилл|особняк|жиль|cottage/i.test(lower)) return buildHouse(prompt);
-  // Everything else: parametric massing from numbers in the prompt (never 1 cube)
+  if (/офис|office|бизнес.?центр|бц\b|коворкинг/i.test(lower)) return buildOffice(prompt);
+  if (/стадион|stadium|арены|спорткомплекс/i.test(lower)) return buildStadium(prompt);
+  if (/больниц|hospital|клиник|поликлиник|медцентр/i.test(lower)) return buildHospital(prompt);
+  if (/машин|автомоб|car\b|vehicle|спорткар|джип|truck|грузовик/i.test(lower))
+    return buildCar(prompt);
+  if (/диван|sofa|couch|кресл/i.test(lower)) return buildSofa(prompt);
+  if (/стол|desk|table|мебел|стул|chair|шкаф|shelf/i.test(lower)) return buildDesk(prompt);
+  if (/дом|house|коттедж|вилл|особняк|жиль|cottage|квартир|жилкомплекс|жк\b/i.test(lower))
+    return buildHouse(prompt);
+  if (
+    /телефон|phone|ноутбук|laptop|робот|robot|лампа|lamp|часы|гаджет|устройство|прибор|дрон|drone|колонк|наушник/i.test(
+      lower
+    )
+  )
+    return buildProduct(prompt);
+  if (/завод|factory|склад|цех|ангар|магазин|молл|mall|тц\b|торговый/i.test(lower))
+    return buildGenericMassing(prompt);
+  if (/здан|строен|корпус|комплекс|центр|павильон|музей|театр|гостиниц|отель|hotel/i.test(lower))
+    return buildGenericMassing(prompt);
+
+  // Unknown idea: still multi-part object (product-scale if short/small words, else building)
+  if (/маленьк|мини|гаджет|игрушк|предмет|издели/i.test(lower) || prompt.length < 28)
+    return buildProduct(prompt);
   return buildGenericMassing(prompt);
 }
 

@@ -1,14 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #07060a;
-  --surface: #121018;
-  --surface-2: #1a1620;
-  --border: rgba(255, 255, 255, 0.08);
-  --text: #f5f0e8;
-  --muted: #9a9188;
-  --accent: #f5c518;
-  --accent-2: #a78bfa;
+  --bg: #050507;
+  --surface: #0c0c10;
+  --surface-2: #121218;
+  --border: rgba(255, 255, 255, 0.07);
+  --text: #f3f0ff;
+  --muted: #908a9e;
+  --accent: #a78bfa;
+  --accent-2: #c4b5fd;
+  --violet: #a78bfa;
+  --violet-hot: #e879f9;
+  --ink: #050507;
 }
 
 @theme inline {
@@ -35,42 +38,74 @@ body {
 }
 
 ::selection {
-  background: rgba(245, 197, 24, 0.35);
+  background: rgba(167, 139, 250, 0.4);
+  color: #fff;
+}
+
+.display {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(12, 12, 16, 0.75);
   border: 1px solid var(--border);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
 }
 
 .glow-text {
-  background: linear-gradient(120deg, #fff 20%, var(--accent-2) 50%, var(--accent) 80%);
+  background: linear-gradient(120deg, #fff 8%, var(--accent-2) 42%, var(--violet-hot) 92%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
 .btn-primary {
-  background: linear-gradient(120deg, var(--accent), #e8a317);
-  box-shadow: 0 0 24px rgba(245, 197, 24, 0.35);
-  color: #0a0908;
-  transition: box-shadow 0.3s, transform 0.15s;
+  background: linear-gradient(135deg, #c4b5fd 0%, var(--accent) 42%, #e879f9 100%);
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.3), 0 8px 32px rgba(167, 139, 250, 0.35);
+  color: var(--ink);
+  font-weight: 600;
+  transition: box-shadow 0.3s, transform 0.15s, filter 0.3s;
 }
 .btn-primary:hover {
-  box-shadow: 0 0 40px rgba(245, 197, 24, 0.55);
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.45), 0 12px 44px rgba(232, 121, 249, 0.4);
   transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+
+.btn-ghost {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: var(--text);
+  transition: border-color 0.25s, background 0.25s;
+}
+.btn-ghost:hover {
+  border-color: rgba(167, 139, 250, 0.5);
+  background: rgba(167, 139, 250, 0.08);
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 20px;
   transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
 }
 .card:hover {
-  border-color: rgba(245, 197, 24, 0.4);
-  box-shadow: 0 8px 40px rgba(245, 197, 24, 0.08);
+  border-color: rgba(167, 139, 250, 0.4);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.gold-line {
+  height: 1px;
+  background: linear-gradient(90deg, var(--accent), transparent 85%);
+}
+
+.hud-chip {
+  border: 1px solid rgba(167, 139, 250, 0.32);
+  background: rgba(5, 5, 7, 0.6);
+  backdrop-filter: blur(12px);
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 
 @keyframes pulse-dot {
@@ -84,39 +119,41 @@ body {
 .thinking-dot:nth-child(3) { animation-delay: 0.3s; }
 
 .holo-ring {
-  width: 120px;
-  height: 120px;
+  width: 100px;
+  height: 100px;
   border-radius: 9999px;
-  border: 1px solid rgba(245, 197, 24, 0.4);
+  border: 1px solid rgba(167, 139, 250, 0.5);
   box-shadow:
-    0 0 40px rgba(245, 197, 24, 0.3),
-    inset 0 0 30px rgba(167, 139, 250, 0.12);
-  background:
-    radial-gradient(circle at 30% 30%, rgba(245, 197, 24, 0.28), transparent 45%),
-    radial-gradient(circle at 70% 70%, rgba(167, 139, 250, 0.18), transparent 40%);
-  animation: holo-spin 8s linear infinite;
+    0 0 50px rgba(167, 139, 250, 0.28),
+    inset 0 0 28px rgba(232, 121, 249, 0.12);
+  background: radial-gradient(circle at 35% 30%, rgba(167, 139, 250, 0.28), transparent 55%);
+  animation: holo-spin 10s linear infinite;
 }
 
 @keyframes holo-spin {
   from { transform: rotate(0deg) scale(1); }
-  50% { transform: rotate(180deg) scale(1.05); }
+  50% { transform: rotate(180deg) scale(1.04); }
   to { transform: rotate(360deg) scale(1); }
 }
 
 @keyframes gateFloat {
-  0%, 100% { transform: translateY(0) rotate(-2deg); }
-  50% { transform: translateY(-18px) rotate(2deg); }
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+  50% { transform: translateY(-14px) rotate(1.5deg); }
 }
 @keyframes gateSpin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-
-@keyframes ring-fill {
-  from { stroke-dashoffset: 260; }
+@keyframes shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
 }
+
 .score-ring circle.fill {
   animation: ring-fill 1.2s ease-out forwards;
+}
+@keyframes ring-fill {
+  from { stroke-dashoffset: 260; }
 }
 
 @media print {

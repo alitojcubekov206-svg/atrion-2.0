@@ -33,8 +33,8 @@ type Tab = (typeof TABS)[number];
 const METHOD_COLOR: Record<string, string> = {
   GET: "text-emerald-400",
   POST: "text-sky-400",
-  PUT: "text-amber-400",
-  PATCH: "text-amber-400",
+  PUT: "text-violet-300",
+  PATCH: "text-violet-300",
   DELETE: "text-red-400",
 };
 
@@ -205,7 +205,7 @@ export default function BlueprintView({
                 <div className="text-center">
                   <p className="text-xs uppercase tracking-wider text-muted">Risk</p>
                   <p className={`mt-1 text-xl font-bold ${
-                    bp.score.risk === "High" ? "text-red-400" : bp.score.risk === "Medium" ? "text-amber-400" : "text-emerald-400"
+                    bp.score.risk === "High" ? "text-red-400" : bp.score.risk === "Medium" ? "text-violet-300" : "text-emerald-400"
                   }`}>{bp.score.risk}</p>
                 </div>
               </div>
@@ -218,11 +218,11 @@ export default function BlueprintView({
         )}
         {tab === "Risks" && (
           <div className="flex flex-col gap-6">
-            <div className="card border-amber-500/20 p-6">
-              <h3 className="font-semibold text-amber-400">AI Critic Mode</h3>
+            <div className="card border-violet-500/20 p-6">
+              <h3 className="font-semibold text-violet-300">AI Critic Mode</h3>
               <ul className="mt-3 flex flex-col gap-2.5 text-sm leading-relaxed text-muted">
                 {bp.critique.map((c) => (
-                  <li key={c} className="flex gap-2.5"><span className="text-amber-400">⚠</span>{c}</li>
+                  <li key={c} className="flex gap-2.5"><span className="text-violet-300">⚠</span>{c}</li>
                 ))}
               </ul>
             </div>
@@ -233,7 +233,7 @@ export default function BlueprintView({
                     <h4 className="font-medium">{r.risk}</h4>
                     <span className={`rounded-full px-2.5 py-0.5 text-xs ${
                       r.severity === "High" ? "bg-red-500/10 text-red-400"
-                      : r.severity === "Medium" ? "bg-amber-500/10 text-amber-400"
+                      : r.severity === "Medium" ? "bg-violet-500/10 text-violet-300"
                       : "bg-emerald-500/10 text-emerald-400"
                     }`}>{r.severity}</span>
                   </div>

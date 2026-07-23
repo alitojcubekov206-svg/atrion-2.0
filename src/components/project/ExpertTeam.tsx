@@ -18,7 +18,7 @@ const EXPERTS: { id: ExpertRole; name: string; subtitle: string; color: string }
   { id: "programmer", name: "Senior Programmer", subtitle: "Код, тесты и реализация", color: "text-emerald-400" },
   { id: "product", name: "Product Manager", subtitle: "MVP, рынок и метрики", color: "text-sky-400" },
   { id: "security", name: "Security Expert", subtitle: "Угрозы и защита", color: "text-red-400" },
-  { id: "critic", name: "AI Critic", subtitle: "Слабые места и лишний scope", color: "text-amber-400" },
+  { id: "critic", name: "AI Critic", subtitle: "Слабые места и лишний scope", color: "text-violet-300" },
 ];
 
 export default function ExpertTeam({ projectId }: { projectId: string }) {
@@ -134,7 +134,7 @@ export default function ExpertTeam({ projectId }: { projectId: string }) {
                 </ul>
               )}
               {message.warnings && message.warnings.length > 0 && (
-                <ul className="mt-3 space-y-1 text-xs text-amber-400">
+                <ul className="mt-3 space-y-1 text-xs text-violet-300">
                   {message.warnings.map((item) => <li key={item}>⚠ {item}</li>)}
                 </ul>
               )}

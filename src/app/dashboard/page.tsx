@@ -101,7 +101,7 @@ export default async function DashboardPage() {
                 Just build it.
               </h2>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-400">
-                Опиши дом или школу — получишь цельную 3D-модель, не кучу коробок.
+                Опиши что угодно — цельный 3D, орбита, Explode. Прави через чат.
               </p>
             </div>
             <span className="rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500 px-6 py-2.5 text-sm font-semibold text-black shadow-[0_0_28px_rgba(167,139,250,0.35)]">
@@ -153,7 +153,7 @@ export default async function DashboardPage() {
                       p.status === "generated"
                         ? "bg-emerald-500/10 text-emerald-400"
                         : p.status === "interview"
-                          ? "bg-amber-500/10 text-amber-400"
+                          ? "bg-violet-500/10 text-violet-300"
                           : "bg-white/5 text-slate-500"
                     }`}
                   >

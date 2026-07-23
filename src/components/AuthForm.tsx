@@ -66,7 +66,7 @@ export default function AuthForm({
 
   if (variant === "gate") {
     const gateInput =
-      "w-full border-0 border-b border-white/15 bg-transparent px-1 py-3.5 text-[15px] text-white outline-none transition placeholder:text-slate-500 focus:border-amber-300/70";
+      "w-full border-0 border-b border-white/12 bg-transparent px-1 py-3.5 text-[15px] text-white outline-none transition placeholder:text-[#6a6560] focus:border-[#a78bfa]/70";
 
     return (
       <motion.form
@@ -75,9 +75,9 @@ export default function AuthForm({
         animate="show"
         variants={{
           hidden: {},
-          show: { transition: { staggerChildren: 0.1, delayChildren: 0.45 } },
+          show: { transition: { staggerChildren: 0.1, delayChildren: 0.4 } },
         }}
-        className="mt-10 flex w-full max-w-sm flex-col gap-5"
+        className="mt-9 flex w-full max-w-sm flex-col gap-5"
       >
         {mode === "register" && (
           <motion.div variants={gateItem}>
@@ -116,18 +116,18 @@ export default function AuthForm({
           variants={gateItem}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
-          className="mt-4 w-full rounded-full bg-gradient-to-r from-amber-300 via-amber-200 to-yellow-400 py-3.5 text-sm font-semibold text-black shadow-[0_0_40px_rgba(245,197,24,0.4)] disabled:opacity-60"
+          className="btn-primary mt-3 w-full rounded-full py-3.5 text-sm disabled:opacity-60"
         >
           {loading ? "…" : mode === "login" ? "Войти" : "Начать"}
         </motion.button>
-        <motion.p variants={gateItem} className="pt-2 text-center text-sm text-slate-500">
+        <motion.p variants={gateItem} className="pt-1 text-center text-sm text-[#6a6560]">
           {mode === "login" ? (
-            <Link href="/register" className="text-amber-200/80 transition hover:text-amber-100">
+            <Link href="/register" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
               Создать аккаунт
             </Link>
           ) : (
-            <Link href="/login" className="text-amber-200/80 transition hover:text-amber-100">
-              Войти
+            <Link href="/login" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
+              Уже есть доступ
             </Link>
           )}
         </motion.p>
@@ -168,7 +168,7 @@ export default function AuthForm({
         {error && <p className="text-sm text-red-400">{error}</p>}
         <button
           disabled={loading}
-          className="btn-primary mt-2 rounded-xl py-3 font-semibold text-white disabled:opacity-60"
+          className="btn-primary mt-2 rounded-xl py-3 text-sm disabled:opacity-60"
         >
           {loading ? "..." : mode === "login" ? "Войти" : "Зарегистрироваться"}
         </button>

@@ -8,7 +8,7 @@ import { motion } from "framer-motion";
 
 const EntryGateScene = dynamic(() => import("@/components/three/EntryGateScene"), {
   ssr: false,
-  loading: () => <div className="absolute inset-0 bg-[#09060f]" />,
+  loading: () => <div className="absolute inset-0 bg-[#050507]" />,
 });
 
 function VerifyEmailForm() {
@@ -74,7 +74,7 @@ function VerifyEmailForm() {
   if (!email) {
     return (
       <div className="text-center">
-        <Link href="/register" className="text-violet-200 hover:text-white">
+        <Link href="/register" className="text-[#a78bfa] hover:text-[#c4b5fd]">
           Регистрация
         </Link>
       </div>
@@ -89,13 +89,14 @@ function VerifyEmailForm() {
       className="w-full max-w-sm"
     >
       <Link href="/">
-        <h1 className="font-[family-name:var(--font-display)] text-5xl font-semibold tracking-tight text-white md:text-6xl">
+        <h1 className="display text-5xl font-semibold tracking-tight text-white md:text-6xl">
           ATRION
         </h1>
       </Link>
-      <div className="mt-5 h-px w-24 bg-gradient-to-r from-violet-300 to-transparent" />
-      <p className="mt-8 text-sm text-slate-400">
-        {message} · <span className="text-slate-200">{email}</span>
+      <p className="display mt-3 text-xl text-[#a78bfa]">Just build it.</p>
+      <div className="gold-line mt-5 w-24" />
+      <p className="mt-8 text-sm text-[#8f8a82]">
+        {message} · <span className="text-[#f4f1ea]">{email}</span>
       </p>
       <form onSubmit={verify} className="mt-8 flex flex-col gap-5">
         <input
@@ -106,12 +107,12 @@ function VerifyEmailForm() {
           placeholder="000000"
           required
           pattern="[0-9]{6}"
-          className="w-full border-0 border-b border-white/15 bg-transparent py-4 text-center text-3xl tracking-[0.5em] text-white outline-none focus:border-violet-300/70"
+          className="w-full border-0 border-b border-white/15 bg-transparent py-4 text-center text-3xl tracking-[0.5em] text-white outline-none focus:border-[#a78bfa]/70"
         />
         {error && <p className="text-sm text-red-400">{error}</p>}
         <button
           disabled={loading || code.length !== 6}
-          className="rounded-full bg-gradient-to-r from-violet-300 to-fuchsia-400 py-3.5 text-sm font-semibold text-black shadow-[0_0_40px_rgba(167,139,250,0.4)] disabled:opacity-50"
+          className="btn-primary rounded-full py-3.5 text-sm disabled:opacity-50"
         >
           {loading ? "…" : "Войти"}
         </button>
@@ -120,7 +121,7 @@ function VerifyEmailForm() {
         type="button"
         onClick={resend}
         disabled={cooldown > 0}
-        className="mt-6 w-full text-sm text-slate-500 disabled:opacity-50"
+        className="mt-6 w-full text-sm text-[#6a6560] transition hover:text-[#8f8a82] disabled:opacity-50"
       >
         {cooldown > 0 ? `${cooldown}s` : "Снова"}
       </button>
@@ -130,10 +131,10 @@ function VerifyEmailForm() {
 
 export default function VerifyEmailPage() {
   return (
-    <main className="relative flex min-h-screen overflow-hidden bg-[#09060f]">
+    <main className="relative flex min-h-screen overflow-hidden bg-[#050507]">
       <EntryGateScene />
       <div className="relative z-10 flex min-h-screen w-full flex-col justify-center px-6 py-16 md:w-[48%] md:px-12 lg:px-16">
-        <Suspense fallback={<div className="text-slate-500">…</div>}>
+        <Suspense fallback={<div className="text-[#6a6560]">…</div>}>
           <VerifyEmailForm />
         </Suspense>
       </div>

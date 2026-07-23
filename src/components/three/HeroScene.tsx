@@ -9,6 +9,7 @@ import * as THREE from "three";
 const VIOLET = "#a78bfa";
 const VIOLET_HOT = "#c4b5fd";
 const MAGENTA = "#e879f9";
+const BG = "#050507";
 
 function HoloBuilding() {
   const group = useRef<Group>(null);
@@ -22,16 +23,22 @@ function HoloBuilding() {
     <group ref={group} position={[0, -0.2, 0]} scale={1.15}>
       <mesh position={[0, -0.15, 0]}>
         <boxGeometry args={[4.4, 0.28, 2.8]} />
-        <meshStandardMaterial color="#3a3148" metalness={0.25} roughness={0.45} emissive="#2a1f3a" emissiveIntensity={0.35} />
+        <meshStandardMaterial
+          color="#141018"
+          metalness={0.4}
+          roughness={0.4}
+          emissive="#1a1028"
+          emissiveIntensity={0.3}
+        />
       </mesh>
       <mesh position={[0, 1.1, 0]}>
         <boxGeometry args={[3.6, 2.2, 2.2]} />
         <meshStandardMaterial
-          color="#4c3f62"
+          color="#2a2238"
           emissive="#3b2a55"
-          emissiveIntensity={0.45}
-          metalness={0.3}
-          roughness={0.4}
+          emissiveIntensity={0.4}
+          metalness={0.35}
+          roughness={0.38}
         />
       </mesh>
       <mesh position={[0, 1.15, 1.12]}>
@@ -39,25 +46,31 @@ function HoloBuilding() {
         <meshStandardMaterial
           color={VIOLET_HOT}
           emissive={VIOLET}
-          emissiveIntensity={1.1}
+          emissiveIntensity={1.05}
           transparent
-          opacity={0.5}
+          opacity={0.48}
           metalness={0.05}
           roughness={0.1}
         />
       </mesh>
       <mesh position={[0, 2.35, 0]}>
         <boxGeometry args={[3.9, 0.18, 2.5]} />
-        <meshStandardMaterial color="#2f2740" metalness={0.35} roughness={0.35} emissive="#1f1630" emissiveIntensity={0.3} />
+        <meshStandardMaterial
+          color="#1a1424"
+          metalness={0.45}
+          roughness={0.32}
+          emissive="#120e1c"
+          emissiveIntensity={0.25}
+        />
       </mesh>
       <mesh position={[2.55, 0.75, 0]}>
         <boxGeometry args={[1.2, 1.4, 1.8]} />
         <meshStandardMaterial
-          color="#554066"
+          color="#3a2d4e"
           emissive={MAGENTA}
-          emissiveIntensity={0.2}
-          metalness={0.25}
-          roughness={0.4}
+          emissiveIntensity={0.18}
+          metalness={0.3}
+          roughness={0.38}
         />
       </mesh>
       <mesh position={[-1.2, 3.1, -0.4]}>
@@ -124,7 +137,7 @@ function PulseCore() {
       <meshStandardMaterial
         color={VIOLET}
         emissive={VIOLET}
-        emissiveIntensity={1.6}
+        emissiveIntensity={1.5}
         transparent
         opacity={0.9}
       />
@@ -138,15 +151,20 @@ export default function HeroScene() {
       <Canvas
         dpr={[1, 1.75]}
         camera={{ position: [5.5, 3.2, 7.2], fov: 42 }}
-        gl={{ antialias: true, alpha: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.3 }}
+        gl={{
+          antialias: true,
+          alpha: true,
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.25,
+        }}
       >
-        <color attach="background" args={["#09060f"]} />
-        <fog attach="fog" args={["#09060f", 12, 30]} />
-        <hemisphereLight args={["#e9d5ff", "#1a1028", 1]} />
-        <ambientLight intensity={0.9} />
-        <directionalLight position={[8, 12, 6]} intensity={3} color="#faf5ff" />
-        <pointLight position={[-6, 4, -2]} intensity={100} color={VIOLET} distance={32} decay={1.5} />
-        <pointLight position={[5, 2, 6]} intensity={70} color={MAGENTA} distance={28} decay={1.5} />
+        <color attach="background" args={[BG]} />
+        <fog attach="fog" args={[BG, 12, 30]} />
+        <hemisphereLight args={["#e9d5ff", BG, 0.9]} />
+        <ambientLight intensity={0.8} />
+        <directionalLight position={[8, 12, 6]} intensity={2.6} color="#faf5ff" />
+        <pointLight position={[-6, 4, -2]} intensity={95} color={VIOLET} distance={32} decay={1.5} />
+        <pointLight position={[5, 2, 6]} intensity={65} color={MAGENTA} distance={28} decay={1.5} />
         <HoloBuilding />
         <PulseCore />
         <OrbitPoints />
@@ -155,7 +173,7 @@ export default function HeroScene() {
           args={[40, 40]}
           cellSize={0.5}
           cellThickness={0.5}
-          cellColor="#2a1f3d"
+          cellColor="#1a1428"
           sectionSize={2.5}
           sectionThickness={1}
           sectionColor="#6d28d9"
@@ -163,11 +181,11 @@ export default function HeroScene() {
           fadeStrength={1}
           infiniteGrid
         />
-        <ContactShadows position={[0, -1.3, 0]} opacity={0.45} scale={24} blur={2.6} far={8} />
-        <Stars radius={70} depth={40} count={2000} factor={2.8} saturation={0} fade speed={0.5} />
+        <ContactShadows position={[0, -1.3, 0]} opacity={0.5} scale={24} blur={2.6} far={8} />
+        <Stars radius={70} depth={40} count={1800} factor={2.6} saturation={0} fade speed={0.45} />
       </Canvas>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_25%,rgba(9,6,15,0.4)_75%,#09060f_96%)]" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#09060f] to-transparent" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_25%,rgba(5,5,7,0.4)_75%,#050507_96%)]" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#050507] to-transparent" />
     </div>
   );
 }

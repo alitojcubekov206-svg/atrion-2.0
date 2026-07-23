@@ -8,8 +8,9 @@ const ease = [0.22, 1, 0.36, 1] as const;
 
 export default function LandingHero({ loggedIn }: { loggedIn: boolean }) {
   return (
-    <section className="relative flex min-h-screen items-end overflow-hidden px-6 pb-20 pt-28 md:items-center md:pb-0 md:pt-0">
+    <section className="relative flex min-h-screen items-end overflow-hidden px-6 pb-24 pt-28 md:items-center md:pb-0 md:pt-0">
       <HeroScene />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#050507]/85 via-[#050507]/35 to-transparent" />
 
       <div className="relative z-10 mx-auto w-full max-w-6xl">
         <motion.div
@@ -17,85 +18,90 @@ export default function LandingHero({ loggedIn }: { loggedIn: boolean }) {
           animate="show"
           variants={{
             hidden: {},
-            show: { transition: { staggerChildren: 0.12, delayChildren: 0.08 } },
+            show: { transition: { staggerChildren: 0.14, delayChildren: 0.1 } },
           }}
-          className="max-w-3xl"
+          className="max-w-2xl"
         >
+          <motion.p
+            variants={{
+              hidden: { opacity: 0, y: 10 },
+              show: { opacity: 1, y: 0, transition: { duration: 0.7, ease } },
+            }}
+            className="hud-chip inline-block rounded-full px-3 py-1 text-[10px] text-violet-200/90"
+          >
+            AI Design Engine
+          </motion.p>
+
           <motion.h1
             variants={{
-              hidden: { opacity: 0, y: 28, letterSpacing: "0.45em" },
+              hidden: { opacity: 0, y: 32, letterSpacing: "0.5em" },
               show: {
                 opacity: 1,
                 y: 0,
-                letterSpacing: "-0.02em",
-                transition: { duration: 1.15, ease },
+                letterSpacing: "-0.03em",
+                transition: { duration: 1.2, ease },
               },
             }}
-            className="font-[family-name:var(--font-display)] text-6xl font-semibold leading-[0.9] text-white md:text-8xl lg:text-[7.5rem]"
+            className="display mt-6 text-6xl font-semibold leading-[0.88] text-white md:text-8xl lg:text-[7.75rem]"
           >
             ATRION
           </motion.h1>
 
           <motion.p
             variants={{
-              hidden: { opacity: 0, y: 18, letterSpacing: "0.2em" },
+              hidden: { opacity: 0, y: 16 },
               show: {
                 opacity: 1,
                 y: 0,
-                letterSpacing: "0.04em",
+                letterSpacing: "0.02em",
                 transition: { duration: 0.9, ease },
               },
             }}
-            className="mt-7 font-[family-name:var(--font-display)] text-2xl text-amber-300 md:text-4xl"
+            className="display mt-5 text-2xl font-medium tracking-tight text-[#a78bfa] md:text-4xl"
           >
             Just build it.
           </motion.p>
+
+          <motion.div
+            variants={{
+              hidden: { scaleX: 0, opacity: 0 },
+              show: { scaleX: 1, opacity: 1, transition: { duration: 0.8, ease } },
+            }}
+            className="gold-line mt-7 w-24 origin-left"
+          />
 
           <motion.p
             variants={{
               hidden: { opacity: 0, y: 12 },
               show: { opacity: 1, y: 0, transition: { duration: 0.75, ease } },
             }}
-            className="mt-5 max-w-md text-sm leading-relaxed text-slate-400 md:text-base"
+            className="mt-6 max-w-md text-[15px] leading-relaxed text-[#908a9e] md:text-base"
           >
-            Говори — получается цельный 3D. Крути, разбирай в воздухе как Iron Man, правь чатом.
-            Без платных mesh API.
+            Скажи идею — получишь цельный 3D. Крути. Разбирай в воздухе. Прави через чат.
           </motion.p>
 
           <motion.div
             variants={{
-              hidden: { scaleX: 0, opacity: 0 },
-              show: {
-                scaleX: 1,
-                opacity: 1,
-                transition: { duration: 0.75, ease },
-              },
-            }}
-            className="mt-6 h-px w-28 origin-left bg-gradient-to-r from-amber-400 to-transparent"
-          />
-
-          <motion.div
-            variants={{
-              hidden: { opacity: 0, y: 16 },
+              hidden: { opacity: 0, y: 18 },
               show: { opacity: 1, y: 0, transition: { duration: 0.7, ease } },
             }}
-            className="mt-10 flex flex-wrap items-center gap-4"
+            className="mt-10 flex flex-wrap items-center gap-3"
           >
             <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
               <Link
                 href={loggedIn ? "/dashboard/design-engine" : "/register"}
-                className="inline-block rounded-full bg-gradient-to-r from-amber-300 to-amber-500 px-9 py-3.5 text-sm font-semibold text-black shadow-[0_0_45px_rgba(245,197,24,0.4)]"
+                className="btn-primary inline-block rounded-full px-9 py-3.5 text-sm"
               >
-                {loggedIn ? "Engine" : "Start"}
+                {loggedIn ? "Открыть Engine" : "Начать"}
               </Link>
             </motion.div>
             {!loggedIn && (
-              <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                 <Link
                   href="/login"
-                  className="inline-block rounded-full border border-white/20 px-7 py-3.5 text-sm text-white/90 backdrop-blur transition hover:border-amber-300/50"
+                  className="btn-ghost inline-block rounded-full px-7 py-3.5 text-sm"
                 >
-                  Sign in
+                  Войти
                 </Link>
               </motion.div>
             )}

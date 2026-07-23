@@ -25,8 +25,8 @@ export default async function PricingPage({
   return (
     <main className="min-h-screen px-6 py-16">
       <nav className="mx-auto mb-16 flex max-w-5xl items-center justify-between">
-        <Link href="/" className="text-lg font-semibold tracking-tight">
-          Atrion <span className="text-accent">2.0</span>
+        <Link href="/" className="display text-lg font-semibold tracking-tight">
+          ATRION <span className="text-accent">2.0</span>
         </Link>
         <Link
           href={user ? "/dashboard" : "/login"}
@@ -37,7 +37,7 @@ export default async function PricingPage({
       </nav>
 
       <div className="mx-auto max-w-5xl text-center">
-        <h1 className="text-4xl font-bold md:text-5xl">
+        <h1 className="display text-4xl font-semibold tracking-tight md:text-5xl">
           Простые <span className="glow-text">тарифы</span>
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-muted">

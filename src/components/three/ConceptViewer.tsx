@@ -147,7 +147,7 @@ function AnimatedPart({
       <Edges color={selected ? "#f5c518" : "#3a3a3a"} threshold={22} />
       {selected && (
         <Html center position={[0, Math.max(0.5, part.size[1] / 2 + 0.45), 0]} distanceFactor={12}>
-          <div className="pointer-events-none whitespace-nowrap rounded-md border border-amber-400/50 bg-black/75 px-3 py-1.5 text-[11px] text-amber-50">
+          <div className="pointer-events-none whitespace-nowrap rounded-md border border-violet-400/50 bg-black/75 px-3 py-1.5 text-[11px] text-violet-50">
             <span className="font-semibold">{part.name}</span>
           </div>
         </Html>

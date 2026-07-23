@@ -492,10 +492,9 @@ export async function generate3DConcept(
   prompt: string,
   answers: { question: string; answer: string }[] = []
 ): Promise<ThreeDConcept> {
-  // Free path: ALWAYS solid silhouette geometry (house/school/bridge…).
-  // AI must not return a single beige cube — Meshy-quality mesh needs paid API;
-  // our edge is recognizable assembled form + explode.
-  const solid = buildFromPrompt(prompt);
+  // Free path: ALWAYS solid silhouette for ANY request.
+  const fullPrompt = [prompt, ...answers.map((a) => `${a.question} ${a.answer}`)].join(" ");
+  const solid = buildFromPrompt(fullPrompt);
 
   if (!hasKey()) return solid;
 

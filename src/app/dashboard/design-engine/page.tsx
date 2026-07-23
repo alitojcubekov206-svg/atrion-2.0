@@ -23,8 +23,11 @@ const PIPELINE = [
 
 const EXAMPLES = [
   "Двухэтажный дом 12×9 м с двускатной крышей и панорамными окнами",
-  "Школа: главный корпус, крыло, вход с козырьком",
+  "Школа 4 этажа ширина 60 длина 120",
   "Пешеходный мост 18 м из стали и дерева",
+  "Офисная башня 20 этажей",
+  "Стадион с трибунами",
+  "Красный спорткар",
 ];
 
 type ChatMessage = { role: "user" | "assistant"; text: string };
@@ -49,7 +52,7 @@ export default function DesignEnginePage() {
   const [chat, setChat] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      text: "Опиши объект. Соберу модель — крути, разбирай в воздухе как в Iron Man, правь чатом.",
+      text: "Опиши что угодно — дом, мост, школу, машину, гаджет. Соберу цельный объект: свет, орбита, Explode.",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -197,7 +200,7 @@ export default function DesignEnginePage() {
     questions.length > 0 && questions.every((question) => Boolean(answers[question.id]));
 
   return (
-    <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex bg-[#2b2d33] text-slate-100">
+    <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex bg-[#141518] text-[#f4f1ea]">
       <div className={`relative min-w-0 flex-1 ${panelOpen ? "md:w-[80%]" : "w-full"}`}>
         {concept ? (
           <ConceptViewer
@@ -212,47 +215,64 @@ export default function DesignEnginePage() {
             className="h-full"
           />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center px-6">
-            <h1 className="max-w-2xl text-center font-[family-name:var(--font-display)] text-4xl font-semibold tracking-tight text-amber-300 md:text-5xl">
-              Just build it.
-            </h1>
-            <p className="mt-4 max-w-lg text-center text-sm text-slate-400">
-              Бесплатно: дом как дом, школа как школа. Крути, разбирай в воздухе, правь чатом.
-            </p>
-            <div className="mt-8 flex w-full max-w-2xl flex-col gap-3">
-              <textarea
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                rows={3}
-                placeholder="Двухэтажный дом 12×9 с панорамными окнами…"
-                className="w-full resize-none rounded-2xl border border-amber-400/25 bg-white/5 px-5 py-4 text-sm outline-none backdrop-blur focus:border-amber-300/50"
-              />
-              <div className="flex flex-wrap gap-2">
-                {EXAMPLES.map((example) => (
-                  <button
-                    key={example}
-                    type="button"
-                    onClick={() => setPrompt(example)}
-                    className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:border-amber-400/40 hover:text-amber-100"
-                  >
-                    {example.slice(0, 42)}…
-                  </button>
-                ))}
+          <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-6">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_35%,rgba(167,139,250,0.12),transparent_50%),radial-gradient(ellipse_at_80%_90%,rgba(255,255,255,0.03),transparent_40%)]" />
+            <div className="pointer-events-none absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(167,139,250,0.8)_1px,transparent_1px),linear-gradient(90deg,rgba(167,139,250,0.8)_1px,transparent_1px)] [background-size:56px_56px]" />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+              className="relative flex w-full max-w-2xl flex-col items-center"
+            >
+              <div className="holo-ring mb-8" />
+              <p className="hud-chip rounded-full px-3 py-1 text-[10px] text-[#a78bfa]/90">
+                Design Engine
+              </p>
+              <h1 className="display mt-5 text-center text-5xl font-semibold tracking-tight text-white md:text-6xl">
+                ATRION
+              </h1>
+              <p className="display mt-3 text-center text-2xl tracking-tight text-[#a78bfa] md:text-3xl">
+                Just build it.
+              </p>
+              <div className="gold-line mt-6 w-16" />
+              <p className="mt-5 max-w-md text-center text-sm leading-relaxed text-[#8f8a82]">
+                Опиши что угодно — соберу цельный 3D. Крути. Explode. Прави чатом.
+              </p>
+              <div className="mt-9 w-full space-y-3">
+                <textarea
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  rows={3}
+                  placeholder="Двухэтажный дом 12×9 с панорамными окнами…"
+                  className="w-full resize-none rounded-2xl border border-white/10 bg-black/45 px-5 py-4 text-sm outline-none transition focus:border-[#a78bfa]/50"
+                />
+                <div className="flex flex-wrap gap-2">
+                  {EXAMPLES.map((example) => (
+                    <button
+                      key={example}
+                      type="button"
+                      onClick={() => setPrompt(example)}
+                      className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#8f8a82] transition hover:border-[#a78bfa]/40 hover:text-[#f4f1ea]"
+                    >
+                      {example.slice(0, 36)}…
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  disabled={loading || prompt.trim().length < 10}
+                  onClick={startInterview}
+                  className="btn-primary w-full rounded-full px-6 py-3.5 text-sm disabled:opacity-40"
+                >
+                  {loading ? "…" : "Создать →"}
+                </button>
               </div>
-              <button
-                type="button"
-                disabled={loading || prompt.trim().length < 10}
-                onClick={startInterview}
-                className="rounded-full bg-gradient-to-r from-amber-300 to-amber-500 px-6 py-3 text-sm font-semibold text-black shadow-[0_0_30px_rgba(245,197,24,0.35)] disabled:opacity-40"
-              >
-                {loading ? "…" : "Создать →"}
-              </button>
-            </div>
+            </motion.div>
           </div>
         )}
 
         {concept && (
-          <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-full border border-white/10 bg-black/55 px-3 py-2 backdrop-blur-xl">
+          <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-full border border-[#a78bfa]/20 bg-[#050507]/75 px-2 py-1.5 shadow-[0_0_40px_rgba(167,139,250,0.12)] backdrop-blur-xl">
             {(
               [
                 ["perspective", "Orbit"],
@@ -268,15 +288,16 @@ export default function DesignEnginePage() {
                   setView(value);
                   setExploded(false);
                 }}
-                className={`rounded-full px-3 py-1.5 text-xs ${
+                className={`rounded-full px-3 py-1.5 text-xs transition ${
                   view === value && !exploded
-                    ? "bg-amber-400/20 text-amber-100"
-                    : "text-slate-400 hover:text-white"
+                    ? "bg-[#a78bfa]/20 text-[#a78bfa]"
+                    : "text-[#8f8a82] hover:text-white"
                 }`}
               >
                 {label}
               </button>
             ))}
+            <span className="mx-0.5 h-4 w-px bg-white/10" />
             <button
               type="button"
               onClick={() => {
@@ -285,28 +306,18 @@ export default function DesignEnginePage() {
                 setAssembling(false);
                 setExploded((v) => !v);
               }}
-              className={`rounded-full px-3 py-1.5 text-xs ${
-                exploded ? "bg-amber-400/25 text-amber-100" : "text-slate-400 hover:text-white"
+              className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
+                exploded
+                  ? "bg-[#a78bfa] text-[#050507]"
+                  : "border border-[#a78bfa]/35 text-[#a78bfa] hover:bg-[#a78bfa]/15"
               }`}
             >
               {exploded ? "Assemble" : "Explode"}
             </button>
-            {concept.meshUrl && (
-              <button
-                type="button"
-                onClick={() => {
-                  setExploded(false);
-                  setShowMesh((v) => !v);
-                }}
-                className="rounded-full px-3 py-1.5 text-xs text-slate-400 hover:text-white"
-              >
-                {showMesh ? "Parts" : "Mesh"}
-              </button>
-            )}
             <button
               type="button"
               onClick={() => setPanelOpen((value) => !value)}
-              className="rounded-full px-3 py-1.5 text-xs text-slate-400 hover:text-white"
+              className="rounded-full px-3 py-1.5 text-xs text-[#8f8a82] hover:text-white"
             >
               {panelOpen ? "Hide" : "Panel"}
             </button>
@@ -319,10 +330,10 @@ export default function DesignEnginePage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-30 flex items-center justify-center bg-[#07060a]/55 backdrop-blur-sm"
+              className="absolute inset-0 z-30 flex items-center justify-center bg-[#050507]/55 backdrop-blur-sm"
             >
-              <div className="w-full max-w-xs rounded-2xl border border-amber-400/25 bg-black/65 p-5">
-                <p className="mb-3 text-[10px] uppercase tracking-[0.25em] text-amber-300/80">
+              <div className="w-full max-w-xs rounded-2xl border border-[#a78bfa]/25 bg-[#121214]/95 p-5 shadow-[0_0_50px_rgba(167,139,250,0.15)]">
+                <p className="mb-3 text-[10px] uppercase tracking-[0.28em] text-[#a78bfa]/80">
                   Building
                 </p>
                 <ul className="space-y-2">
@@ -330,12 +341,12 @@ export default function DesignEnginePage() {
                     <li
                       key={step}
                       className={`flex items-center gap-3 text-sm ${
-                        index <= pipelineStep ? "text-amber-100" : "text-slate-500"
+                        index <= pipelineStep ? "text-[#f4f1ea]" : "text-[#5a5550]"
                       }`}
                     >
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${
-                          index <= pipelineStep ? "bg-amber-300" : "bg-slate-700"
+                          index <= pipelineStep ? "bg-[#a78bfa] shadow-[0_0_8px_#a78bfa]" : "bg-[#3a3834]"
                         }`}
                       />
                       {step}
@@ -349,13 +360,16 @@ export default function DesignEnginePage() {
       </div>
 
       {panelOpen && (
-        <aside className="flex w-full max-w-full flex-col border-l border-violet-400/15 bg-[#120e1a]/92 backdrop-blur-2xl md:w-[min(420px,20%)] md:min-w-[320px]">
-          <div className="border-b border-white/5 px-4 py-4">
+        <aside className="flex w-full max-w-full flex-col border-l border-[#a78bfa]/10 bg-[#0e0e10]/95 backdrop-blur-2xl md:w-[min(400px,22%)] md:min-w-[300px]">
+          <div className="border-b border-white/[0.06] px-4 py-4">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
-                ATRION
-              </h2>
-              <Link href="/dashboard" className="text-xs text-slate-400 hover:text-white">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.22em] text-[#a78bfa]/70">Engine</p>
+                <h2 className="display text-lg font-semibold">
+                  ATRION <span className="text-[#a78bfa]">3D</span>
+                </h2>
+              </div>
+              <Link href="/dashboard" className="text-xs text-[#8f8a82] hover:text-white">
                 Exit
               </Link>
             </div>
@@ -365,7 +379,7 @@ export default function DesignEnginePage() {
             <div className="mx-4 mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
               {error}
               {limitReached && (
-                <Link href="/pricing" className="mt-2 block font-semibold text-violet-200 underline">
+                <Link href="/pricing" className="mt-2 block font-semibold text-[#a78bfa] underline">
                   Pro
                 </Link>
               )}
@@ -376,7 +390,10 @@ export default function DesignEnginePage() {
             <div className="flex-1 overflow-y-auto px-4 py-4">
               <div className="space-y-4">
                 {questions.map((question) => (
-                  <div key={question.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                  <div
+                    key={question.id}
+                    className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3"
+                  >
                     <p className="text-sm font-medium">{question.question}</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {question.options.map((option) => (
@@ -386,10 +403,10 @@ export default function DesignEnginePage() {
                           onClick={() =>
                             setAnswers((current) => ({ ...current, [question.id]: option }))
                           }
-                          className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                          className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
                             answers[question.id] === option
-                              ? "border-violet-300/50 bg-violet-400/15 text-violet-100"
-                              : "border-white/10 text-slate-400"
+                              ? "border-[#a78bfa]/50 bg-[#a78bfa]/15 text-[#a78bfa]"
+                              : "border-white/10 text-[#8f8a82]"
                           }`}
                         >
                           {option}
@@ -403,7 +420,7 @@ export default function DesignEnginePage() {
                 type="button"
                 disabled={!allAnswered || loading}
                 onClick={generate}
-                className="mt-4 w-full rounded-full bg-amber-400 py-3 text-sm font-semibold text-black disabled:opacity-40"
+                className="btn-primary mt-4 w-full rounded-full py-3 text-sm disabled:opacity-40"
               >
                 Создать 3D
               </button>
@@ -418,8 +435,8 @@ export default function DesignEnginePage() {
                     key={`${message.role}-${index}`}
                     className={`rounded-2xl px-3 py-2 text-sm ${
                       message.role === "user"
-                        ? "ml-6 bg-violet-400/15 text-violet-50"
-                        : "mr-4 border border-white/10 bg-white/[0.03] text-slate-300"
+                        ? "ml-6 bg-[#a78bfa]/12 text-[#f4f1ea]"
+                        : "mr-4 border border-white/[0.07] bg-white/[0.02] text-[#b8b2a8]"
                     }`}
                   >
                     {message.text}
@@ -427,13 +444,13 @@ export default function DesignEnginePage() {
                 ))}
 
                 {concept && (
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs text-slate-500">Parts</p>
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-[#6a6560]">Parts</p>
                       <button
                         type="button"
                         onClick={() => setTreeOpen((value) => !value)}
-                        className="text-[11px] text-slate-400"
+                        className="text-[11px] text-[#8f8a82]"
                       >
                         {treeOpen ? "Hide" : "Show"}
                       </button>
@@ -442,7 +459,7 @@ export default function DesignEnginePage() {
                       <div className="mt-3 space-y-2">
                         {structure.map((group) => (
                           <div key={group.id}>
-                            <p className="text-[11px] font-semibold text-slate-500">{group.label}</p>
+                            <p className="text-[11px] font-semibold text-[#6a6560]">{group.label}</p>
                             <div className="mt-1 space-y-1">
                               {group.partIds.map((partId) => {
                                 const part = concept.parts.find((item) => item.id === partId);
@@ -452,10 +469,10 @@ export default function DesignEnginePage() {
                                     key={partId}
                                     type="button"
                                     onClick={() => setSelectedId(part.id)}
-                                    className={`block w-full rounded-lg px-2 py-1.5 text-left text-xs ${
+                                    className={`block w-full rounded-lg px-2 py-1.5 text-left text-xs transition ${
                                       selectedId === part.id
-                                        ? "bg-violet-400/15 text-violet-100"
-                                        : "text-slate-400 hover:bg-white/5"
+                                        ? "bg-[#a78bfa]/15 text-[#a78bfa]"
+                                        : "text-[#8f8a82] hover:bg-white/5"
                                     }`}
                                   >
                                     {part.name}
@@ -471,14 +488,14 @@ export default function DesignEnginePage() {
                 )}
 
                 {selectedPart && (
-                  <div className="rounded-2xl border border-violet-400/20 bg-violet-400/5 p-3 text-xs text-slate-300">
-                    <p className="font-semibold text-violet-100">{selectedPart.name}</p>
+                  <div className="rounded-2xl border border-[#a78bfa]/25 bg-[#a78bfa]/05 p-3 text-xs text-[#b8b2a8]">
+                    <p className="font-semibold text-[#a78bfa]">{selectedPart.name}</p>
                     <p className="mt-1">{selectedPart.material}</p>
                   </div>
                 )}
               </div>
 
-              <form onSubmit={refine} className="border-t border-white/5 p-4">
+              <form onSubmit={refine} className="border-t border-white/[0.06] p-4">
                 {concept && (
                   <div className="mb-3 flex gap-2">
                     <button
@@ -490,7 +507,7 @@ export default function DesignEnginePage() {
                           "application/json"
                         )
                       }
-                      className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-slate-300"
+                      className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-[#b8b2a8]"
                     >
                       Export
                     </button>
@@ -503,7 +520,7 @@ export default function DesignEnginePage() {
                         setPipelineStep(-1);
                         setPrompt("");
                       }}
-                      className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-slate-300"
+                      className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-[#b8b2a8]"
                     >
                       New
                     </button>
@@ -515,12 +532,12 @@ export default function DesignEnginePage() {
                     onChange={(event) => setChatInput(event.target.value)}
                     placeholder={concept ? "Сделай окна шире…" : "Сначала создай объект"}
                     disabled={!concept || loading}
-                    className="flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm outline-none focus:border-violet-400/40 disabled:opacity-40"
+                    className="flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-sm outline-none focus:border-[#a78bfa]/45 disabled:opacity-40"
                   />
                   <button
                     type="submit"
                     disabled={!concept || loading || chatInput.trim().length < 3}
-                    className="rounded-xl bg-violet-400 px-4 text-sm font-semibold text-black disabled:opacity-40"
+                    className="btn-primary rounded-xl px-4 text-sm disabled:opacity-40"
                   >
                     →
                   </button>
