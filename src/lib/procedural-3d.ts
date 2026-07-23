@@ -493,13 +493,369 @@ export function buildDesk(prompt: string): ThreeDConcept {
   );
 }
 
-/** Pick best free procedural template from prompt */
+export function buildTower(prompt: string): ThreeDConcept {
+  const floors = Math.min(40, Math.max(8, Number(prompt.match(/(\d+)\s*(?:этаж|floor|storey)/i)?.[1]) || 18));
+  const h = floors * 3.2;
+  const name = prompt.length > 4 && prompt.length <= 55 ? prompt : `Башня ${floors} этажей`;
+  const parts: ModelPart[] = [
+    part("plinth", "Цоколь", {
+      role: "foundation",
+      group: "Base",
+      position: [0, -0.4, 0],
+      size: [14, 0.8, 14],
+      color: "#3d4450",
+      material: "Бетон",
+    }),
+    part("core", "Ствол", {
+      role: "volume",
+      group: "Mass",
+      parentId: "plinth",
+      position: [0, h / 2, 0],
+      size: [10, h, 10],
+      color: "#c8d0d8",
+      material: "Стекло / фасад",
+    }),
+    part("crown", "Корона", {
+      role: "roof",
+      group: "Roof",
+      parentId: "core",
+      position: [0, h + 1.2, 0],
+      size: [8, 2.2, 8],
+      color: "#f5c518",
+      material: "Сталь",
+    }),
+    part("spire", "Шпиль", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Roof",
+      position: [0, h + 4, 0],
+      size: [0.25, 4.5, 0.25],
+      color: "#e8e8e8",
+      material: "Сталь",
+    }),
+  ];
+  for (let i = 0; i < Math.min(12, floors); i++) {
+    const y = 2 + i * (h / Math.min(12, floors));
+    parts.push(
+      part(`band-${i}`, `Пояс ${i + 1}`, {
+        role: "window",
+        group: "Facade",
+        parentId: "core",
+        position: [0, y, 5.08],
+        size: [9.2, 1.2, 0.12],
+        color: "#6ec8ff",
+        material: "Стекло",
+      })
+    );
+  }
+  return wrap(
+    name,
+    `Башня ${floors} этажей — цельный силуэт.`,
+    { width: 14, height: h + 6, depth: 14 },
+    [
+      { id: "base", label: "Base", partIds: ["plinth"] },
+      { id: "mass", label: "Mass", partIds: ["core"] },
+      { id: "roof", label: "Roof", partIds: ["crown", "spire"] },
+      {
+        id: "facade",
+        label: "Facade",
+        partIds: parts.filter((p) => p.id.startsWith("band-")).map((p) => p.id),
+      },
+    ],
+    parts
+  );
+}
+
+export function buildOffice(prompt: string): ThreeDConcept {
+  const name = prompt.length > 4 && prompt.length <= 55 ? prompt : "Офисное здание";
+  const parts = [
+    part("plinth", "Цоколь", {
+      role: "foundation",
+      group: "Base",
+      position: [0, -0.3, 0],
+      size: [28, 0.6, 16],
+      color: "#4a5160",
+      material: "Бетон",
+    }),
+    part("block-a", "Корпус A", {
+      role: "volume",
+      group: "Mass",
+      position: [-6, 6, 0],
+      size: [14, 12, 14],
+      color: "#b8c4d0",
+      material: "Фасад",
+    }),
+    part("block-b", "Корпус B", {
+      role: "volume",
+      group: "Mass",
+      position: [9, 4.5, 1],
+      size: [10, 9, 12],
+      color: "#a8b4c0",
+      material: "Фасад",
+    }),
+    part("roof-a", "Кровля A", {
+      role: "roof",
+      group: "Roof",
+      position: [-6, 12.3, 0],
+      size: [14.6, 0.4, 14.6],
+      color: "#2a3038",
+      material: "Мембрана",
+    }),
+    part("roof-b", "Кровля B", {
+      role: "roof",
+      group: "Roof",
+      position: [9, 9.2, 1],
+      size: [10.5, 0.35, 12.5],
+      color: "#2a3038",
+      material: "Мембрана",
+    }),
+    part("glass-a", "Витраж A", {
+      role: "window",
+      group: "Facade",
+      position: [-6, 6, 7.08],
+      size: [12, 10, 0.12],
+      color: "#5ec8ff",
+      material: "Стекло",
+    }),
+    part("glass-b", "Витраж B", {
+      role: "window",
+      group: "Facade",
+      position: [9, 4.5, 7.08],
+      size: [8, 7, 0.12],
+      color: "#5ec8ff",
+      material: "Стекло",
+    }),
+    part("lobby", "Лобби", {
+      role: "volume",
+      group: "Mass",
+      position: [-6, 1.8, 8.2],
+      size: [8, 3.6, 3],
+      color: "#9aa8b8",
+      material: "Стекло / сталь",
+    }),
+    part("door", "Вход", {
+      role: "door",
+      group: "Facade",
+      position: [-6, 1.2, 9.75],
+      size: [2.4, 2.6, 0.15],
+      color: "#1a2838",
+      material: "Стекло",
+    }),
+  ];
+  return wrap(
+    name,
+    "Офис: два корпуса, витражи, лобби.",
+    { width: 28, height: 13, depth: 16 },
+    [
+      { id: "base", label: "Base", partIds: ["plinth"] },
+      { id: "mass", label: "Mass", partIds: ["block-a", "block-b", "lobby"] },
+      { id: "roof", label: "Roof", partIds: ["roof-a", "roof-b"] },
+      { id: "facade", label: "Facade", partIds: ["glass-a", "glass-b", "door"] },
+    ],
+    parts
+  );
+}
+
+export function buildCar(prompt: string): ThreeDConcept {
+  const name = prompt.length > 4 && prompt.length <= 55 ? prompt : "Автомобиль";
+  const parts = [
+    part("body", "Кузов", {
+      role: "volume",
+      group: "Body",
+      position: [0, 0.55, 0],
+      size: [4.2, 0.7, 1.8],
+      color: "#c0392b",
+      material: "Металл",
+    }),
+    part("cabin", "Кабина", {
+      role: "volume",
+      group: "Body",
+      position: [-0.2, 1.15, 0],
+      size: [2.2, 0.7, 1.7],
+      color: "#a93226",
+      material: "Металл",
+    }),
+    part("glass", "Стекло", {
+      role: "window",
+      group: "Glass",
+      position: [-0.15, 1.2, 0],
+      size: [1.9, 0.55, 1.72],
+      color: "#7ec8ff",
+      material: "Стекло",
+    }),
+    part("w-fl", "Колесо FL", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Wheels",
+      position: [1.3, 0.35, 0.95],
+      size: [0.35, 0.25, 0.35],
+      rotation: [Math.PI / 2, 0, 0],
+      color: "#1a1a1a",
+      material: "Резина",
+    }),
+    part("w-fr", "Колесо FR", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Wheels",
+      position: [1.3, 0.35, -0.95],
+      size: [0.35, 0.25, 0.35],
+      rotation: [Math.PI / 2, 0, 0],
+      color: "#1a1a1a",
+      material: "Резина",
+    }),
+    part("w-bl", "Колесо BL", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Wheels",
+      position: [-1.3, 0.35, 0.95],
+      size: [0.35, 0.25, 0.35],
+      rotation: [Math.PI / 2, 0, 0],
+      color: "#1a1a1a",
+      material: "Резина",
+    }),
+    part("w-br", "Колесо BR", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Wheels",
+      position: [-1.3, 0.35, -0.95],
+      size: [0.35, 0.25, 0.35],
+      rotation: [Math.PI / 2, 0, 0],
+      color: "#1a1a1a",
+      material: "Резина",
+    }),
+  ];
+  return wrap(
+    name,
+    "Авто: кузов, кабина, колёса.",
+    { width: 4.2, height: 1.6, depth: 1.9 },
+    [
+      { id: "body", label: "Body", partIds: ["body", "cabin"] },
+      { id: "glass", label: "Glass", partIds: ["glass"] },
+      { id: "wheels", label: "Wheels", partIds: ["w-fl", "w-fr", "w-bl", "w-br"] },
+    ],
+    parts
+  );
+}
+
+/** Any unknown prompt → multi-part massing (never a single cube) */
+export function buildGenericMassing(prompt: string): ThreeDConcept {
+  const floors = Math.min(20, Math.max(2, Number(prompt.match(/(\d+)\s*(?:этаж|floor)/i)?.[1]) || 3));
+  const width = Math.min(80, Math.max(8, Number(prompt.match(/(?:ширин[аеы]?\s*)(\d+)/i)?.[1]) || 16));
+  const depth = Math.min(60, Math.max(6, Number(prompt.match(/(?:длин[аеы]?\s*|глубин[аеы]?\s*|length\s*)(\d+)/i)?.[1]) || width * 0.65));
+  const storey = 3.1;
+  const h = floors * storey;
+  const name = prompt.length > 4 && prompt.length <= 60 ? prompt : "3D-объект";
+
+  const parts: ModelPart[] = [
+    part("plinth", "Основание", {
+      role: "foundation",
+      group: "Base",
+      position: [0, -0.3, 0],
+      size: [width + 1.2, 0.6, depth + 1.2],
+      color: "#4a5160",
+      material: "Бетон",
+    }),
+    part("body", "Основной объём", {
+      role: "volume",
+      group: "Mass",
+      parentId: "plinth",
+      position: [0, h / 2, 0],
+      size: [width, h, depth],
+      color: "#c5cdd6",
+      material: "Фасад",
+    }),
+    part("wing", "Пристройка", {
+      role: "volume",
+      group: "Mass",
+      parentId: "body",
+      position: [width * 0.42, h * 0.35, depth * 0.08],
+      size: [width * 0.28, h * 0.7, depth * 0.72],
+      color: "#b0bac4",
+      material: "Фасад",
+    }),
+    part("roof", "Кровля", {
+      role: "roof",
+      group: "Roof",
+      parentId: "body",
+      position: [0, h + 0.25, 0],
+      size: [width + 0.8, 0.4, depth + 0.8],
+      color: "#2a3038",
+      material: "Кровля",
+    }),
+    part("canopy", "Козырёк", {
+      role: "detail",
+      group: "Roof",
+      parentId: "body",
+      position: [0, storey * 0.95, depth / 2 + 1],
+      size: [Math.min(10, width * 0.45), 0.15, 2.2],
+      color: "#f5c518",
+      material: "Сталь",
+    }),
+    part("door", "Вход", {
+      role: "door",
+      group: "Facade",
+      parentId: "body",
+      position: [0, 1.2, depth / 2 + 0.08],
+      size: [2.2, 2.4, 0.12],
+      color: "#1a2838",
+      material: "Дверь",
+    }),
+    part("steps", "Крыльцо", {
+      role: "detail",
+      group: "Base",
+      parentId: "plinth",
+      position: [0, 0.1, depth / 2 + 1.4],
+      size: [4, 0.3, 2],
+      color: "#6b7788",
+      material: "Камень",
+    }),
+  ];
+
+  for (let i = 0; i < floors; i++) {
+    const y = storey * (i + 0.55);
+    parts.push(
+      part(`win-row-${i}`, `Окна эт.${i + 1}`, {
+        role: "window",
+        group: "Facade",
+        parentId: "body",
+        position: [0, y, depth / 2 + 0.06],
+        size: [width * 0.82, 1.35, 0.1],
+        color: "#5ec8ff",
+        material: "Стекло",
+      })
+    );
+  }
+
+  return wrap(
+    name,
+    `Цельный силуэт (${floors} ур.) — не куча коробок.`,
+    { width, height: h + 1.5, depth: depth + 3 },
+    [
+      { id: "base", label: "Base", partIds: ["plinth", "steps"] },
+      { id: "mass", label: "Mass", partIds: ["body", "wing"] },
+      { id: "roof", label: "Roof", partIds: ["roof", "canopy"] },
+      {
+        id: "facade",
+        label: "Facade",
+        partIds: ["door", ...parts.filter((p) => p.id.startsWith("win-")).map((p) => p.id)],
+      },
+    ],
+    parts
+  );
+}
+
+/** Pick best free procedural template from prompt — ANY idea gets a solid form */
 export function buildFromPrompt(prompt: string): ThreeDConcept {
   const lower = prompt.toLowerCase();
-  if (/школ|school|лицей|гимназ|образоват/i.test(lower)) return buildSchool(prompt);
-  if (/мост|bridge|переход/i.test(lower)) return buildBridge(prompt);
-  if (/стол|desk|table|мебел/i.test(lower)) return buildDesk(prompt);
-  return buildHouse(prompt);
+  if (/школ|school|лицей|гимназ|образоват|универ|колледж/i.test(lower)) return buildSchool(prompt);
+  if (/мост|bridge|эстакад|переход/i.test(lower)) return buildBridge(prompt);
+  if (/башн|tower|небоскреб|skyscraper|высотк/i.test(lower)) return buildTower(prompt);
+  if (/офис|office|бизнес.?центр|бц\b/i.test(lower)) return buildOffice(prompt);
+  if (/машин|автомоб|car\b|vehicle|спорткар/i.test(lower)) return buildCar(prompt);
+  if (/стол|desk|table|мебел|стул|chair/i.test(lower)) return buildDesk(prompt);
+  if (/дом|house|коттедж|вилл|особняк|жиль|cottage/i.test(lower)) return buildHouse(prompt);
+  // Everything else: parametric massing from numbers in the prompt (never 1 cube)
+  return buildGenericMassing(prompt);
 }
 
 /** True if parts look like a connected object (not a random pile) */

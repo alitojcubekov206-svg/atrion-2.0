@@ -8,7 +8,7 @@ import type {
   StarterKit,
   ThreeDConcept,
 } from "./types";
-import { buildFromPrompt, isCoherentConcept } from "./procedural-3d";
+import { buildFromPrompt } from "./procedural-3d";
 
 type AIProvider = {
   apiKey: string;
@@ -492,97 +492,52 @@ export async function generate3DConcept(
   prompt: string,
   answers: { question: string; answer: string }[] = []
 ): Promise<ThreeDConcept> {
-  const freeSolid = buildFromPrompt(prompt);
+  // Free path: ALWAYS solid silhouette geometry (house/school/bridge…).
+  // AI must not return a single beige cube — Meshy-quality mesh needs paid API;
+  // our edge is recognizable assembled form + explode.
+  const solid = buildFromPrompt(prompt);
 
-  if (!hasKey()) return freeSolid;
+  if (!hasKey()) return solid;
 
   try {
     const result = await chatJSON<unknown>(
-      `You are Atrion AI Design Engine — conceptual 3D architect.
-Turn the user's idea into ONE recognizable complete object silhouette using 12–24 primitives.
-This is visualization only, never construction-ready engineering.
-Use the same language as the user. Return only valid JSON.
+      `You are Atrion. Return ONLY JSON metadata for a 3D concept (NO inventing bad geometry).
+Use the same language as the user.
+Fill: name, description, materials, equipment, requirements, assemblySteps, costEstimate (KGS),
+advantages, disadvantages, risks, engineeringNotes, disclaimer.
+You may omit parts/structure/dimensions — server injects solid geometry.`,
+      `Object idea: ${prompt}
 
-CRITICAL SILHOUETTE RULES:
-- The model MUST look like the real thing at a glance (house → house, school → school). NEVER a scattered pile of boxes.
-- Start with 1–3 primary mass volumes that form most of the silhouette. Attach secondary parts flush.
-- Parts must touch adjacent parts (0–0.05 gap max). No floating orphan boxes.
-- Windows/doors are thin panels flush on wall faces.
-- Roofs sit ON TOP of walls. Pitched roofs = 1–2 rotated thin boxes.
-- Foundation slightly larger than footprint, under the main volume.
-- Center near [0, y_ground, 0]. Prefer realistic proportions.
-- dimensions between 0.1 and 60; shape is "box" or "cylinder"
-- Each part needs role and group
-- position, size and rotation are arrays of exactly 3 numbers (rotation in radians)
-- box size = [width, height, depth]; cylinder size = [radius, height, radius]
-- six-digit hex colors
+Discovery:
+${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- none"}
 
-For a house: main rectangular body, pitched roof, windows on facade, door + steps, optional garage/balcony.
-
-JSON shape:
-{
-  "name": "...",
-  "description": "...",
-  "units": "m",
-  "dimensions": {"width": 1, "height": 1, "depth": 1},
-  "structure": [{"id":"foundation","label":"Foundation","partIds":["part-1"]}],
-  "parts": [{
-    "id": "part-1", "name": "...", "shape": "box",
-    "role": "foundation", "group": "Foundation", "parentId": null,
-    "position": [0,0,0], "size": [1,1,1], "rotation": [0,0,0],
-    "color": "#64748b", "material": "...", "quantity": 1
-  }],
-  "materials": [{
-    "name": "...", "specification": "...", "estimatedQuantity": "...", "reason": "..."
-  }],
-  "equipment": [{"name":"...","purpose":"...","access":"buy"}],
-  "requirements": ["..."],
-  "assemblySteps": ["..."],
-  "costEstimate": {
-    "currency": "KGS", "minimum": 0, "maximum": 0,
-    "breakdown": [{"item":"...","quantity":"...","estimatedCost":0}],
-    "note": "Approximate market estimate; verify with local suppliers."
-  },
-  "advantages": ["..."],
-  "disadvantages": ["..."],
-  "risks": [{"risk":"...","severity":"High","mitigation":"..."}],
-  "engineeringNotes": ["..."],
-  "disclaimer": "Concept only. Dimensions and loads must be verified by a qualified engineer."
-}`,
-      `Create a detailed 3D concept for: ${prompt}
-
-Discovery answers:
-${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n")}
-
-When assembled, a stranger must instantly recognize the object type from silhouette alone.
-Include realistic part quantities, tools, 5-10 assembly steps, advantages, disadvantages, risks and a rough cost range in Kyrgyz som (KGS).
-Never claim that the model is structurally certified.`
+Return JSON with name, description, materials, costEstimate, assemblySteps, etc.`
     );
 
-    const normalized = normalize3DConcept(result);
-    // Free guarantee: if AI returns a messy pile, keep solid template geometry
-    if (!isCoherentConcept(normalized)) {
-      return {
-        ...freeSolid,
-        name: normalized.name || freeSolid.name,
-        description: normalized.description || freeSolid.description,
-        materials: normalized.materials.length ? normalized.materials : freeSolid.materials,
-        costEstimate: normalized.costEstimate.maximum
-          ? normalized.costEstimate
-          : freeSolid.costEstimate,
-        assemblySteps: normalized.assemblySteps.length
-          ? normalized.assemblySteps
-          : freeSolid.assemblySteps,
-        advantages: normalized.advantages.length ? normalized.advantages : freeSolid.advantages,
-        disadvantages: normalized.disadvantages.length
-          ? normalized.disadvantages
-          : freeSolid.disadvantages,
-        risks: normalized.risks.length ? normalized.risks : freeSolid.risks,
-      };
-    }
-    return normalized;
+    const meta = normalize3DConcept(result);
+    return {
+      ...solid,
+      name: meta.name && meta.name !== "Untitled 3D Concept" ? meta.name : solid.name,
+      description: meta.description || solid.description,
+      materials: meta.materials.length ? meta.materials : solid.materials,
+      equipment: meta.equipment.length ? meta.equipment : solid.equipment,
+      requirements: meta.requirements.length ? meta.requirements : solid.requirements,
+      assemblySteps: meta.assemblySteps.length ? meta.assemblySteps : solid.assemblySteps,
+      costEstimate: meta.costEstimate.maximum ? meta.costEstimate : solid.costEstimate,
+      advantages: meta.advantages.length ? meta.advantages : solid.advantages,
+      disadvantages: meta.disadvantages.length ? meta.disadvantages : solid.disadvantages,
+      risks: meta.risks.length ? meta.risks : solid.risks,
+      engineeringNotes: meta.engineeringNotes.length
+        ? meta.engineeringNotes
+        : solid.engineeringNotes,
+      // geometry ALWAYS from solid template
+      parts: solid.parts,
+      structure: solid.structure,
+      dimensions: solid.dimensions,
+      units: solid.units,
+    };
   } catch (error) {
-    return localFallback("3D concept", error, () => freeSolid);
+    return localFallback("3D concept", error, () => solid);
   }
 }
 
@@ -591,32 +546,37 @@ export async function refine3DConcept(
   instruction: string,
   selectedPartId?: string | null
 ): Promise<ThreeDConcept> {
-  if (!hasKey()) {
-    return mockRefine3DConcept(concept, instruction, selectedPartId);
-  }
+  // Keep solid geometry — never let AI replace a good model with a cube pile
+  const safe = mockRefine3DConcept(concept, instruction, selectedPartId);
+  if (!hasKey()) return safe;
 
   try {
     const selected = concept.parts.find((part) => part.id === selectedPartId);
     const result = await chatJSON<unknown>(
-      `You are Atrion AI Design Engine refining an existing conceptual 3D model.
-Apply the user's edit instruction carefully. Keep valid JSON only.
-Preserve ids when possible. Keep shape box|cylinder, hex colors, and a coherent assembled silhouette (parts must stay attached, not float apart).
-If a part is selected, prioritize editing that part unless the instruction is global.
-Return the full ThreeDConcept object with the same schema as generation, including role/group/structure.`,
-      `Current concept JSON:
+      `You refine METADATA only for a 3D concept (name, description, materials, costs, notes).
+Do NOT invent new parts geometry. Return full JSON but keep parts/structure/dimensions identical to input.
+Same language as user.`,
+      `Current concept:
 ${JSON.stringify(concept)}
 
 Selected part: ${selected ? `${selected.name} (${selected.id})` : "none"}
-
 User instruction: ${instruction}
 
-Return the complete updated concept.`
+Return updated concept JSON. Preserve parts array exactly unless instruction is a simple scale of selected part.`
     );
-    return normalize3DConcept(result);
+    const normalized = normalize3DConcept(result);
+    // Geometry lock: always keep original (or mock-refined) parts
+    return {
+      ...normalized,
+      parts: safe.parts,
+      structure: safe.structure ?? concept.structure,
+      dimensions: safe.dimensions,
+      units: concept.units,
+      name: normalized.name || safe.name,
+      description: normalized.description || safe.description,
+    };
   } catch (error) {
-    return localFallback("3D refine", error, () =>
-      mockRefine3DConcept(concept, instruction, selectedPartId)
-    );
+    return localFallback("3D refine", error, () => safe);
   }
 }
 

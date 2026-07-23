@@ -58,14 +58,11 @@ export default function DesignEnginePage() {
     if (assembleTimer.current) clearTimeout(assembleTimer.current);
     setExploded(false);
     setView("perspective");
-    setShowMesh(Boolean(next.meshUrl));
+    setShowMesh(false); // always show solid parts (templates), not empty/broken mesh
+    setSelectedId(null);
     setConcept(next);
-    if (!next.meshUrl) {
-      setAssembling(true);
-      assembleTimer.current = setTimeout(() => setAssembling(false), 3200);
-    } else {
-      setAssembling(false);
-    }
+    setAssembling(true);
+    assembleTimer.current = setTimeout(() => setAssembling(false), 3400);
   }
 
   const selectedPart = concept?.parts.find((part) => part.id === selectedId) ?? null;
@@ -145,7 +142,7 @@ export default function DesignEnginePage() {
           ...prev,
           {
             role: "assistant",
-            text: `Готово: ${data.concept.name}. Крути модель · Explode — разборка в воздухе · правь чатом.`,
+            text: `Готово: ${data.concept.name} (${data.concept.parts?.length ?? 0} частей). Сначала сборка — потом Explode разберёт в воздухе.`,
           },
         ]);
       } else {

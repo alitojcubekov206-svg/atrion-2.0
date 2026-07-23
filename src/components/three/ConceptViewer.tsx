@@ -17,13 +17,27 @@ import type { ModelPart, ThreeDConcept } from "@/lib/types";
 
 export type DrawingView = "perspective" | "top" | "front" | "side";
 
-function explodeOffset(part: ModelPart, amount: number): [number, number, number] {
-  const len = Math.hypot(part.position[0], part.position[1] * 0.4, part.position[2]) || 1;
-  const boost = 0.55 + Math.min(1.8, Math.max(...part.size) * 0.35);
+function explodeOffset(part: ModelPart, amount: number, index = 0): [number, number, number] {
+  const px = part.position[0];
+  const py = part.position[1];
+  const pz = part.position[2];
+  let len = Math.hypot(px, py * 0.45, pz);
+  // Parts at center must still fly out in different directions (Iron Man)
+  let dirX = px;
+  let dirY = py;
+  let dirZ = pz;
+  if (len < 0.35) {
+    const a = index * 2.399; // golden-angle spread
+    dirX = Math.cos(a);
+    dirY = 0.55 + (index % 3) * 0.25;
+    dirZ = Math.sin(a);
+    len = 1;
+  }
+  const boost = 0.7 + Math.min(2, Math.max(...part.size) * 0.4);
   return [
-    (part.position[0] / len) * amount * boost * 2.2,
-    (part.position[1] / len) * amount * boost * 1.4 + amount * 0.4,
-    (part.position[2] / len) * amount * boost * 2.2,
+    (dirX / len) * amount * boost * 2.6,
+    (dirY / len) * amount * boost * 1.6 + amount * 0.55,
+    (dirZ / len) * amount * boost * 2.6,
   ];
 }
 
@@ -62,12 +76,14 @@ function SoftSpin({ enabled, children }: { enabled: boolean; children: ReactNode
 
 function AnimatedPart({
   part,
+  index,
   selected,
   exploded,
   assembling,
   onSelect,
 }: {
   part: ModelPart;
+  index: number;
   selected: boolean;
   exploded: boolean;
   assembling: boolean;
@@ -89,7 +105,7 @@ function AnimatedPart({
       assembling ? 0.9 : 2.4,
       delta
     );
-    const [ox, oy, oz] = explodeOffset(part, 1 - progress.current);
+    const [ox, oy, oz] = explodeOffset(part, 1 - progress.current, index);
     mesh.current.position.set(
       part.position[0] + ox,
       part.position[1] + oy,
@@ -229,10 +245,11 @@ export default function ConceptViewer({
             </Suspense>
           ) : (
             <group position={[0, 0.05, 0]}>
-              {concept.parts.map((part) => (
+              {concept.parts.map((part, index) => (
                 <AnimatedPart
                   key={part.id}
                   part={part}
+                  index={index}
                   selected={part.id === selectedId}
                   exploded={exploded}
                   assembling={assembling}
