@@ -1,8 +1,8 @@
 "use client";
 
 import { Canvas, useFrame } from "@react-three/fiber";
-import { ContactShadows, Float, Grid, Stars } from "@react-three/drei";
-import { useMemo, useRef } from "react";
+import { Float, Grid, Stars } from "@react-three/drei";
+import { useRef } from "react";
 import type { Group, Mesh } from "three";
 import * as THREE from "three";
 
@@ -93,37 +93,6 @@ function HoloBuilding() {
   );
 }
 
-function OrbitPoints() {
-  const group = useRef<Group>(null);
-  const points = useMemo(
-    () =>
-      Array.from({ length: 18 }, (_, i) => {
-        const a = (i / 18) * Math.PI * 2;
-        return [Math.cos(a) * 4.6, Math.sin(a * 2) * 0.35, Math.sin(a) * 4.6] as [
-          number,
-          number,
-          number,
-        ];
-      }),
-    []
-  );
-
-  useFrame((_, delta) => {
-    if (group.current) group.current.rotation.y += delta * 0.12;
-  });
-
-  return (
-    <group ref={group}>
-      {points.map((p, i) => (
-        <mesh key={i} position={p}>
-          <sphereGeometry args={[0.045, 12, 12]} />
-          <meshBasicMaterial color={i % 2 ? VIOLET_HOT : MAGENTA} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
 function PulseCore() {
   const mesh = useRef<Mesh>(null);
   useFrame((state) => {
@@ -149,11 +118,12 @@ export default function HeroScene() {
   return (
     <div className="absolute inset-0 -z-10">
       <Canvas
-        dpr={[1, 1.75]}
+        dpr={[1, 1.25]}
         camera={{ position: [5.5, 3.2, 7.2], fov: 42 }}
         gl={{
-          antialias: true,
+          antialias: false,
           alpha: true,
+          powerPreference: "low-power",
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.25,
         }}
@@ -162,12 +132,10 @@ export default function HeroScene() {
         <fog attach="fog" args={[BG, 12, 30]} />
         <hemisphereLight args={["#e9d5ff", BG, 0.9]} />
         <ambientLight intensity={0.8} />
-        <directionalLight position={[8, 12, 6]} intensity={2.6} color="#faf5ff" />
-        <pointLight position={[-6, 4, -2]} intensity={95} color={VIOLET} distance={32} decay={1.5} />
-        <pointLight position={[5, 2, 6]} intensity={65} color={MAGENTA} distance={28} decay={1.5} />
+        <directionalLight position={[8, 12, 6]} intensity={2.2} color="#faf5ff" />
+        <pointLight position={[-6, 4, -2]} intensity={70} color={VIOLET} distance={28} decay={1.5} />
         <HoloBuilding />
         <PulseCore />
-        <OrbitPoints />
         <Grid
           position={[0, -1.35, 0]}
           args={[40, 40]}
@@ -181,8 +149,7 @@ export default function HeroScene() {
           fadeStrength={1}
           infiniteGrid
         />
-        <ContactShadows position={[0, -1.3, 0]} opacity={0.5} scale={24} blur={2.6} far={8} />
-        <Stars radius={70} depth={40} count={1800} factor={2.6} saturation={0} fade speed={0.45} />
+        <Stars radius={60} depth={30} count={400} factor={2.2} saturation={0} fade speed={0.35} />
       </Canvas>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_25%,rgba(5,5,7,0.4)_75%,#050507_96%)]" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#050507] to-transparent" />

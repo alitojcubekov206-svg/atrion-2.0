@@ -1,125 +1,13 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
-import type { Group, Mesh } from "three";
-import * as THREE from "three";
-
-const VIOLET = "#a78bfa";
-const MAGENTA = "#e879f9";
-const BG = "#050507";
-
-function FloatingModules() {
-  const group = useRef<Group>(null);
-  const modules = useMemo(
-    () =>
-      Array.from({ length: 14 }, (_, index) => ({
-        id: index,
-        position: [
-          (Math.sin(index * 1.7) * 6 + (index % 3) * 1.2) * (index % 2 === 0 ? 1 : -0.85),
-          0.4 + (index % 5) * 0.55,
-          -4 - (index % 4) * 1.4,
-        ] as [number, number, number],
-        size: [0.35 + (index % 4) * 0.18, 0.12 + (index % 3) * 0.08, 0.5 + (index % 5) * 0.12] as [
-          number,
-          number,
-          number,
-        ],
-        speed: 0.15 + (index % 5) * 0.04,
-        phase: index * 0.7,
-      })),
-    []
-  );
-
-  useFrame((state) => {
-    if (!group.current) return;
-    group.current.rotation.y = state.clock.elapsedTime * 0.04;
-    group.current.children.forEach((child, index) => {
-      const mesh = child as Mesh;
-      const item = modules[index];
-      if (!item) return;
-      mesh.position.y = item.position[1] + Math.sin(state.clock.elapsedTime * item.speed + item.phase) * 0.35;
-      mesh.rotation.y = state.clock.elapsedTime * 0.2 + item.phase;
-    });
-  });
-
-  return (
-    <group ref={group} position={[0, -0.5, 0]}>
-      {modules.map((item) => (
-        <mesh key={item.id} position={item.position}>
-          <boxGeometry args={item.size} />
-          <meshStandardMaterial
-            color={VIOLET}
-            emissive={VIOLET}
-            emissiveIntensity={0.7}
-            transparent
-            opacity={0.48}
-            metalness={0.3}
-            roughness={0.32}
-          />
-        </mesh>
-      ))}
-      <mesh position={[0, 1.2, -6]}>
-        <boxGeometry args={[4.2, 2.4, 0.2]} />
-        <meshStandardMaterial
-          color="#1a1524"
-          transparent
-          opacity={0.7}
-          metalness={0.35}
-          roughness={0.4}
-          emissive="#2a1f3a"
-          emissiveIntensity={0.45}
-        />
-      </mesh>
-      <mesh position={[2.4, 0.8, -5.2]}>
-        <boxGeometry args={[1.6, 1.4, 1.2]} />
-        <meshStandardMaterial
-          color="#221830"
-          transparent
-          opacity={0.65}
-          metalness={0.25}
-          roughness={0.4}
-          emissive={MAGENTA}
-          emissiveIntensity={0.18}
-        />
-      </mesh>
-    </group>
-  );
-}
-
-function PulseRing() {
-  const ref = useRef<Mesh>(null);
-  useFrame((state) => {
-    if (!ref.current) return;
-    const t = (Math.sin(state.clock.elapsedTime * 1.2) + 1) / 2;
-    ref.current.scale.setScalar(1 + t * 0.15);
-    (ref.current.material as THREE.MeshBasicMaterial).opacity = 0.22 + t * 0.35;
-  });
-  return (
-    <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.2, -4]}>
-      <ringGeometry args={[3.2, 3.45, 64]} />
-      <meshBasicMaterial color={VIOLET} transparent opacity={0.4} side={THREE.DoubleSide} />
-    </mesh>
-  );
-}
-
+/** Lightweight dashboard backdrop — CSS only (no WebGL lag) */
 export default function StarkAmbient({ className = "" }: { className?: string }) {
   return (
     <div className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}>
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_18%_0%,rgba(167,139,250,0.2),transparent_46%),radial-gradient(ellipse_at_92%_82%,rgba(232,121,249,0.12),transparent_42%),linear-gradient(180deg,#050507_0%,#0a0812_50%,#050507_100%)]" />
       <div className="absolute inset-0 opacity-[0.07] [background-image:linear-gradient(rgba(167,139,250,0.55)_1px,transparent_1px),linear-gradient(90deg,rgba(167,139,250,0.55)_1px,transparent_1px)] [background-size:48px_48px]" />
-      <Canvas
-        dpr={[1, 1.5]}
-        camera={{ position: [0, 2.5, 8], fov: 42 }}
-        gl={{ alpha: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.2 }}
-      >
-        <hemisphereLight args={["#e9d5ff", BG, 0.8]} />
-        <ambientLight intensity={0.75} />
-        <pointLight position={[4, 6, 2]} intensity={85} color={VIOLET} distance={28} decay={1.5} />
-        <pointLight position={[-5, 2, 4]} intensity={55} color={MAGENTA} distance={24} decay={1.5} />
-        <FloatingModules />
-        <PulseRing />
-      </Canvas>
+      <div className="absolute left-[12%] top-[18%] h-40 w-40 rounded-full bg-violet-500/10 blur-3xl" />
+      <div className="absolute bottom-[12%] right-[10%] h-48 w-48 rounded-full bg-fuchsia-500/10 blur-3xl" />
       <div className="absolute inset-0 bg-gradient-to-t from-[#050507] via-transparent to-[#050507]/55" />
     </div>
   );

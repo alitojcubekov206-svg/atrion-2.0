@@ -67,26 +67,38 @@ export async function POST(req: Request) {
   const plan = await getUserPlan(userId);
 
   let freeGenerationReserved = false;
+  // Free: several mesh attempts (quota refunded if Tripo/Trellis fails)
+  const FREE_MESH_LIMIT = 5;
   if (plan !== "pro") {
     const reservation = await db.user.updateMany({
       where: {
         id: userId,
         plan: { not: "pro" },
-        threeDGenerations: { lt: 1 },
+        threeDGenerations: { lt: FREE_MESH_LIMIT },
       },
       data: { threeDGenerations: { increment: 1 } },
     });
     if (reservation.count === 0) {
       return NextResponse.json(
         {
-          error:
-            "Бесплатный лимит: 1 генерация 3D. Перейди на Pro или подожди — лимит уже использован.",
+          error: `Бесплатный лимит: ${FREE_MESH_LIMIT} генераций 3D. Перейди на Pro.`,
           code: "THREE_D_LIMIT_REACHED",
         },
         { status: 403 }
       );
     }
     freeGenerationReserved = true;
+  }
+
+  async function refundQuota() {
+    if (!freeGenerationReserved) return;
+    freeGenerationReserved = false;
+    await db.user
+      .updateMany({
+        where: { id: userId, threeDGenerations: { gt: 0 } },
+        data: { threeDGenerations: { decrement: 1 } },
+      })
+      .catch((e) => console.error("3D quota refund failed", e));
   }
 
   try {
@@ -149,7 +161,7 @@ export async function POST(req: Request) {
         meshProvider = "tripo";
       } catch (error) {
         meshError =
-          error instanceof Error ? error.message : "Tripo mesh failed — силуэт";
+          error instanceof Error ? error.message : "Tripo mesh failed";
         console.error("Tripo generation failed", error);
       }
     } else if (requestMesh && genMode === "text" && !isTripoEnabled()) {
@@ -174,9 +186,41 @@ export async function POST(req: Request) {
         meshError = null;
       } catch (error) {
         meshError =
-          error instanceof Error ? error.message : "Meshy mesh failed — силуэт";
+          error instanceof Error ? error.message : "Meshy mesh failed";
         console.error("Meshy generation failed", error);
       }
+    }
+
+    // Text MVP: never pretend cubes are the real model — fail + refund quota
+    if (requestMesh && genMode === "text" && !concept.meshUrl) {
+      await refundQuota();
+      return NextResponse.json(
+        {
+          error:
+            meshError ||
+            "Не удалось получить 3D mesh. Проверь кредиты Tripo и TRIPO_API_KEY.",
+          code: "MESH_FAILED",
+          meshError,
+          tripoConfigured: isTripoConfigured(),
+          tripoEnabled: isTripoEnabled(),
+        },
+        { status: 502 }
+      );
+    }
+
+    if (requestMesh && genMode === "image" && !concept.meshUrl) {
+      await refundQuota();
+      return NextResponse.json(
+        {
+          error:
+            meshError ||
+            "Trellis 2 не вернул GLB. Проверь FAL_KEY и кредиты fal.ai.",
+          code: "MESH_FAILED",
+          meshError,
+          falConfigured: isFalConfigured(),
+        },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({
@@ -194,16 +238,7 @@ export async function POST(req: Request) {
       meshyError: meshError,
     });
   } catch (error) {
-    if (freeGenerationReserved) {
-      await db.user
-        .updateMany({
-          where: { id: userId, threeDGenerations: { gt: 0 } },
-          data: { threeDGenerations: { decrement: 1 } },
-        })
-        .catch((rollbackError) =>
-          console.error("3D quota rollback failed", rollbackError)
-        );
-    }
+    await refundQuota();
     console.error("3D concept generation failed", error);
     return NextResponse.json(
       { error: "AI не смог создать модель. Уточните описание и попробуйте снова." },

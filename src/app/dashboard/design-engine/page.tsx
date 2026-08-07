@@ -160,38 +160,8 @@ export default function DesignEnginePage() {
   }
 
   async function startInterview() {
-    if (genMode === "image") {
-      await generate();
-      return;
-    }
-    if (prompt.trim().length < 10) return;
-    setLoading(true);
-    setError(null);
-    setLimitReached(false);
-    setConcept(null);
-    setQuestions([]);
-    setChat((prev) => [...prev, { role: "user", text: prompt.trim() }]);
-    try {
-      const response = await fetch("/api/3d/interview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.ok && Array.isArray(data.questions)) {
-        setQuestions(data.questions);
-        setChat((prev) => [
-          ...prev,
-          { role: "assistant", text: "Несколько уточнений — и соберу модель (Tripo mesh 10–120с)." },
-        ]);
-      } else {
-        setError(data.error ?? "Не удалось подготовить вопросы.");
-      }
-    } catch {
-      setError("Соединение прервалось.");
-    } finally {
-      setLoading(false);
-    }
+    // MVP: skip Q&A — straight to Tripo/Trellis mesh
+    await generate();
   }
 
   async function generate() {
@@ -199,9 +169,18 @@ export default function DesignEnginePage() {
       setError("Загрузи изображение для Trellis 2");
       return;
     }
+    if (genMode === "text" && prompt.trim().length < 10) {
+      setError("Опиши объект подробнее (мин. 10 символов).");
+      return;
+    }
     setLoading(true);
     setError(null);
     setLimitReached(false);
+    setConcept(null);
+    setQuestions([]);
+    if (genMode === "text") {
+      setChat((prev) => [...prev, { role: "user", text: prompt.trim() }]);
+    }
     await runPipelineVisual();
     try {
       const interviewAnswers = questions.map((question) => ({
@@ -220,42 +199,37 @@ export default function DesignEnginePage() {
         }),
       });
       const data = await response.json().catch(() => ({}));
-      if (response.ok && data.concept) {
+      if (response.ok && data.concept?.meshUrl) {
         setPipelineStep(PIPELINE.length - 1);
         await playAssemble(data.concept, data.meshProvider, data.needsClientBlob);
-        let meshNote = "";
-        if (data.concept.meshUrl) {
-          meshNote =
-            data.meshProvider === "trellis2"
-              ? " Trellis 2 mesh готов."
-              : data.meshProvider === "tripo"
-                ? " Tripo mesh готов."
-                : " Mesh готов.";
-        } else if (data.meshError) {
-          meshNote = ` Mesh ошибка: ${data.meshError}`;
-        } else {
-          meshNote = " Силуэт (проверь TRIPO_API_KEY / FAL_KEY в Vercel).";
-        }
+        const meshNote =
+          data.meshProvider === "trellis2"
+            ? " Trellis 2 mesh готов."
+            : data.meshProvider === "tripo"
+              ? " Tripo mesh готов."
+              : " Mesh готов.";
         setChat((prev) => [
           ...prev,
           {
             role: "assistant",
-            text: `Готово: ${data.concept.name}.${meshNote} CAD: Move/Rotate/Scale сверху слева.`,
+            text: `Готово: ${data.concept.name}.${meshNote} CAD слева сверху. Голос: «разбери», «собери», «поверни».`,
           },
         ]);
-        if (data.meshError) setError(`Mesh: ${data.meshError}`);
       } else {
         setPipelineStep(-1);
         setLimitReached(data.code === "THREE_D_LIMIT_REACHED");
-        setError(
+        const msg =
           data.code === "THREE_D_LIMIT_REACHED"
-            ? "Бесплатный лимит: 1 генерация 3D. Нужен Pro."
-            : data.error ?? "Не удалось создать модель."
-        );
+            ? "Лимит free генераций исчерпан. Нужен Pro."
+            : data.code === "MESH_FAILED"
+              ? `Mesh не получен: ${data.meshError || data.error}`
+              : data.error ?? "Не удалось создать модель.";
+        setError(msg);
+        setChat((prev) => [...prev, { role: "assistant", text: msg }]);
       }
     } catch {
       setPipelineStep(-1);
-      setError("Соединение прервалось (mesh может идти до 2 мин).");
+      setError("Соединение прервалось (mesh может идти до 3 мин).");
     } finally {
       setLoading(false);
     }
@@ -301,26 +275,100 @@ export default function DesignEnginePage() {
     });
   }
 
-  async function handleVoiceUtterance(text: string): Promise<string> {
-    setChat((prev) => [...prev, { role: "user", text }]);
-    if (!concept) {
-      if (text.trim().length >= 10) {
-        setPrompt(text.trim());
-        setGenMode("text");
+  async function generateFromPrompt(textPrompt: string) {
+    setPrompt(textPrompt);
+    setGenMode("text");
+    setLoading(true);
+    setError(null);
+    setLimitReached(false);
+    setConcept(null);
+    await runPipelineVisual();
+    try {
+      const response = await fetch("/api/3d/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: textPrompt.trim(),
+          answers: [],
+          wantMesh: true,
+          mode: "text",
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.concept?.meshUrl) {
+        setPipelineStep(PIPELINE.length - 1);
+        await playAssemble(data.concept, data.meshProvider, data.needsClientBlob);
         setChat((prev) => [
           ...prev,
-          { role: "assistant", text: "Ок, записал. Нажми Создать или ответь на вопросы." },
+          {
+            role: "assistant",
+            text: `Готово: ${data.concept.name}. Tripo mesh. Скажи «разбери» или правь в CAD.`,
+          },
         ]);
-        return "Ок, записал идею.";
+      } else {
+        setPipelineStep(-1);
+        const msg =
+          data.code === "THREE_D_LIMIT_REACHED"
+            ? "Лимит free генераций. Нужен Pro."
+            : data.meshError || data.error || "Mesh не получен.";
+        setError(msg);
+        setChat((prev) => [...prev, { role: "assistant", text: msg }]);
       }
-      return "Скажи подробнее.";
+    } catch {
+      setPipelineStep(-1);
+      setError("Сбой связи при генерации.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVoiceUtterance(text: string): Promise<string> {
+    const raw = text.trim();
+    setChat((prev) => [...prev, { role: "user", text: raw }]);
+    const lower = raw.toLowerCase();
+
+    if (/разбер|explod|разложи|разъедин/i.test(lower)) {
+      if (!concept) return "Сначала создай модель.";
+      if (showMesh) setShowMesh(false);
+      setExploded(true);
+      setAssembling(false);
+      const reply = "Разбираю на части.";
+      setChat((prev) => [...prev, { role: "assistant", text: reply }]);
+      return reply;
+    }
+    if (/собери|assembl|собери обратно/i.test(lower)) {
+      if (!concept) return "Сначала создай модель.";
+      setExploded(false);
+      setAssembling(true);
+      if (assembleTimer.current) clearTimeout(assembleTimer.current);
+      assembleTimer.current = setTimeout(() => setAssembling(false), 2800);
+      const reply = "Собираю.";
+      setChat((prev) => [...prev, { role: "assistant", text: reply }]);
+      return reply;
+    }
+    if (/mesh|меш|текстур/i.test(lower) && concept?.meshUrl) {
+      setShowMesh(true);
+      setExploded(false);
+      const reply = "Показываю mesh.";
+      setChat((prev) => [...prev, { role: "assistant", text: reply }]);
+      return reply;
+    }
+
+    if (!concept) {
+      if (raw.length >= 10) {
+        const reply = "Запускаю генерацию Tripo…";
+        setChat((prev) => [...prev, { role: "assistant", text: reply }]);
+        await generateFromPrompt(raw);
+        return reply;
+      }
+      return "Скажи подробнее, что создать.";
     }
     try {
       const response = await fetch("/api/3d/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: text,
+          message: raw,
           prompt,
           concept: {
             name: concept.name,

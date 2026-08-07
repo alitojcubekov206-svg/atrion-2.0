@@ -71,7 +71,7 @@ async function tripoFetch(path: string, init?: RequestInit) {
   return data;
 }
 
-async function waitForTask(taskId: string, maxMs = 240_000) {
+async function waitForTask(taskId: string, maxMs = 280_000) {
   const started = Date.now();
   while (Date.now() - started < maxMs) {
     const task = await tripoFetch(`/tasks/${taskId}`);
@@ -82,13 +82,25 @@ async function waitForTask(taskId: string, maxMs = 240_000) {
         task.data?.error_message || task.message || `Tripo task ${status}`
       );
     }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 2500));
   }
-  throw new Error("Tripo timed out (120s+) — кредиты/очередь?");
+  throw new Error("Tripo timed out — проверь кредиты на platform.tripo3d.ai");
+}
+
+/** Enrich RU/EN prompt so Tripo gets clearer geometry + material cues */
+export function enrichTripoPrompt(raw: string): string {
+  const clean = raw.replace(/\s+/g, " ").trim().slice(0, 900);
+  const suffix =
+    "single complete 3D object, clean topology, centered, full body visible, " +
+    "high quality mesh with PBR materials, no UI, no watermark, no text labels";
+  if (/[а-яё]/i.test(clean)) {
+    return `${clean}. ${suffix}`;
+  }
+  return `${clean}. ${suffix}`;
 }
 
 /**
- * Text → GLB via Tripo text-to-model.
+ * Text → GLB via Tripo text-to-model (textured PBR when credits allow).
  * Returns data URL when small enough; otherwise remote URL (client should blob-cache).
  */
 export async function generateTripoGlb(prompt: string): Promise<{
@@ -96,12 +108,20 @@ export async function generateTripoGlb(prompt: string): Promise<{
   needsClientBlob: boolean;
 }> {
   const model = process.env.TRIPO_MODEL?.trim() || "v3.1-20260211";
+  const textureQuality =
+    process.env.TRIPO_TEXTURE_QUALITY?.trim() || "detailed";
+  const geometryQuality =
+    process.env.TRIPO_GEOMETRY_QUALITY?.trim() || "standard";
 
   const created = (await tripoFetch("/generation/text-to-model", {
     method: "POST",
     body: JSON.stringify({
-      prompt: prompt.slice(0, 1024),
+      prompt: enrichTripoPrompt(prompt),
       model,
+      texture: true,
+      pbr: true,
+      texture_quality: textureQuality,
+      geometry_quality: geometryQuality,
     }),
   })) as TripoCreateResponse;
 

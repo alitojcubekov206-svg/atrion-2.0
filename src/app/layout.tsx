@@ -5,11 +5,15 @@ import "./globals.css";
 const body = Manrope({
   subsets: ["latin", "cyrillic"],
   variable: "--font-body",
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
 });
 
 const display = Unbounded({
   subsets: ["latin", "cyrillic"],
   variable: "--font-display",
+  display: "swap",
+  weight: ["500", "600", "700"],
 });
 
 export const metadata: Metadata = {
