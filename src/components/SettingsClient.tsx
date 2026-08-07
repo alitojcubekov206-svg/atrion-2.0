@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   DEFAULT_SETTINGS,
+  listVoicesForLang,
   loadSettings,
   saveSettings,
   speakText,
@@ -11,13 +12,26 @@ import {
 
 export default function SettingsClient() {
   const [settings, setSettings] = useState<AtrionSettings>(DEFAULT_SETTINGS);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   useEffect(() => {
     setSettings(loadSettings());
+    const refresh = () => setVoices(listVoicesForLang(loadSettings().language));
+    refresh();
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = refresh;
+    }
+    return () => {
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
   }, []);
 
   function update(partial: Partial<AtrionSettings>) {
-    setSettings(saveSettings(partial));
+    const next = saveSettings(partial);
+    setSettings(next);
+    if (partial.language) setVoices(listVoicesForLang(partial.language));
   }
 
   return (
@@ -38,7 +52,7 @@ export default function SettingsClient() {
               <button
                 key={value}
                 type="button"
-                onClick={() => update({ language: value })}
+                onClick={() => update({ language: value, voiceURI: "" })}
                 className={`rounded-full px-4 py-2 text-sm transition ${
                   settings.language === value
                     ? "bg-violet-400/25 text-violet-100 ring-1 ring-violet-400/40"
@@ -49,6 +63,35 @@ export default function SettingsClient() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <p className="text-xs text-slate-500">Голос (лучший Neural/Google сверху)</p>
+          <select
+            value={settings.voiceURI}
+            onChange={(e) => update({ voiceURI: e.target.value })}
+            className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-sm outline-none focus:border-violet-400/50"
+          >
+            <option value="">Авто (лучший)</option>
+            {voices.map((voice) => (
+              <option key={voice.voiceURI} value={voice.voiceURI}>
+                {voice.name} · {voice.lang}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <p className="text-xs text-slate-500">Скорость речи: {settings.voiceRate.toFixed(2)}</p>
+          <input
+            type="range"
+            min={0.85}
+            max={1.15}
+            step={0.01}
+            value={settings.voiceRate}
+            onChange={(e) => update({ voiceRate: Number(e.target.value) })}
+            className="mt-2 w-full accent-violet-400"
+          />
         </div>
 
         <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-white/10 px-4 py-3">

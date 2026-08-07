@@ -8,6 +8,13 @@ import {
   isTripoConfigured,
   isTripoEnabled,
 } from "@/lib/tripo";
+import {
+  attachMeshUrl as attachTrellisUrl,
+  generateTrellisGlb,
+  isFalConfigured,
+  isTrellisEnabled,
+  uploadImageToFal,
+} from "@/lib/trellis";
 import { db } from "@/lib/db";
 
 export const maxDuration = 300;
@@ -21,23 +28,39 @@ export async function POST(req: Request) {
   let prompt: unknown;
   let answers: unknown;
   let wantMesh: unknown;
+  let mode: unknown;
+  let imageDataUrl: unknown;
   try {
     const body = await req.json();
     prompt = body?.prompt;
     answers = body?.answers;
     wantMesh = body?.wantMesh;
+    mode = body?.mode;
+    imageDataUrl = body?.imageDataUrl;
   } catch {
     return NextResponse.json({ error: "Некорректный запрос." }, { status: 400 });
   }
 
-  if (typeof prompt !== "string" || prompt.trim().length < 10) {
+  const genMode = mode === "image" ? "image" : "text";
+
+  if (genMode === "text" && (typeof prompt !== "string" || prompt.trim().length < 10)) {
     return NextResponse.json(
       { error: "Опишите объект подробнее — минимум 10 символов." },
       { status: 400 }
     );
   }
 
-  if (prompt.length > 1500) {
+  if (
+    genMode === "image" &&
+    (typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image"))
+  ) {
+    return NextResponse.json(
+      { error: "Загрузите изображение (PNG/JPG) для Trellis 2." },
+      { status: 400 }
+    );
+  }
+
+  if (typeof prompt === "string" && prompt.length > 1500) {
     return NextResponse.json({ error: "Описание слишком длинное." }, { status: 400 });
   }
 
@@ -57,7 +80,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           error:
-            "Бесплатная 3D-генерация уже использована. Перейдите на Pro для расширенного доступа.",
+            "Бесплатный лимит: 1 генерация 3D. Перейди на Pro или подожди — лимит уже использован.",
           code: "THREE_D_LIMIT_REACHED",
         },
         { status: 403 }
@@ -78,35 +101,69 @@ export async function POST(req: Request) {
           .slice(0, 10)
       : [];
 
-    let concept = await generate3DConcept(prompt.trim(), safeAnswers);
-    let meshError: string | null = null;
-    let meshProvider: "tripo" | "meshy" | null = null;
+    const ideaPrompt =
+      genMode === "image"
+        ? typeof prompt === "string" && prompt.trim().length > 3
+          ? prompt.trim()
+          : "3D модель по загруженному изображению (Trellis 2)"
+        : (prompt as string).trim();
 
+    let concept = await generate3DConcept(ideaPrompt, safeAnswers);
+    let meshError: string | null = null;
+    let meshProvider: "tripo" | "meshy" | "trellis2" | null = null;
+    let needsClientBlob = false;
+
+    const requestMesh = wantMesh !== false;
     const meshPrompt = [
-      prompt.trim(),
+      ideaPrompt,
       ...safeAnswers.map((a) => `${a.question}: ${a.answer}`),
     ]
       .join(". ")
       .slice(0, 1000);
 
-    // wantMesh !== false → try real mesh when a provider is configured
-    const requestMesh = wantMesh !== false;
+    if (requestMesh && genMode === "image" && isTrellisEnabled()) {
+      try {
+        const publicUrl = await uploadImageToFal(imageDataUrl as string);
+        const glb = await generateTrellisGlb(publicUrl);
+        concept = attachTrellisUrl(concept, glb.url);
+        needsClientBlob = glb.needsClientBlob;
+        meshProvider = "trellis2";
+      } catch (error) {
+        meshError =
+          error instanceof Error
+            ? error.message
+            : "Trellis 2 failed — показан силуэт";
+        console.error("Trellis generation failed", error);
+      }
+    } else if (requestMesh && genMode === "image" && !isTrellisEnabled()) {
+      meshError = isFalConfigured()
+        ? "Trellis выключен (TRELLIS_ENABLED=false)"
+        : "Нет FAL_KEY — добавь в Vercel для Trellis 2";
+    }
 
-    if (requestMesh && isTripoEnabled()) {
+    if (requestMesh && genMode === "text" && isTripoEnabled()) {
       try {
         const glb = await generateTripoGlb(meshPrompt);
-        concept = attachTripoUrl(concept, glb);
+        concept = attachTripoUrl(concept, glb.url);
+        needsClientBlob = glb.needsClientBlob;
         meshProvider = "tripo";
       } catch (error) {
         meshError =
           error instanceof Error ? error.message : "Tripo mesh failed — силуэт";
         console.error("Tripo generation failed", error);
       }
+    } else if (requestMesh && genMode === "text" && !isTripoEnabled()) {
+      if (!meshError) {
+        meshError = isTripoConfigured()
+          ? "Tripo выключен (TRIPO_ENABLED=false)"
+          : "Нет TRIPO_API_KEY (tsk_...) в Vercel env";
+      }
     }
 
     if (
       !concept.meshUrl &&
       requestMesh &&
+      genMode === "text" &&
       isMeshyConfigured() &&
       process.env.MESHY_ENABLED === "true"
     ) {
@@ -126,11 +183,13 @@ export async function POST(req: Request) {
       concept,
       mesh: Boolean(concept.meshUrl),
       meshProvider,
+      needsClientBlob,
       tripoConfigured: isTripoConfigured(),
       tripoEnabled: isTripoEnabled(),
+      falConfigured: isFalConfigured(),
+      trellisEnabled: isTrellisEnabled(),
       meshyConfigured: isMeshyConfigured(),
       meshError,
-      // legacy keys for older clients
       meshy: Boolean(concept.meshUrl),
       meshyError: meshError,
     });

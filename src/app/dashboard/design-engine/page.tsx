@@ -2,26 +2,22 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { DrawingView } from "@/components/three/ConceptViewer";
-import type { InterviewQuestion, ThreeDConcept } from "@/lib/types";
+import type { DrawingView, MeshTransform } from "@/components/three/ConceptViewer";
+import type { InterviewQuestion, ModelPart, ThreeDConcept } from "@/lib/types";
 import { download } from "@/lib/export";
 import { loadSettings, speakText, stopSpeaking } from "@/lib/settings";
+import { ensureLocalMeshUrl } from "@/lib/mesh-blob";
 import VoiceMode from "@/components/VoiceMode";
+import CadToolbar, { type CadTool } from "@/components/CadToolbar";
 
 const ConceptViewer = dynamic(() => import("@/components/three/ConceptViewer"), {
   ssr: false,
   loading: () => <div className="h-full animate-pulse bg-[#2b2d33]" />,
 });
 
-const PIPELINE = [
-  "Analyzing",
-  "Structure",
-  "Geometry",
-  "Materials",
-  "Ready",
-] as const;
+const PIPELINE = ["Analyzing", "Structure", "Geometry", "Mesh", "Ready"] as const;
 
 const EXAMPLES = [
   "Аниме девушка 3D модель с длинными волосами",
@@ -32,10 +28,25 @@ const EXAMPLES = [
   "Кот сидит",
 ];
 
+const DEFAULT_MESH_TF: MeshTransform = {
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  scale: [1, 1, 1],
+};
+
 type ChatMessage = { role: "user" | "assistant"; text: string };
+type GenMode = "text" | "image";
+type Providers = {
+  tripoConfigured?: boolean;
+  tripoEnabled?: boolean;
+  falConfigured?: boolean;
+  trellisEnabled?: boolean;
+};
 
 export default function DesignEnginePage() {
   const [prompt, setPrompt] = useState("");
+  const [genMode, setGenMode] = useState<GenMode>("text");
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [treeOpen, setTreeOpen] = useState(true);
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
@@ -50,33 +61,65 @@ export default function DesignEnginePage() {
   const [pipelineStep, setPipelineStep] = useState(-1);
   const [error, setError] = useState<string | null>(null);
   const [limitReached, setLimitReached] = useState(false);
+  const [providers, setProviders] = useState<Providers>({});
+  const [meshProvider, setMeshProvider] = useState<string | null>(null);
+  const [cadTool, setCadTool] = useState<CadTool>("select");
+  const [snap, setSnap] = useState(true);
+  const [meshTransform, setMeshTransform] = useState<MeshTransform>(DEFAULT_MESH_TF);
+  const [history, setHistory] = useState<ThreeDConcept[]>([]);
+  const [future, setFuture] = useState<ThreeDConcept[]>([]);
   const assembleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cadHistoryGate = useRef(false);
   const [chat, setChat] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      text: "Опиши объект — при TRIPO_API_KEY соберу реальный GLB mesh (как Meshy). Без ключа — силуэт.",
+      text: "Text → Tripo mesh. Image → Trellis 2. После генерации — CAD (Move/Rotate/Scale).",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
   const [voiceMode, setVoiceMode] = useState(false);
+  const units = loadSettings().units;
+  const snapStep = units === "cm" ? 0.05 : 0.1;
 
-  function playAssemble(next: ThreeDConcept) {
+  useEffect(() => {
+    fetch("/api/3d/providers")
+      .then((r) => r.json())
+      .then((data) => setProviders(data))
+      .catch(() => undefined);
+  }, []);
+
+  function pushHistory(prev: ThreeDConcept) {
+    setHistory((h) => [...h.slice(-30), structuredClone(prev)]);
+    setFuture([]);
+  }
+
+  async function playAssemble(next: ThreeDConcept, provider?: string | null, needsBlob?: boolean) {
     if (assembleTimer.current) clearTimeout(assembleTimer.current);
+    let conceptNext = next;
+    if (next.meshUrl && needsBlob) {
+      const local = await ensureLocalMeshUrl(next.meshUrl);
+      conceptNext = { ...next, meshUrl: local };
+    } else if (next.meshUrl && next.meshUrl.startsWith("http")) {
+      const local = await ensureLocalMeshUrl(next.meshUrl);
+      conceptNext = { ...next, meshUrl: local };
+    }
     setExploded(false);
     setView("perspective");
-    // Show Tripo/Meshy GLB when present; otherwise solid parts silhouette
-    setShowMesh(Boolean(next.meshUrl));
+    setShowMesh(Boolean(conceptNext.meshUrl));
     setSelectedId(null);
-    setConcept(next);
-    setAssembling(!next.meshUrl); // assemble animation for parts only
-    if (!next.meshUrl) {
+    setMeshTransform(DEFAULT_MESH_TF);
+    setCadTool("select");
+    setConcept(conceptNext);
+    setMeshProvider(provider ?? null);
+    setAssembling(!conceptNext.meshUrl);
+    if (!conceptNext.meshUrl) {
       assembleTimer.current = setTimeout(() => setAssembling(false), 3400);
     } else {
       setAssembling(false);
     }
     const settings = loadSettings();
     if (settings.voiceEnabled && settings.voiceAuto) {
-      speakText(`${next.name}. ${next.description}`);
+      speakText(`${conceptNext.name}. ${conceptNext.description}`);
     }
   }
 
@@ -99,11 +142,28 @@ export default function DesignEnginePage() {
   async function runPipelineVisual() {
     for (let i = 0; i < PIPELINE.length - 1; i++) {
       setPipelineStep(i);
-      await new Promise((resolve) => setTimeout(resolve, 220));
+      await new Promise((resolve) => setTimeout(resolve, i === 3 ? 400 : 180));
     }
   }
 
+  function onImageFile(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Нужен PNG/JPG");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") setImageDataUrl(reader.result);
+    };
+    reader.readAsDataURL(file);
+  }
+
   async function startInterview() {
+    if (genMode === "image") {
+      await generate();
+      return;
+    }
     if (prompt.trim().length < 10) return;
     setLoading(true);
     setError(null);
@@ -122,7 +182,7 @@ export default function DesignEnginePage() {
         setQuestions(data.questions);
         setChat((prev) => [
           ...prev,
-          { role: "assistant", text: "Несколько уточнений — и соберу модель." },
+          { role: "assistant", text: "Несколько уточнений — и соберу модель (Tripo mesh 10–120с)." },
         ]);
       } else {
         setError(data.error ?? "Не удалось подготовить вопросы.");
@@ -135,6 +195,10 @@ export default function DesignEnginePage() {
   }
 
   async function generate() {
+    if (genMode === "image" && !imageDataUrl) {
+      setError("Загрузи изображение для Trellis 2");
+      return;
+    }
     setLoading(true);
     setError(null);
     setLimitReached(false);
@@ -147,55 +211,110 @@ export default function DesignEnginePage() {
       const response = await fetch("/api/3d/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, answers: interviewAnswers, wantMesh: true }),
+        body: JSON.stringify({
+          prompt: prompt.trim() || (genMode === "image" ? "модель по фото" : ""),
+          answers: interviewAnswers,
+          wantMesh: true,
+          mode: genMode,
+          imageDataUrl: genMode === "image" ? imageDataUrl : undefined,
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.concept) {
         setPipelineStep(PIPELINE.length - 1);
-        playAssemble(data.concept);
-        const meshNote = data.concept.meshUrl
-          ? data.meshProvider === "tripo"
-            ? " Tripo mesh готов."
-            : " Mesh готов."
-          : data.meshError
-            ? ` Mesh: ${data.meshError}`
-            : " Силуэт (добавь TRIPO_API_KEY для реального mesh).";
+        await playAssemble(data.concept, data.meshProvider, data.needsClientBlob);
+        let meshNote = "";
+        if (data.concept.meshUrl) {
+          meshNote =
+            data.meshProvider === "trellis2"
+              ? " Trellis 2 mesh готов."
+              : data.meshProvider === "tripo"
+                ? " Tripo mesh готов."
+                : " Mesh готов.";
+        } else if (data.meshError) {
+          meshNote = ` Mesh ошибка: ${data.meshError}`;
+        } else {
+          meshNote = " Силуэт (проверь TRIPO_API_KEY / FAL_KEY в Vercel).";
+        }
         setChat((prev) => [
           ...prev,
           {
             role: "assistant",
-            text: `Готово: ${data.concept.name} (${data.concept.parts?.length ?? 0} частей).${meshNote}`,
+            text: `Готово: ${data.concept.name}.${meshNote} CAD: Move/Rotate/Scale сверху слева.`,
           },
         ]);
+        if (data.meshError) setError(`Mesh: ${data.meshError}`);
       } else {
         setPipelineStep(-1);
         setLimitReached(data.code === "THREE_D_LIMIT_REACHED");
-        setError(data.error ?? "Не удалось создать модель.");
+        setError(
+          data.code === "THREE_D_LIMIT_REACHED"
+            ? "Бесплатный лимит: 1 генерация 3D. Нужен Pro."
+            : data.error ?? "Не удалось создать модель."
+        );
       }
     } catch {
       setPipelineStep(-1);
-      setError("Соединение прервалось.");
+      setError("Соединение прервалось (mesh может идти до 2 мин).");
     } finally {
       setLoading(false);
     }
   }
 
+  function applyPartChange(id: string, patch: Partial<ModelPart>) {
+    if (!concept) return;
+    if (!cadHistoryGate.current) {
+      pushHistory(concept);
+      cadHistoryGate.current = true;
+    }
+    setConcept({
+      ...concept,
+      parts: concept.parts.map((part) => (part.id === id ? { ...part, ...patch } : part)),
+    });
+  }
+
+  function applyMeshTransform(next: MeshTransform) {
+    if (concept && !cadHistoryGate.current) {
+      pushHistory(concept);
+      cadHistoryGate.current = true;
+    }
+    setMeshTransform(next);
+  }
+
+  function undo() {
+    setHistory((h) => {
+      if (!h.length || !concept) return h;
+      const prev = h[h.length - 1];
+      setFuture((f) => [structuredClone(concept), ...f]);
+      setConcept(prev);
+      return h.slice(0, -1);
+    });
+  }
+
+  function redo() {
+    setFuture((f) => {
+      if (!f.length || !concept) return f;
+      const next = f[0];
+      setHistory((h) => [...h, structuredClone(concept)]);
+      setConcept(next);
+      return f.slice(1);
+    });
+  }
+
   async function handleVoiceUtterance(text: string): Promise<string> {
     setChat((prev) => [...prev, { role: "user", text }]);
-
-    // No concept yet → treat speech as create prompt
     if (!concept) {
       if (text.trim().length >= 10) {
         setPrompt(text.trim());
+        setGenMode("text");
         setChat((prev) => [
           ...prev,
-          { role: "assistant", text: "Ок, запускаю. Ответь на уточнения или скажи «создай»." },
+          { role: "assistant", text: "Ок, записал. Нажми Создать или ответь на вопросы." },
         ]);
-        return "Ок, записал идею. Нажми создать или ответь на вопросы.";
+        return "Ок, записал идею.";
       }
-      return "Скажи подробнее, что построить — хотя бы пару слов.";
+      return "Скажи подробнее.";
     }
-
     try {
       const response = await fetch("/api/3d/chat", {
         method: "POST",
@@ -213,14 +332,12 @@ export default function DesignEnginePage() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const err = data.error ?? "Не понял, повтори.";
+        const err = data.error ?? "Не понял.";
         setChat((prev) => [...prev, { role: "assistant", text: err }]);
         return err;
       }
-
       const reply = typeof data.reply === "string" ? data.reply : "Готово.";
       setChat((prev) => [...prev, { role: "assistant", text: reply }]);
-
       if (data.shouldRefine && data.refineInstruction) {
         const refineRes = await fetch("/api/3d/refine", {
           method: "POST",
@@ -233,10 +350,10 @@ export default function DesignEnginePage() {
         });
         const refineData = await refineRes.json().catch(() => ({}));
         if (refineRes.ok && refineData.concept) {
-          playAssemble(refineData.concept);
+          pushHistory(concept);
+          await playAssemble(refineData.concept, meshProvider);
         }
       }
-
       return reply;
     } catch {
       const err = "Связь оборвалась.";
@@ -257,19 +374,13 @@ export default function DesignEnginePage() {
       const response = await fetch("/api/3d/refine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          concept,
-          instruction,
-          selectedPartId: selectedId,
-        }),
+        body: JSON.stringify({ concept, instruction, selectedPartId: selectedId }),
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.concept) {
-        playAssemble(data.concept);
-        setChat((prev) => [
-          ...prev,
-          { role: "assistant", text: "Правка применена." },
-        ]);
+        pushHistory(concept);
+        await playAssemble(data.concept, meshProvider);
+        setChat((prev) => [...prev, { role: "assistant", text: "Правка применена." }]);
       } else {
         setError(data.error ?? "Не удалось применить правку.");
       }
@@ -283,72 +394,167 @@ export default function DesignEnginePage() {
   const allAnswered =
     questions.length > 0 && questions.every((question) => Boolean(answers[question.id]));
 
+  const providerHint =
+    genMode === "image"
+      ? providers.trellisEnabled
+        ? "Trellis 2 · FAL ready"
+        : providers.falConfigured
+          ? "FAL есть, Trellis off"
+          : "Нужен FAL_KEY"
+      : providers.tripoEnabled
+        ? "Tripo ready"
+        : providers.tripoConfigured
+          ? "Tripo off"
+          : "Нужен TRIPO_API_KEY (tsk_)";
+
   return (
     <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex bg-[#141518] text-[#f4f1ea]">
       <div className={`relative min-w-0 flex-1 ${panelOpen ? "md:w-[80%]" : "w-full"}`}>
         {concept ? (
-          <ConceptViewer
-            concept={concept}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            view={view}
-            exploded={exploded}
-            assembling={assembling}
-            showMesh={showMesh}
-            autoRotate={!loading && !assembling && view === "perspective" && !exploded}
-            className="h-full"
-          />
+          <>
+            <ConceptViewer
+              concept={concept}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              view={view}
+              exploded={exploded}
+              assembling={assembling}
+              showMesh={showMesh}
+              autoRotate={
+                !loading &&
+                !assembling &&
+                view === "perspective" &&
+                !exploded &&
+                cadTool === "select"
+              }
+              cadTool={cadTool}
+              snap={snap}
+              snapStep={snapStep}
+              meshTransform={meshTransform}
+              onMeshTransform={applyMeshTransform}
+              onPartChange={applyPartChange}
+              meshProviderLabel={
+                meshProvider === "trellis2"
+                  ? "TRELLIS 2"
+                  : meshProvider === "tripo"
+                    ? "TRIPO"
+                    : "MESH"
+              }
+              className="h-full"
+            />
+            <CadToolbar
+              tool={cadTool}
+              onTool={(t) => {
+                cadHistoryGate.current = false;
+                setCadTool(t);
+              }}
+              snap={snap}
+              onSnap={setSnap}
+              canUndo={history.length > 0}
+              canRedo={future.length > 0}
+              onUndo={undo}
+              onRedo={redo}
+              units={units}
+            />
+          </>
         ) : (
           <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-6">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_35%,rgba(167,139,250,0.12),transparent_50%),radial-gradient(ellipse_at_80%_90%,rgba(255,255,255,0.03),transparent_40%)]" />
-            <div className="pointer-events-none absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(167,139,250,0.8)_1px,transparent_1px),linear-gradient(90deg,rgba(167,139,250,0.8)_1px,transparent_1px)] [background-size:56px_56px]" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_35%,rgba(167,139,250,0.12),transparent_50%)]" />
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
               className="relative flex w-full max-w-2xl flex-col items-center"
             >
               <div className="holo-ring mb-8" />
               <p className="hud-chip rounded-full px-3 py-1 text-[10px] text-[#a78bfa]/90">
-                Design Engine
+                Design Engine · {providerHint}
               </p>
-              <h1 className="display mt-5 text-center text-5xl font-semibold tracking-tight text-white md:text-6xl">
+              <h1 className="display mt-5 text-center text-5xl font-semibold text-white md:text-6xl">
                 ATRION
               </h1>
-              <p className="display mt-3 text-center text-2xl tracking-tight text-[#a78bfa] md:text-3xl">
-                Just build it.
-              </p>
+              <p className="display mt-3 text-2xl text-[#a78bfa]">Just build it.</p>
               <div className="gold-line mt-6 w-16" />
-              <p className="mt-5 max-w-md text-center text-sm leading-relaxed text-[#8f8a82]">
-                Девушка → фигура. Комната → интерьер. Школа → школа. Не здание «на всякий».
-              </p>
-              <div className="mt-9 w-full space-y-3">
-                <textarea
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  rows={3}
-                  placeholder="Двухэтажный дом 12×9 с панорамными окнами…"
-                  className="w-full resize-none rounded-2xl border border-white/10 bg-black/45 px-5 py-4 text-sm outline-none transition focus:border-[#a78bfa]/50"
-                />
-                <div className="flex flex-wrap gap-2">
-                  {EXAMPLES.map((example) => (
-                    <button
-                      key={example}
-                      type="button"
-                      onClick={() => setPrompt(example)}
-                      className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#8f8a82] transition hover:border-[#a78bfa]/40 hover:text-[#f4f1ea]"
-                    >
-                      {example.slice(0, 36)}…
-                    </button>
-                  ))}
-                </div>
+
+              <div className="mt-6 flex gap-2">
+                {(
+                  [
+                    ["text", "Text · Tripo"],
+                    ["image", "Image · Trellis 2"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setGenMode(value)}
+                    className={`rounded-full px-4 py-2 text-xs transition ${
+                      genMode === value
+                        ? "bg-violet-400/25 text-violet-100 ring-1 ring-violet-400/40"
+                        : "border border-white/10 text-[#8f8a82]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-8 w-full space-y-3">
+                {genMode === "text" ? (
+                  <>
+                    <textarea
+                      value={prompt}
+                      onChange={(event) => setPrompt(event.target.value)}
+                      rows={3}
+                      placeholder="Опиши объект…"
+                      className="w-full resize-none rounded-2xl border border-white/10 bg-black/45 px-5 py-4 text-sm outline-none focus:border-[#a78bfa]/50"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {EXAMPLES.map((example) => (
+                        <button
+                          key={example}
+                          type="button"
+                          onClick={() => setPrompt(example)}
+                          className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#8f8a82] hover:border-[#a78bfa]/40"
+                        >
+                          {example.slice(0, 36)}…
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-violet-400/30 bg-black/35 p-6 text-center">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => onImageFile(e.target.files?.[0] ?? null)}
+                      className="mx-auto block text-sm text-[#8f8a82]"
+                    />
+                    {imageDataUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={imageDataUrl}
+                        alt="ref"
+                        className="mx-auto mt-4 max-h-48 rounded-xl border border-white/10"
+                      />
+                    )}
+                    <textarea
+                      value={prompt}
+                      onChange={(event) => setPrompt(event.target.value)}
+                      rows={2}
+                      placeholder="Опционально: подпись к картинке"
+                      className="mt-4 w-full resize-none rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm outline-none"
+                    />
+                  </div>
+                )}
                 <button
                   type="button"
-                  disabled={loading || prompt.trim().length < 10}
+                  disabled={
+                    loading ||
+                    (genMode === "text" ? prompt.trim().length < 10 : !imageDataUrl)
+                  }
                   onClick={startInterview}
                   className="btn-primary w-full rounded-full px-6 py-3.5 text-sm disabled:opacity-40"
                 >
-                  {loading ? "…" : "Создать →"}
+                  {loading ? "…" : genMode === "image" ? "Trellis 2 →" : "Создать →"}
                 </button>
               </div>
             </motion.div>
@@ -356,7 +562,7 @@ export default function DesignEnginePage() {
         )}
 
         {concept && (
-          <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-full border border-[#a78bfa]/20 bg-[#050507]/75 px-2 py-1.5 shadow-[0_0_40px_rgba(167,139,250,0.12)] backdrop-blur-xl">
+          <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-full border border-[#a78bfa]/20 bg-[#050507]/75 px-2 py-1.5 backdrop-blur-xl">
             {(
               [
                 ["perspective", "Orbit"],
@@ -371,8 +577,9 @@ export default function DesignEnginePage() {
                 onClick={() => {
                   setView(value);
                   setExploded(false);
+                  setCadTool("select");
                 }}
-                className={`rounded-full px-3 py-1.5 text-xs transition ${
+                className={`rounded-full px-3 py-1.5 text-xs ${
                   view === value && !exploded
                     ? "bg-[#a78bfa]/20 text-[#a78bfa]"
                     : "text-[#8f8a82] hover:text-white"
@@ -381,50 +588,49 @@ export default function DesignEnginePage() {
                 {label}
               </button>
             ))}
-            <span className="mx-0.5 h-4 w-px bg-white/10" />
-            <button
-              type="button"
-              onClick={() => {
-                setView("perspective");
-                setShowMesh(false);
-                setAssembling(false);
-                setExploded((v) => !v);
-              }}
-              className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
-                exploded
-                  ? "bg-[#a78bfa] text-[#050507]"
-                  : "border border-[#a78bfa]/35 text-[#a78bfa] hover:bg-[#a78bfa]/15"
-              }`}
-            >
-              {exploded ? "Assemble" : "Explode"}
-            </button>
-            {concept && (
+            {!showMesh && (
               <button
                 type="button"
                 onClick={() => {
-                  stopSpeaking();
-                  speakText(`${concept.name}. ${concept.description}`);
+                  setView("perspective");
+                  setAssembling(false);
+                  setExploded((v) => !v);
                 }}
-                className="rounded-full px-3 py-1.5 text-xs text-[#8f8a82] hover:text-white"
+                className={`rounded-full px-3 py-1.5 text-xs ${
+                  exploded ? "bg-[#a78bfa] text-black" : "text-[#a78bfa]"
+                }`}
               >
-                Speak
+                {exploded ? "Assemble" : "Explode"}
               </button>
             )}
             <button
               type="button"
+              onClick={() => {
+                stopSpeaking();
+                speakText(`${concept.name}. ${concept.description}`);
+              }}
+              className="rounded-full px-3 py-1.5 text-xs text-[#8f8a82] hover:text-white"
+            >
+              Speak
+            </button>
+            <button
+              type="button"
               onClick={() => setVoiceMode((v) => !v)}
-              className={`rounded-full px-3 py-1.5 text-xs transition ${
-                voiceMode ? "bg-violet-400/25 text-violet-200" : "text-[#8f8a82] hover:text-white"
+              className={`rounded-full px-3 py-1.5 text-xs ${
+                voiceMode ? "bg-violet-400/25 text-violet-200" : "text-[#8f8a82]"
               }`}
             >
               Mic
             </button>
-            {concept?.meshUrl && (
+            {concept.meshUrl && (
               <button
                 type="button"
-                onClick={() => setShowMesh((v) => !v)}
-                className={`rounded-full px-3 py-1.5 text-xs transition ${
-                  showMesh ? "bg-violet-400/25 text-violet-200" : "text-[#8f8a82] hover:text-white"
+                onClick={() => {
+                  setShowMesh((v) => !v);
+                  setExploded(false);
+                }}
+                className={`rounded-full px-3 py-1.5 text-xs ${
+                  showMesh ? "bg-violet-400/25 text-violet-200" : "text-[#8f8a82]"
                 }`}
               >
                 {showMesh ? "Mesh" : "Parts"}
@@ -432,8 +638,8 @@ export default function DesignEnginePage() {
             )}
             <button
               type="button"
-              onClick={() => setPanelOpen((value) => !value)}
-              className="rounded-full px-3 py-1.5 text-xs text-[#8f8a82] hover:text-white"
+              onClick={() => setPanelOpen((v) => !v)}
+              className="rounded-full px-3 py-1.5 text-xs text-[#8f8a82]"
             >
               {panelOpen ? "Hide" : "Panel"}
             </button>
@@ -448,9 +654,13 @@ export default function DesignEnginePage() {
               exit={{ opacity: 0 }}
               className="absolute inset-0 z-30 flex items-center justify-center bg-[#050507]/55 backdrop-blur-sm"
             >
-              <div className="w-full max-w-xs rounded-2xl border border-[#a78bfa]/25 bg-[#121214]/95 p-5 shadow-[0_0_50px_rgba(167,139,250,0.15)]">
+              <div className="w-full max-w-xs rounded-2xl border border-[#a78bfa]/25 bg-[#121214]/95 p-5">
                 <p className="mb-3 text-[10px] uppercase tracking-[0.28em] text-[#a78bfa]/80">
-                  Building{pipelineStep >= 2 ? " · Tripo mesh…" : ""}
+                  {pipelineStep >= 3
+                    ? genMode === "image"
+                      ? "Trellis 2 · 1–3 min…"
+                      : "Tripo mesh · 10–120s…"
+                    : "Building"}
                 </p>
                 <ul className="space-y-2">
                   {PIPELINE.map((step, index) => (
@@ -462,7 +672,7 @@ export default function DesignEnginePage() {
                     >
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${
-                          index <= pipelineStep ? "bg-[#a78bfa] shadow-[0_0_8px_#a78bfa]" : "bg-[#3a3834]"
+                          index <= pipelineStep ? "bg-[#a78bfa]" : "bg-[#3a3834]"
                         }`}
                       />
                       {step}
@@ -476,11 +686,13 @@ export default function DesignEnginePage() {
       </div>
 
       {panelOpen && (
-        <aside className="flex w-full max-w-full flex-col border-l border-[#a78bfa]/10 bg-[#0e0e10]/95 backdrop-blur-2xl md:w-[min(400px,22%)] md:min-w-[300px]">
+        <aside className="flex w-full flex-col border-l border-[#a78bfa]/10 bg-[#0e0e10]/95 backdrop-blur-2xl md:w-[min(400px,22%)] md:min-w-[300px]">
           <div className="border-b border-white/[0.06] px-4 py-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.22em] text-[#a78bfa]/70">Engine</p>
+                <p className="text-[10px] uppercase tracking-[0.22em] text-[#a78bfa]/70">
+                  {providerHint}
+                </p>
                 <h2 className="display text-lg font-semibold">
                   ATRION <span className="text-[#a78bfa]">3D</span>
                 </h2>
@@ -502,7 +714,7 @@ export default function DesignEnginePage() {
             </div>
           )}
 
-          {questions.length > 0 && !concept && (
+          {questions.length > 0 && !concept && genMode === "text" && (
             <div className="flex-1 overflow-y-auto px-4 py-4">
               <div className="space-y-4">
                 {questions.map((question) => (
@@ -519,7 +731,7 @@ export default function DesignEnginePage() {
                           onClick={() =>
                             setAnswers((current) => ({ ...current, [question.id]: option }))
                           }
-                          className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
+                          className={`rounded-full border px-2.5 py-1 text-[11px] ${
                             answers[question.id] === option
                               ? "border-[#a78bfa]/50 bg-[#a78bfa]/15 text-[#a78bfa]"
                               : "border-white/10 text-[#8f8a82]"
@@ -538,12 +750,12 @@ export default function DesignEnginePage() {
                 onClick={generate}
                 className="btn-primary mt-4 w-full rounded-full py-3 text-sm disabled:opacity-40"
               >
-                Создать 3D
+                Создать 3D (Tripo)
               </button>
             </div>
           )}
 
-          {(concept || questions.length === 0) && (
+          {(concept || questions.length === 0 || genMode === "image") && (
             <>
               <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
                 {chat.map((message, index) => (
@@ -551,7 +763,7 @@ export default function DesignEnginePage() {
                     key={`${message.role}-${index}`}
                     className={`rounded-2xl px-3 py-2 text-sm ${
                       message.role === "user"
-                        ? "ml-6 bg-[#a78bfa]/12 text-[#f4f1ea]"
+                        ? "ml-6 bg-[#a78bfa]/12"
                         : "mr-4 border border-white/[0.07] bg-white/[0.02] text-[#b8b2a8]"
                     }`}
                   >
@@ -559,54 +771,103 @@ export default function DesignEnginePage() {
                   </div>
                 ))}
 
-                {concept && (
-                  <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[10px] uppercase tracking-[0.18em] text-[#6a6560]">Parts</p>
-                      <button
-                        type="button"
-                        onClick={() => setTreeOpen((value) => !value)}
-                        className="text-[11px] text-[#8f8a82]"
-                      >
-                        {treeOpen ? "Hide" : "Show"}
-                      </button>
+                {concept && selectedPart && !showMesh && (
+                  <div className="rounded-2xl border border-[#a78bfa]/25 bg-[#a78bfa]/05 p-3 text-xs">
+                    <p className="font-semibold text-[#a78bfa]">{selectedPart.name}</p>
+                    <p className="mt-2 text-[#8f8a82]">CAD properties ({units})</p>
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {(
+                        [
+                          ["X", 0, "position"],
+                          ["Y", 1, "position"],
+                          ["Z", 2, "position"],
+                          ["W", 0, "size"],
+                          ["H", 1, "size"],
+                          ["D", 2, "size"],
+                        ] as const
+                      ).map(([label, axis, field]) => (
+                        <label key={`${field}-${label}`} className="space-y-1">
+                          <span className="font-mono text-[10px] text-[#6a6560]">{label}</span>
+                          <input
+                            type="number"
+                            step={snap ? snapStep : 0.01}
+                            value={Number(selectedPart[field][axis].toFixed(3))}
+                            onChange={(e) => {
+                              const n = Number(e.target.value);
+                              if (!Number.isFinite(n)) return;
+                              const next = [...selectedPart[field]] as [number, number, number];
+                              next[axis] = field === "size" ? Math.max(0.05, n) : n;
+                              applyPartChange(selectedPart.id, { [field]: next });
+                            }}
+                            className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 font-mono text-[11px] outline-none focus:border-[#a78bfa]/45"
+                          />
+                        </label>
+                      ))}
                     </div>
-                    {treeOpen && (
-                      <div className="mt-3 space-y-2">
-                        {structure.map((group) => (
-                          <div key={group.id}>
-                            <p className="text-[11px] font-semibold text-[#6a6560]">{group.label}</p>
-                            <div className="mt-1 space-y-1">
-                              {group.partIds.map((partId) => {
-                                const part = concept.parts.find((item) => item.id === partId);
-                                if (!part) return null;
-                                return (
-                                  <button
-                                    key={partId}
-                                    type="button"
-                                    onClick={() => setSelectedId(part.id)}
-                                    className={`block w-full rounded-lg px-2 py-1.5 text-left text-xs transition ${
-                                      selectedId === part.id
-                                        ? "bg-[#a78bfa]/15 text-[#a78bfa]"
-                                        : "text-[#8f8a82] hover:bg-white/5"
-                                    }`}
-                                  >
-                                    {part.name}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 )}
 
-                {selectedPart && (
+                {concept && showMesh && (
                   <div className="rounded-2xl border border-[#a78bfa]/25 bg-[#a78bfa]/05 p-3 text-xs text-[#b8b2a8]">
-                    <p className="font-semibold text-[#a78bfa]">{selectedPart.name}</p>
-                    <p className="mt-1">{selectedPart.material}</p>
+                    <p className="font-semibold text-[#a78bfa]">Mesh transform ({units})</p>
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {(
+                        [
+                          ["X", 0],
+                          ["Y", 1],
+                          ["Z", 2],
+                        ] as const
+                      ).map(([label, axis]) => (
+                        <label key={label} className="space-y-1">
+                          <span className="font-mono text-[10px] text-[#6a6560]">{label}</span>
+                          <input
+                            type="number"
+                            step={snap ? snapStep : 0.01}
+                            value={Number(meshTransform.position[axis].toFixed(3))}
+                            onChange={(e) => {
+                              const n = Number(e.target.value);
+                              if (!Number.isFinite(n)) return;
+                              const position = [...meshTransform.position] as [
+                                number,
+                                number,
+                                number,
+                              ];
+                              position[axis] = n;
+                              applyMeshTransform({ ...meshTransform, position });
+                            }}
+                            className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 font-mono text-[11px] outline-none focus:border-[#a78bfa]/45"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {concept && treeOpen && !showMesh && (
+                  <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-[#6a6560]">Parts</p>
+                    <div className="mt-2 space-y-1">
+                      {structure.flatMap((group) =>
+                        group.partIds.map((partId) => {
+                          const part = concept.parts.find((item) => item.id === partId);
+                          if (!part) return null;
+                          return (
+                            <button
+                              key={partId}
+                              type="button"
+                              onClick={() => setSelectedId(part.id)}
+                              className={`block w-full rounded-lg px-2 py-1.5 text-left text-xs ${
+                                selectedId === part.id
+                                  ? "bg-[#a78bfa]/15 text-[#a78bfa]"
+                                  : "text-[#8f8a82]"
+                              }`}
+                            >
+                              {part.name}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -621,13 +882,13 @@ export default function DesignEnginePage() {
                   />
                 </div>
                 {concept && (
-                  <div className="mb-3 flex gap-2">
+                  <div className="mb-3 flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() =>
                         download(
                           `${concept.name}.atrion-design.json`,
-                          JSON.stringify(concept, null, 2),
+                          JSON.stringify({ concept, meshTransform }, null, 2),
                           "application/json"
                         )
                       }
@@ -635,6 +896,15 @@ export default function DesignEnginePage() {
                     >
                       Export
                     </button>
+                    {concept.meshUrl && (
+                      <a
+                        href={concept.meshUrl}
+                        download={`${concept.name}.glb`}
+                        className="rounded-full border border-violet-400/30 px-3 py-1.5 text-[11px] text-violet-200"
+                      >
+                        GLB
+                      </a>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -643,6 +913,10 @@ export default function DesignEnginePage() {
                         setAnswers({});
                         setPipelineStep(-1);
                         setPrompt("");
+                        setImageDataUrl(null);
+                        setHistory([]);
+                        setFuture([]);
+                        setError(null);
                       }}
                       className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-[#b8b2a8]"
                     >
