@@ -22,16 +22,6 @@ export async function POST(req: Request) {
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return NextResponse.json({ error: "Неверный email или пароль" }, { status: 401 });
   }
-  if (!user.emailVerified) {
-    return NextResponse.json(
-      {
-        error: "Сначала подтвердите email кодом из письма",
-        code: "EMAIL_NOT_VERIFIED",
-        email,
-      },
-      { status: 403 }
-    );
-  }
 
   await createSession(user.id);
   return NextResponse.json({ ok: true });

@@ -43,22 +43,9 @@ export default function AuthForm({
     const data = await res.json().catch(() => ({}));
 
     if (res.ok) {
-      if (data.requiresVerification && data.email) {
-        const verifyUrl = new URL("/verify", window.location.origin);
-        verifyUrl.searchParams.set("email", data.email);
-        if (typeof data.devCode === "string") {
-          verifyUrl.searchParams.set("devCode", data.devCode);
-        }
-        router.push(`${verifyUrl.pathname}${verifyUrl.search}`);
-      } else {
-        router.push("/dashboard");
-      }
+      router.push("/dashboard");
       router.refresh();
     } else {
-      if (data.code === "EMAIL_NOT_VERIFIED" && data.email) {
-        router.push(`/verify?email=${encodeURIComponent(data.email)}`);
-        return;
-      }
       setError(data.error ?? "Что-то пошло не так");
       setLoading(false);
     }
