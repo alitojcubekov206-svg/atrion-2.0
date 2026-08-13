@@ -1,0 +1,61 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  name      String
+  email     String    @unique
+  password  String
+  // "free" | "pro"
+  plan      String    @default("free")
+  planExpiresAt       DateTime?
+  emailVerified       Boolean   @default(false)
+  verificationCode    String?
+  verificationExpires DateTime?
+  verificationSentAt  DateTime?
+  verificationAttempts Int      @default(0)
+  threeDGenerations   Int       @default(0)
+  createdAt DateTime  @default(now())
+  projects  Project[]
+  payments  Payment[]
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  idea      String
+  // draft -> interview -> generated
+  status    String   @default("draft")
+  // JSON: interview questions and user answers
+  interview String?
+  // JSON: full generated blueprint
+  blueprint String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Payment {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider              String   @default("finik")
+  providerPaymentId     String   @unique
+  providerTransactionId String?  @unique
+  amount                Int
+  currency              String   @default("KGS")
+  status                String   @default("pending")
+  paymentUrl            String?
+  failureReason         String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([userId, status])
+}

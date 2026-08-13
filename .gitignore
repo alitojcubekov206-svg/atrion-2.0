@@ -1,0 +1,27 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# env — NEVER commit secrets
+.env
+.env.local
+.env*.local
+
+# database
+/prisma/*.db
+/prisma/*.db-journal
+
+# misc
+.DS_Store
+*.pem
+finik_*.pem
+finik_private_vercel.txt
+npm-debug.log*
+*.tsbuildinfo
+next-env.d.ts
