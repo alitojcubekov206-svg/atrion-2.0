@@ -5,9 +5,10 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { DrawingView } from "@/components/three/ConceptViewer";
-import type { InterviewQuestion, ModelPart, ThreeDConcept } from "@/lib/types";
+import type { InterviewQuestion, ModelPart, PartShape, ThreeDConcept } from "@/lib/types";
 import { download } from "@/lib/export";
 import { loadSettings, speakText, stopSpeaking } from "@/lib/settings";
+import { structureFromGroups } from "@/lib/gen/kit";
 import VoiceMode from "@/components/VoiceMode";
 import CadToolbar, { type CadTool } from "@/components/CadToolbar";
 
@@ -49,6 +50,7 @@ export default function DesignEnginePage() {
   const [providers, setProviders] = useState<Providers>({});
   const [cadTool, setCadTool] = useState<CadTool>("select");
   const [snap, setSnap] = useState(true);
+  const [addShape, setAddShape] = useState<PartShape>("box");
   const [history, setHistory] = useState<ThreeDConcept[]>([]);
   const [future, setFuture] = useState<ThreeDConcept[]>([]);
   const [exportBusy, setExportBusy] = useState<ExportFormat | null>(null);
@@ -182,6 +184,95 @@ export default function DesignEnginePage() {
       parts: concept.parts.map((part) => (part.id === id ? { ...part, ...patch } : part)),
     });
   }
+
+  /** Spawn a new primitive touching the selected part (or the top of the model) and hand it the Move gizmo. */
+  function addPart() {
+    if (!concept) return;
+    pushHistory(concept);
+    const maxDim = Math.max(
+      concept.dimensions.width,
+      concept.dimensions.height,
+      concept.dimensions.depth,
+      1
+    );
+    const size = Math.min(2, Math.max(0.05, maxDim * 0.12));
+    const anchor = concept.parts.find((p) => p.id === selectedId);
+    const position: [number, number, number] = anchor
+      ? [anchor.position[0], anchor.position[1] + anchor.size[1] / 2 + size / 2, anchor.position[2]]
+      : [0, concept.dimensions.height + size / 2, 0];
+    const id = `custom-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`;
+    const newPart: ModelPart = {
+      id,
+      name: "Новая деталь",
+      shape: addShape,
+      position,
+      size: [size, size, size],
+      rotation: [0, 0, 0],
+      color: "#a78bfa",
+      material: "Новый материал",
+      quantity: 1,
+      role: "detail",
+      group: "Добавленные детали",
+      parentId: null,
+    };
+    const parts = [...concept.parts, newPart];
+    setConcept({ ...concept, parts, structure: structureFromGroups(parts) });
+    setSelectedId(id);
+    cadHistoryGate.current = true;
+    // The new part's mesh ref attaches on this render's commit — the gizmo
+    // needs it to already exist, so enter Move on the next frame.
+    requestAnimationFrame(() => setCadTool("translate"));
+  }
+
+  function duplicatePart() {
+    if (!concept || !selectedId) return;
+    const source = concept.parts.find((p) => p.id === selectedId);
+    if (!source) return;
+    pushHistory(concept);
+    const id = `${source.id}-copy-${Date.now().toString(36)}`;
+    const clone: ModelPart = {
+      ...source,
+      id,
+      name: `${source.name} (копия)`,
+      position: [
+        source.position[0] + Math.max(0.1, source.size[0] * 0.7),
+        source.position[1],
+        source.position[2],
+      ],
+    };
+    const parts = [...concept.parts, clone];
+    setConcept({ ...concept, parts, structure: structureFromGroups(parts) });
+    setSelectedId(id);
+    cadHistoryGate.current = true;
+    requestAnimationFrame(() => setCadTool("translate"));
+  }
+
+  function deletePart() {
+    if (!concept || !selectedId) return;
+    if (concept.parts.length <= 1) {
+      setError("Нельзя удалить последнюю деталь модели.");
+      return;
+    }
+    pushHistory(concept);
+    const parts = concept.parts.filter((p) => p.id !== selectedId);
+    setConcept({ ...concept, parts, structure: structureFromGroups(parts) });
+    setSelectedId(null);
+    cadHistoryGate.current = true;
+  }
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const typing = target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+      if (typing || !concept || !selectedId) return;
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        deletePart();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [concept, selectedId]);
 
   function undo() {
     setHistory((h) => {
@@ -418,6 +509,12 @@ export default function DesignEnginePage() {
               onUndo={undo}
               onRedo={redo}
               units={units}
+              addShape={addShape}
+              onAddShape={setAddShape}
+              onAddPart={addPart}
+              onDuplicatePart={duplicatePart}
+              onDeletePart={deletePart}
+              canEditSelection={Boolean(selectedId)}
             />
           </>
         ) : (
@@ -694,6 +791,58 @@ export default function DesignEnginePage() {
                         </label>
                       ))}
                     </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      <label className="col-span-2 space-y-1">
+                        <span className="font-mono text-[10px] text-[#6a6560]">Shape</span>
+                        <select
+                          value={selectedPart.shape}
+                          onChange={(e) =>
+                            applyPartChange(selectedPart.id, {
+                              shape: e.target.value as ModelPart["shape"],
+                            })
+                          }
+                          className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-[11px] outline-none focus:border-[#a78bfa]/45"
+                        >
+                          {(
+                            [
+                              "box",
+                              "cylinder",
+                              "sphere",
+                              "cone",
+                              "pyramid",
+                              "prism",
+                              "wedge",
+                              "torus",
+                              "capsule",
+                              "tube",
+                              "plane",
+                            ] as const
+                          ).map((shape) => (
+                            <option key={shape} value={shape}>
+                              {shape}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="space-y-1">
+                        <span className="font-mono text-[10px] text-[#6a6560]">Color</span>
+                        <input
+                          type="color"
+                          value={/^#[0-9a-f]{6}$/i.test(selectedPart.color) ? selectedPart.color : "#a78bfa"}
+                          onChange={(e) => applyPartChange(selectedPart.id, { color: e.target.value })}
+                          className="h-[26px] w-full cursor-pointer rounded-lg border border-white/10 bg-black/40 p-0.5"
+                        />
+                      </label>
+                    </div>
+                    <label className="mt-2 block space-y-1">
+                      <span className="font-mono text-[10px] text-[#6a6560]">Name</span>
+                      <input
+                        type="text"
+                        value={selectedPart.name}
+                        onChange={(e) => applyPartChange(selectedPart.id, { name: e.target.value })}
+                        className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-[11px] outline-none focus:border-[#a78bfa]/45"
+                      />
+                    </label>
                   </div>
                 )}
 

@@ -1,6 +1,22 @@
 "use client";
 
+import type { PartShape } from "@/lib/types";
+
 export type CadTool = "select" | "translate" | "rotate" | "scale";
+
+const ADD_SHAPES: { id: PartShape; label: string }[] = [
+  { id: "box", label: "Box" },
+  { id: "cylinder", label: "Cylinder" },
+  { id: "sphere", label: "Sphere" },
+  { id: "cone", label: "Cone" },
+  { id: "pyramid", label: "Pyramid" },
+  { id: "prism", label: "Prism" },
+  { id: "wedge", label: "Wedge" },
+  { id: "torus", label: "Torus" },
+  { id: "capsule", label: "Capsule" },
+  { id: "tube", label: "Tube" },
+  { id: "plane", label: "Plane" },
+];
 
 export default function CadToolbar({
   tool,
@@ -12,6 +28,12 @@ export default function CadToolbar({
   onUndo,
   onRedo,
   units,
+  addShape,
+  onAddShape,
+  onAddPart,
+  onDuplicatePart,
+  onDeletePart,
+  canEditSelection,
 }: {
   tool: CadTool;
   onTool: (t: CadTool) => void;
@@ -22,6 +44,12 @@ export default function CadToolbar({
   onUndo: () => void;
   onRedo: () => void;
   units: "m" | "cm";
+  addShape: PartShape;
+  onAddShape: (shape: PartShape) => void;
+  onAddPart: () => void;
+  onDuplicatePart: () => void;
+  onDeletePart: () => void;
+  canEditSelection: boolean;
 }) {
   const tools: { id: CadTool; label: string }[] = [
     { id: "select", label: "Select" },
@@ -49,6 +77,45 @@ export default function CadToolbar({
           {item.label}
         </button>
       ))}
+      <span className="mx-1 h-4 w-px bg-white/10" />
+      <select
+        value={addShape}
+        onChange={(e) => onAddShape(e.target.value as PartShape)}
+        title="Форма новой детали"
+        className="rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[11px] text-[#b8b2a8] outline-none"
+      >
+        {ADD_SHAPES.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.label}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={onAddPart}
+        title="Добавить деталь"
+        className="rounded-full bg-violet-400/25 px-2.5 py-1 text-[11px] text-violet-100 hover:bg-violet-400/35"
+      >
+        + Add
+      </button>
+      <button
+        type="button"
+        disabled={!canEditSelection}
+        onClick={onDuplicatePart}
+        title="Дублировать выбранную деталь"
+        className="rounded-full px-2.5 py-1 text-[11px] text-[#8f8a82] hover:text-white disabled:opacity-30"
+      >
+        Dup
+      </button>
+      <button
+        type="button"
+        disabled={!canEditSelection}
+        onClick={onDeletePart}
+        title="Удалить выбранную деталь"
+        className="rounded-full px-2.5 py-1 text-[11px] text-red-300/90 hover:bg-red-500/15 hover:text-red-200 disabled:opacity-30"
+      >
+        Del
+      </button>
       <span className="mx-1 h-4 w-px bg-white/10" />
       <button
         type="button"
