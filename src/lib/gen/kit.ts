@@ -280,6 +280,11 @@ export function scaleParts(parts: ModelPart[], factor: number): ModelPart[] {
     ...item,
     position: item.position.map((n) => round3(n * factor)) as [number, number, number],
     size: item.size.map((n) => Math.max(0.01, round3(n * factor))) as [number, number, number],
+    // Baked geometry keeps its own vertices; rescaling `size` alone would leave
+    // a boolean result at its old dimensions.
+    ...(item.mesh
+      ? { mesh: { ...item.mesh, position: item.mesh.position.map((n) => round3(n * factor)) } }
+      : {}),
     ...(item.repeat
       ? {
           repeat: {

@@ -104,7 +104,9 @@ export type PartShape =
   /** Hollow cylinder — see `hole` (pipes, railings, window frames). */
   | "tube"
   /** Thin slab (glass panes, floors, signage). */
-  | "plane";
+  | "plane"
+  /** Baked triangle soup — the result of a boolean operation. See `mesh`. */
+  | "mesh";
 
 /** Linear array of copies — window rows, columns, fence posts, stair treads. */
 export interface PartRepeat {
@@ -148,6 +150,15 @@ export interface ModelPart {
   roughness?: number;
   /** 0–1 self-illumination (screens, lamps, neon). */
   emissive?: number;
+  /**
+   * Baked geometry for `shape: "mesh"`. Vertices are in the part's own frame,
+   * centred on its origin and already at real size — `size` mirrors the
+   * bounding box so bounds, snapping and the CAD gizmo keep working.
+   */
+  mesh?: {
+    position: number[];
+    normal?: number[];
+  };
 }
 
 export interface ThreeDConcept {

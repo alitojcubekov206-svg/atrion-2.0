@@ -78,42 +78,43 @@ applied to the shade, the repeat used for the vents, and every part touching its
 {"id":"cable","name":"Провод","shape":"cylinder","position":[0,0.008,-0.12],"size":[0.008,0.008,0.2],"rotation":[1.5708,0,0],"color":"#1c1e22","material":"Резина","role":"detail","group":"База"}
 ]}`;
 
+/**
+ * How much geometry to ask for. The scale class is the only thing that changes
+ * the budget — what the object actually *is* comes from the prompt itself, so
+ * this never pushes the model toward a stock shape.
+ */
 function detailTarget(category: string): { parts: string; note: string } {
   switch (category) {
-    case "house":
-    case "school":
-    case "office":
-    case "hospital":
-    case "tower":
-    case "building":
+    case "landmark":
+      return {
+        parts: "50-85",
+        note: "Foundation and bearing structure, stacked volumes, roof or crown with overhang and ridge, window units (frame + glass + sill) laid out with repeat and mirror, entrance with steps and canopy, gutters, downpipes, trim bands, railings.",
+      };
+    case "structure":
       return {
         parts: "45-75",
-        note: "Foundation, storey volumes, roof with overhang and ridge, window units (frame + glass + sill) laid out with repeat and mirror, entrance with steps and canopy, gutters, downpipes, trim bands.",
-      };
-    case "character":
-      return {
-        parts: "40-65",
-        note: "Head with facial features and hair, neck, torso, hips, mirrored arms with elbow and hands, mirrored legs with knees, feet, clothing as separate layered parts.",
-      };
-    case "animal":
-      return {
-        parts: "35-55",
-        note: "Body, chest, neck, head with snout and ears, mirrored legs with joints, tail as a repeat chain, eyes and nose.",
+        note: "Plinth, storey volumes with floor bands, roof with overhang and ridge, window units of frame + glass + sill via repeat and mirror, entrance with steps and canopy, downpipes, corner trim.",
       };
     case "vehicle":
       return {
-        parts: "40-65",
-        note: "Chassis, cabin, bonnet, boot, four wheels (torus tyre + cylinder rim) placed with mirror xz, translucent glazing, lights with emissive, bumpers, mirrors, door lines.",
+        parts: "40-70",
+        note: "Chassis, cabin, front and rear volumes, wheels as torus tyre + cylinder rim + spokes with mirror, translucent glazing, lights with emissive, bumpers, mirrors, handles, shut lines.",
       };
-    case "room":
+    case "furniture":
       return {
-        parts: "45-70",
-        note: "Floor, three walls with the fourth left open, skirting, window with frame and glass, door, and furniture built from primitives.",
+        parts: "35-60",
+        note: "Main mass, joints and limbs or legs with feet, cushions or panels, edge trim, fasteners, and whatever the wording adds — every named feature gets its own parts.",
+      };
+    case "handheld":
+    case "micro":
+      return {
+        parts: "30-55",
+        note: "Main body, functional sub-volumes, seams and panel lines, controls, ports, feet or stand, screens or lenses with emissive, fasteners.",
       };
     default:
       return {
-        parts: "30-55",
-        note: "Main body, functional sub-volumes, seams and panel lines, controls, ports, feet or stand, screens or lenses with emissive.",
+        parts: "35-60",
+        note: "Main volume, sub-volumes, then a layer of fine detail: seams, trim, joints, fasteners, and a distinct part for every feature the prompt names.",
       };
   }
 }

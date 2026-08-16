@@ -135,12 +135,25 @@ const WEDGE_OUTLINE: readonly (readonly [number, number])[] = [
  * `size`. Built at unit scale and scaled once, which keeps ellipsoids,
  * elliptical cylinders and squashed tori honest.
  */
-function geometryForPart(part: ModelPart): THREE.BufferGeometry {
+export function geometryForPart(part: ModelPart): THREE.BufferGeometry {
   const sx = Math.max(MIN_SIZE, Math.abs(finite(part.size[0], MIN_SIZE)));
   const sy = Math.max(MIN_SIZE, Math.abs(finite(part.size[1], MIN_SIZE)));
   const sz = Math.max(MIN_SIZE, Math.abs(finite(part.size[2], MIN_SIZE)));
 
   switch (part.shape) {
+    case "mesh": {
+      // Result of a boolean operation: vertices are already in the part's own
+      // frame at their true size, so nothing is scaled here.
+      const geometry = new THREE.BufferGeometry();
+      const positions = part.mesh?.position ?? [];
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      if (part.mesh?.normal?.length === positions.length) {
+        geometry.setAttribute("normal", new THREE.Float32BufferAttribute(part.mesh.normal, 3));
+      } else {
+        geometry.computeVertexNormals();
+      }
+      return geometry;
+    }
     case "cylinder": {
       const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, segmentsOf(part, 32), 1, false);
       geometry.scale(sx, sy, sz);

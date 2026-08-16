@@ -11,6 +11,47 @@ import { loadSettings, speakText, stopSpeaking } from "@/lib/settings";
 import { structureFromGroups } from "@/lib/gen/kit";
 import VoiceMode from "@/components/VoiceMode";
 import CadToolbar, { type CadTool } from "@/components/CadToolbar";
+import { describeCommand, parseVoiceCommand } from "@/lib/voice-commands";
+import { BOOLEAN_LABELS, type BooleanOp } from "@/lib/csg-types";
+
+/**
+ * Every network call in this page goes through here.
+ *
+ * A request that never settles is what used to freeze the studio, so each one
+ * carries its own abort timer and turns a stall into a message the user can act
+ * on rather than a spinner that never stops.
+ */
+async function postJson<T>(
+  url: string,
+  body: unknown,
+  timeoutMs = 45_000
+): Promise<{ ok: boolean; data: T & { error?: string; code?: string }; timedOut?: boolean }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+    return { ok: response.ok, data };
+  } catch (error) {
+    const aborted = error instanceof DOMException && error.name === "AbortError";
+    return {
+      ok: false,
+      timedOut: aborted,
+      data: {
+        error: aborted
+          ? "Сервер долго не отвечает. Попробуй ещё раз или упрости описание."
+          : "Нет связи с сервером.",
+      } as T & { error?: string },
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 const ConceptViewer = dynamic(() => import("@/components/three/ConceptViewer"), {
   ssr: false,
@@ -31,6 +72,12 @@ const EXAMPLES = [
 type ChatMessage = { role: "user" | "assistant"; text: string };
 type ExportFormat = "glb" | "stl" | "obj";
 type Providers = { aiConfigured?: boolean };
+type Measurement = {
+  from: string;
+  to: string;
+  distance: number;
+  delta: [number, number, number];
+};
 
 export default function DesignEnginePage() {
   const [prompt, setPrompt] = useState("");
@@ -54,6 +101,13 @@ export default function DesignEnginePage() {
   const [history, setHistory] = useState<ThreeDConcept[]>([]);
   const [future, setFuture] = useState<ThreeDConcept[]>([]);
   const [exportBusy, setExportBusy] = useState<ExportFormat | null>(null);
+  const [voiceThinking, setVoiceThinking] = useState(false);
+  const [measureMode, setMeasureMode] = useState(false);
+  const [measureFrom, setMeasureFrom] = useState<string | null>(null);
+  const [measurement, setMeasurement] = useState<Measurement | null>(null);
+  const [booleanBusy, setBooleanBusy] = useState(false);
+  const [pendingBoolean, setPendingBoolean] = useState<BooleanOp | null>(null);
+  const [booleanFirst, setBooleanFirst] = useState<string | null>(null);
   const assembleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cadHistoryGate = useRef(false);
   const [chat, setChat] = useState<ChatMessage[]>([
@@ -66,6 +120,13 @@ export default function DesignEnginePage() {
   const [voiceMode, setVoiceMode] = useState(false);
   const units = loadSettings().units;
   const snapStep = units === "cm" ? 0.05 : 0.1;
+
+  // Voice handlers fire from a recognizer callback that may have been created
+  // several edits ago — these refs make them read the live scene.
+  const conceptRef = useRef<ThreeDConcept | null>(concept);
+  conceptRef.current = concept;
+  const selectedRef = useRef<string | null>(selectedId);
+  selectedRef.current = selectedId;
 
   useEffect(() => {
     fetch("/api/3d/providers")
@@ -174,6 +235,7 @@ export default function DesignEnginePage() {
   }
 
   function applyPartChange(id: string, patch: Partial<ModelPart>) {
+    const concept = conceptRef.current;
     if (!concept) return;
     if (!cadHistoryGate.current) {
       pushHistory(concept);
@@ -186,8 +248,9 @@ export default function DesignEnginePage() {
   }
 
   /** Spawn a new primitive touching the selected part (or the top of the model) and hand it the Move gizmo. */
-  function addPart() {
-    if (!concept) return;
+  function addPart(shape: PartShape = addShape): string | null {
+    const concept = conceptRef.current;
+    if (!concept) return null;
     pushHistory(concept);
     const maxDim = Math.max(
       concept.dimensions.width,
@@ -196,7 +259,7 @@ export default function DesignEnginePage() {
       1
     );
     const size = Math.min(2, Math.max(0.05, maxDim * 0.12));
-    const anchor = concept.parts.find((p) => p.id === selectedId);
+    const anchor = concept.parts.find((p) => p.id === selectedRef.current);
     const position: [number, number, number] = anchor
       ? [anchor.position[0], anchor.position[1] + anchor.size[1] / 2 + size / 2, anchor.position[2]]
       : [0, concept.dimensions.height + size / 2, 0];
@@ -204,7 +267,7 @@ export default function DesignEnginePage() {
     const newPart: ModelPart = {
       id,
       name: "Новая деталь",
-      shape: addShape,
+      shape,
       position,
       size: [size, size, size],
       rotation: [0, 0, 0],
@@ -222,12 +285,15 @@ export default function DesignEnginePage() {
     // The new part's mesh ref attaches on this render's commit — the gizmo
     // needs it to already exist, so enter Move on the next frame.
     requestAnimationFrame(() => setCadTool("translate"));
+    return id;
   }
 
-  function duplicatePart() {
-    if (!concept || !selectedId) return;
+  function duplicatePart(): boolean {
+    const concept = conceptRef.current;
+    const selectedId = selectedRef.current;
+    if (!concept || !selectedId) return false;
     const source = concept.parts.find((p) => p.id === selectedId);
-    if (!source) return;
+    if (!source) return false;
     pushHistory(concept);
     const id = `${source.id}-copy-${Date.now().toString(36)}`;
     const clone: ModelPart = {
@@ -245,19 +311,142 @@ export default function DesignEnginePage() {
     setSelectedId(id);
     cadHistoryGate.current = true;
     requestAnimationFrame(() => setCadTool("translate"));
+    return true;
   }
 
-  function deletePart() {
-    if (!concept || !selectedId) return;
+  function deletePart(partId?: string): boolean {
+    const concept = conceptRef.current;
+    const targetId = partId ?? selectedRef.current;
+    if (!concept || !targetId) return false;
+    if (!concept.parts.some((p) => p.id === targetId)) return false;
     if (concept.parts.length <= 1) {
       setError("Нельзя удалить последнюю деталь модели.");
-      return;
+      return false;
     }
     pushHistory(concept);
-    const parts = concept.parts.filter((p) => p.id !== selectedId);
+    const parts = concept.parts.filter((p) => p.id !== targetId);
     setConcept({ ...concept, parts, structure: structureFromGroups(parts) });
-    setSelectedId(null);
+    if (selectedRef.current === targetId) setSelectedId(null);
     cadHistoryGate.current = true;
+    return true;
+  }
+
+  /** Loose name match for spoken targets: "удали крышу" → the roof part. */
+  function findPartByName(query: string): ModelPart | null {
+    const concept = conceptRef.current;
+    if (!concept) return null;
+    const needle = query.toLowerCase().replace(/[.,!?]/g, "").trim();
+    if (!needle) return null;
+    const words = needle.split(/\s+/).filter((word) => word.length >= 3);
+    const stem = (value: string) => value.toLowerCase().slice(0, Math.max(4, value.length - 2));
+
+    const exact = concept.parts.find((p) => p.name.toLowerCase() === needle);
+    if (exact) return exact;
+
+    const contains = concept.parts.find(
+      (p) => p.name.toLowerCase().includes(needle) || needle.includes(p.name.toLowerCase())
+    );
+    if (contains) return contains;
+
+    // Russian endings differ between what is said and what the part is called,
+    // so fall back to comparing stems of the significant words.
+    let best: { part: ModelPart; score: number } | null = null;
+    for (const candidate of concept.parts) {
+      const haystack = `${candidate.name} ${candidate.group ?? ""} ${candidate.role ?? ""}`.toLowerCase();
+      let score = 0;
+      for (const word of words) {
+        if (haystack.includes(stem(word))) score += 1;
+      }
+      if (score > 0 && (!best || score > best.score)) best = { part: candidate, score };
+    }
+    return best?.part ?? null;
+  }
+
+  /** Arm a boolean: the next part clicked in the scene becomes the second operand. */
+  function armBoolean(op: BooleanOp) {
+    if (!selectedId) {
+      setError("Сначала выбери первую деталь, потом операцию.");
+      return;
+    }
+    setMeasureMode(false);
+    setCadTool("select");
+    setPendingBoolean(op);
+    setBooleanFirst(selectedId);
+    setError(null);
+  }
+
+  async function runBoolean(firstId: string, secondId: string, op: BooleanOp) {
+    const concept = conceptRef.current;
+    if (!concept) return;
+    const first = concept.parts.find((p) => p.id === firstId);
+    const second = concept.parts.find((p) => p.id === secondId);
+    setPendingBoolean(null);
+    setBooleanFirst(null);
+    if (!first || !second) return;
+
+    setBooleanBusy(true);
+    setError(null);
+    try {
+      // three + the CSG evaluator load on demand, not in the page's first chunk.
+      const { booleanParts } = await import("@/lib/csg");
+      const merged = booleanParts(first, second, op);
+      pushHistory(concept);
+      const parts = concept.parts
+        .map((item) => (item.id === firstId ? merged : item))
+        .filter((item) => item.id !== secondId);
+      setConcept({ ...concept, parts, structure: structureFromGroups(parts) });
+      setSelectedId(merged.id);
+      cadHistoryGate.current = true;
+      setChat((prev) => [
+        ...prev,
+        { role: "assistant", text: `${BOOLEAN_LABELS[op]}: «${first.name}» и «${second.name}» — готово.` },
+      ]);
+    } catch (booleanError) {
+      setError(
+        booleanError instanceof Error
+          ? booleanError.message
+          : "Булеву операцию выполнить не удалось."
+      );
+    } finally {
+      setBooleanBusy(false);
+    }
+  }
+
+  /** One click in the scene: measure, complete a boolean, or just select. */
+  function handleSelect(id: string | null) {
+    if (!id) {
+      setSelectedId(null);
+      return;
+    }
+    if (pendingBoolean && booleanFirst && booleanFirst !== id) {
+      void runBoolean(booleanFirst, id, pendingBoolean);
+      return;
+    }
+    if (measureMode) {
+      const concept = conceptRef.current;
+      const from = measureFrom ? concept?.parts.find((p) => p.id === measureFrom) : null;
+      const to = concept?.parts.find((p) => p.id === id);
+      setSelectedId(id);
+      if (!from || !to || from.id === to.id) {
+        setMeasureFrom(id);
+        setMeasurement(null);
+        return;
+      }
+      const delta: [number, number, number] = [
+        to.position[0] - from.position[0],
+        to.position[1] - from.position[1],
+        to.position[2] - from.position[2],
+      ];
+      setMeasurement({
+        from: from.name,
+        to: to.name,
+        distance: Math.hypot(delta[0], delta[1], delta[2]),
+        delta,
+      });
+      setMeasureFrom(null);
+      return;
+    }
+    setSelectedId(id);
   }
 
   useEffect(() => {
@@ -332,44 +521,197 @@ export default function DesignEnginePage() {
     }
   }
 
+  function resetStudio() {
+    setConcept(null);
+    setQuestions([]);
+    setAnswers({});
+    setPipelineStep(-1);
+    setPrompt("");
+    setHistory([]);
+    setFuture([]);
+    setSelectedId(null);
+    setMeasureFrom(null);
+    setMeasurement(null);
+    setError(null);
+  }
+
+  /** Apply an edit to the selected part, or to the whole model when nothing is picked. */
+  function editParts(transform: (part: ModelPart) => ModelPart): number {
+    const concept = conceptRef.current;
+    if (!concept) return 0;
+    const targetId = selectedRef.current;
+    let touched = 0;
+    const parts = concept.parts.map((item) => {
+      if (targetId && item.id !== targetId) return item;
+      touched += 1;
+      return transform(item);
+    });
+    if (!touched) return 0;
+    pushHistory(concept);
+    setConcept({ ...concept, parts });
+    cadHistoryGate.current = true;
+    return touched;
+  }
+
+  /**
+   * Voice → action.
+   *
+   * Recognised commands run against the scene immediately and return; only
+   * free-form wording reaches the network, and that call is bounded by a
+   * timeout so the studio can never sit frozen on a spoken instruction.
+   */
   async function handleVoiceUtterance(text: string): Promise<string> {
     const raw = text.trim();
     setChat((prev) => [...prev, { role: "user", text: raw }]);
-    const lower = raw.toLowerCase();
+    const say = (message: string) => {
+      setChat((prev) => [...prev, { role: "assistant", text: message }]);
+      return message;
+    };
 
-    if (/разбер|explod|разложи|разъедин/i.test(lower)) {
-      if (!concept) return "Сначала создай модель.";
-      setExploded(true);
-      setAssembling(false);
-      const reply = "Разбираю на части.";
-      setChat((prev) => [...prev, { role: "assistant", text: reply }]);
-      return reply;
+    const command = parseVoiceCommand(raw);
+    const concept = conceptRef.current;
+
+    if (command.kind === "help") return say(describeCommand(command));
+    if (command.kind === "reset") {
+      resetStudio();
+      return say(describeCommand(command));
     }
-    if (/собери|assembl|собери обратно/i.test(lower)) {
-      if (!concept) return "Сначала создай модель.";
-      setExploded(false);
-      setAssembling(true);
-      if (assembleTimer.current) clearTimeout(assembleTimer.current);
-      assembleTimer.current = setTimeout(() => setAssembling(false), 2800);
-      const reply = "Собираю.";
-      setChat((prev) => [...prev, { role: "assistant", text: reply }]);
-      return reply;
+    if (command.kind === "generate") {
+      say("Строю модель…");
+      await generateFromPrompt(command.prompt);
+      return conceptRef.current ? `Готово: ${conceptRef.current.name}.` : "Не получилось собрать модель.";
     }
 
     if (!concept) {
       if (raw.length >= 10) {
-        const reply = "Запускаю генерацию…";
-        setChat((prev) => [...prev, { role: "assistant", text: reply }]);
+        say("Строю модель…");
         await generateFromPrompt(raw);
-        return reply;
+        return conceptRef.current
+          ? `Готово: ${conceptRef.current.name}.`
+          : "Не получилось собрать модель.";
       }
-      return "Скажи подробнее, что создать.";
+      return say("Сначала опиши, что построить — одной фразой.");
     }
+
+    switch (command.kind) {
+      case "add": {
+        const id = addPart(command.shape);
+        return say(id ? describeCommand(command) : "Не смог добавить деталь.");
+      }
+      case "delete": {
+        const target = command.target ? findPartByName(command.target) : null;
+        if (command.target && !target) {
+          return say(`Не нашёл деталь «${command.target}». Скажи иначе или выбери её в списке.`);
+        }
+        const targetId = target?.id ?? selectedRef.current ?? undefined;
+        if (!targetId) return say("Сначала выбери деталь или скажи, что именно удалить.");
+        const removed = deletePart(targetId);
+        return say(
+          removed
+            ? `Удалил: ${target?.name ?? "выбранную деталь"}.`
+            : "Не получилось удалить — в модели должна остаться хотя бы одна деталь."
+        );
+      }
+      case "duplicate":
+        return say(duplicatePart() ? describeCommand(command) : "Сначала выбери деталь.");
+      case "select": {
+        const found = findPartByName(command.target);
+        if (!found) return say(`Не нашёл «${command.target}».`);
+        setSelectedId(found.id);
+        return say(`Выбрал: ${found.name}.`);
+      }
+      case "color": {
+        const touched = editParts((item) => ({ ...item, color: command.color }));
+        return say(touched ? `Перекрасил в ${command.label}.` : "Нечего красить.");
+      }
+      case "scale": {
+        const touched = editParts((item) => ({
+          ...item,
+          size: [
+            Math.max(0.01, item.size[0] * command.factor),
+            Math.max(0.01, item.size[1] * command.factor),
+            Math.max(0.01, item.size[2] * command.factor),
+          ],
+          position: selectedRef.current
+            ? item.position
+            : ([
+                item.position[0] * command.factor,
+                item.position[1] * command.factor,
+                item.position[2] * command.factor,
+              ] as [number, number, number]),
+        }));
+        return say(touched ? describeCommand(command) : "Нечего масштабировать.");
+      }
+      case "move": {
+        const axis = command.axis === "x" ? 0 : command.axis === "y" ? 1 : 2;
+        const touched = editParts((item) => {
+          const position = [...item.position] as [number, number, number];
+          position[axis] += command.delta;
+          return { ...item, position };
+        });
+        return say(touched ? describeCommand(command) : "Нечего двигать.");
+      }
+      case "rotate": {
+        const axis = command.axis === "x" ? 0 : command.axis === "y" ? 1 : 2;
+        const touched = editParts((item) => {
+          const rotation = [...item.rotation] as [number, number, number];
+          rotation[axis] += command.radians;
+          return { ...item, rotation };
+        });
+        return say(touched ? describeCommand(command) : "Нечего поворачивать.");
+      }
+      case "undo":
+        undo();
+        return say(describeCommand(command));
+      case "redo":
+        redo();
+        return say(describeCommand(command));
+      case "explode":
+        setAssembling(false);
+        setView("perspective");
+        setExploded(true);
+        return say(describeCommand(command));
+      case "assemble":
+        setExploded(false);
+        setAssembling(true);
+        if (assembleTimer.current) clearTimeout(assembleTimer.current);
+        assembleTimer.current = setTimeout(() => setAssembling(false), 2800);
+        return say(describeCommand(command));
+      case "view":
+        setExploded(false);
+        setCadTool("select");
+        setView(command.view);
+        return say(describeCommand(command));
+      case "tool":
+        setCadTool(command.tool);
+        cadHistoryGate.current = false;
+        return say(describeCommand(command));
+      case "snap":
+        setSnap(command.on);
+        return say(describeCommand(command));
+      case "measure":
+        setCadTool("select");
+        setMeasureMode(true);
+        setMeasureFrom(null);
+        setMeasurement(null);
+        return say(describeCommand(command));
+      case "export":
+        void exportModel(command.format);
+        return say(describeCommand(command));
+      default:
+        break;
+    }
+
+    // Anything the parser did not claim goes to the model — with a timeout.
+    setVoiceThinking(true);
     try {
-      const response = await fetch("/api/3d/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const chatResult = await postJson<{
+        reply?: string;
+        shouldRefine?: boolean;
+        refineInstruction?: string;
+      }>(
+        "/api/3d/chat",
+        {
           message: raw,
           prompt,
           concept: {
@@ -378,37 +720,40 @@ export default function DesignEnginePage() {
             dimensions: concept.dimensions,
             parts: concept.parts.map((p) => ({ name: p.name })),
           },
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const err = data.error ?? "Не понял.";
-        setChat((prev) => [...prev, { role: "assistant", text: err }]);
-        return err;
+        },
+        20_000
+      );
+
+      if (!chatResult.ok) {
+        return say(chatResult.data.error ?? "Не понял команду. Скажи «помощь» — перечислю команды.");
       }
-      const reply = typeof data.reply === "string" ? data.reply : "Готово.";
-      setChat((prev) => [...prev, { role: "assistant", text: reply }]);
-      if (data.shouldRefine && data.refineInstruction) {
-        const refineRes = await fetch("/api/3d/refine", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+
+      const reply =
+        typeof chatResult.data.reply === "string" && chatResult.data.reply.trim()
+          ? chatResult.data.reply.trim()
+          : "Готово.";
+      say(reply);
+
+      if (chatResult.data.shouldRefine && chatResult.data.refineInstruction) {
+        const refineResult = await postJson<{ concept?: ThreeDConcept }>(
+          "/api/3d/refine",
+          {
             concept,
-            instruction: data.refineInstruction,
-            selectedPartId: selectedId,
-          }),
-        });
-        const refineData = await refineRes.json().catch(() => ({}));
-        if (refineRes.ok && refineData.concept) {
+            instruction: chatResult.data.refineInstruction,
+            selectedPartId: selectedRef.current,
+          },
+          40_000
+        );
+        if (refineResult.ok && refineResult.data.concept) {
           pushHistory(concept);
-          await playAssemble(refineData.concept);
+          await playAssemble(refineResult.data.concept);
+        } else {
+          return say(refineResult.data.error ?? "Правку применить не удалось.");
         }
       }
       return reply;
-    } catch {
-      const err = "Связь оборвалась.";
-      setChat((prev) => [...prev, { role: "assistant", text: err }]);
-      return err;
+    } finally {
+      setVoiceThinking(false);
     }
   }
 
@@ -479,7 +824,7 @@ export default function DesignEnginePage() {
             <ConceptViewer
               concept={concept}
               selectedId={selectedId}
-              onSelect={setSelectedId}
+              onSelect={handleSelect}
               view={view}
               exploded={exploded}
               assembling={assembling}
@@ -511,10 +856,24 @@ export default function DesignEnginePage() {
               units={units}
               addShape={addShape}
               onAddShape={setAddShape}
-              onAddPart={addPart}
-              onDuplicatePart={duplicatePart}
-              onDeletePart={deletePart}
+              onAddPart={() => addPart()}
+              onDuplicatePart={() => duplicatePart()}
+              onDeletePart={() => deletePart()}
               canEditSelection={Boolean(selectedId)}
+              onBoolean={armBoolean}
+              pendingBoolean={pendingBoolean}
+              booleanBusy={booleanBusy}
+              measureMode={measureMode}
+              onMeasureMode={(on) => {
+                setMeasureMode(on);
+                setMeasureFrom(null);
+                setMeasurement(null);
+                if (on) {
+                  setCadTool("select");
+                  setPendingBoolean(null);
+                  setBooleanFirst(null);
+                }
+              }}
             />
           </>
         ) : (
@@ -843,6 +1202,61 @@ export default function DesignEnginePage() {
                         className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-[11px] outline-none focus:border-[#a78bfa]/45"
                       />
                     </label>
+                  </div>
+                )}
+
+                {measureMode && (
+                  <div className="rounded-2xl border border-sky-400/30 bg-sky-400/[0.07] p-3 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold text-sky-200">Измерение</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMeasureMode(false);
+                          setMeasureFrom(null);
+                          setMeasurement(null);
+                        }}
+                        className="text-[11px] text-[#8f8a82] hover:text-white"
+                      >
+                        Выключить
+                      </button>
+                    </div>
+                    {measurement ? (
+                      <div className="mt-2 space-y-1 text-[#b8b2a8]">
+                        <p>
+                          {measurement.from} → {measurement.to}
+                        </p>
+                        <p className="font-mono text-sm text-white">
+                          {measurement.distance.toFixed(3)} {units}
+                        </p>
+                        <p className="font-mono text-[10px] text-[#6a6560]">
+                          ΔX {measurement.delta[0].toFixed(3)} · ΔY {measurement.delta[1].toFixed(3)} ·
+                          ΔZ {measurement.delta[2].toFixed(3)}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="mt-1.5 text-[#8f8a82]">
+                        {measureFrom
+                          ? "Теперь кликни вторую деталь."
+                          : "Кликни первую деталь в сцене."}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {pendingBoolean && (
+                  <div className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.07] p-3 text-xs text-amber-100">
+                    {BOOLEAN_LABELS[pendingBoolean]}: выбери вторую деталь в сцене.
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingBoolean(null);
+                        setBooleanFirst(null);
+                      }}
+                      className="ml-2 underline decoration-dotted"
+                    >
+                      отмена
+                    </button>
                   </div>
                 )}
 

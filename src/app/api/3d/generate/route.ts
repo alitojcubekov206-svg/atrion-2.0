@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId, getUserPlan } from "@/lib/auth";
-import { generate3DConcept } from "@/lib/ai";
+import { generate3DModel } from "@/lib/ai";
+import { planFor } from "@/lib/procedural-3d";
 import { db } from "@/lib/db";
 
 export const maxDuration = 120;
@@ -80,9 +81,24 @@ export async function POST(req: Request) {
           .slice(0, 10)
       : [];
 
-    const concept = await generate3DConcept(prompt.trim(), safeAnswers);
+    const cleanPrompt = prompt.trim();
+    const plan = planFor(cleanPrompt);
+    const result = await generate3DModel(cleanPrompt, safeAnswers);
 
-    return NextResponse.json({ concept });
+    // ТЗ 4.1: the generation must be traceable — what was read out of the text,
+    // which geometry won, and how detailed the result is.
+    const diagnostics = {
+      plan: plan.summary,
+      matched: plan.blueprint.matched,
+      source: result.source,
+      score: result.score,
+      primitives: result.primitives,
+      parts: result.concept.parts.length,
+      notes: result.notes,
+    };
+    console.info("[3d/generate]", { prompt: cleanPrompt, ...diagnostics });
+
+    return NextResponse.json({ concept: result.concept, diagnostics });
   } catch (error) {
     await refundQuota();
     console.error("3D concept generation failed", error);

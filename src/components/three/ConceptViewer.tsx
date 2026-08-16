@@ -6,7 +6,6 @@ import {
   Environment,
   Edges,
   Grid,
-  Html,
   OrbitControls,
   TransformControls,
 } from "@react-three/drei";
@@ -121,7 +120,8 @@ function buildPartGeometry(
   shape: PartShape,
   size: [number, number, number],
   sides?: number,
-  hole?: number
+  hole?: number,
+  mesh?: ModelPart["mesh"]
 ): THREE.BufferGeometry {
   const sx = Math.max(0.001, Math.abs(size[0]));
   const sy = Math.max(0.001, Math.abs(size[1]));
@@ -129,6 +129,18 @@ function buildPartGeometry(
   const radial = clamp(Math.round(sides ?? 32), 3, 64);
 
   switch (shape) {
+    case "mesh": {
+      // Boolean result: already centred and at real size, so never scaled.
+      const geometry = new THREE.BufferGeometry();
+      const positions = mesh?.position ?? [];
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      if (mesh?.normal?.length === positions.length) {
+        geometry.setAttribute("normal", new THREE.Float32BufferAttribute(mesh.normal, 3));
+      } else {
+        geometry.computeVertexNormals();
+      }
+      return geometry;
+    }
     case "plane": {
       // Thin slab: never thicker than 6% of its smaller footprint side.
       const thickness = Math.max(0.004, Math.min(sy, Math.min(sx, sz) * 0.06));
@@ -185,9 +197,10 @@ function buildPartGeometry(
  */
 function usePartGeometry(part: ModelPart): THREE.BufferGeometry {
   const [sizeX, sizeY, sizeZ] = part.size;
+  const mesh = part.mesh;
   const geometry = useMemo(
-    () => buildPartGeometry(part.shape, [sizeX, sizeY, sizeZ], part.sides, part.hole),
-    [part.shape, sizeX, sizeY, sizeZ, part.sides, part.hole]
+    () => buildPartGeometry(part.shape, [sizeX, sizeY, sizeZ], part.sides, part.hole, mesh),
+    [part.shape, sizeX, sizeY, sizeZ, part.sides, part.hole, mesh]
   );
   useEffect(() => () => geometry.dispose(), [geometry]);
   return geometry;
@@ -326,20 +339,6 @@ function EditablePart({
             envMapIntensity={glass ? 1.4 : metal ? 1.1 : 0.55}
           />
           {showEdges && <Edges color={selected ? "#a78bfa" : "#3a3a3a"} threshold={22} />}
-          {i === 0 && selected && (
-            <Html
-              center
-              position={[0, Math.max(0.5, part.size[1] / 2 + 0.45), 0]}
-              distanceFactor={12}
-            >
-              <div className="pointer-events-none whitespace-nowrap rounded-md border border-violet-400/50 bg-black/75 px-3 py-1.5 text-[11px] text-violet-50">
-                <span className="font-semibold">{part.name}</span>
-                {instances.length > 1 && (
-                  <span className="ml-1.5 text-violet-300/80">×{instances.length}</span>
-                )}
-              </div>
-            </Html>
-          )}
         </mesh>
       ))}
       {showGizmo && anchor && (
@@ -359,9 +358,12 @@ function EditablePart({
               node.position.set(px, py, pz);
             }
             if (cadTool === "scale") {
-              const sx = Math.max(0.05, Math.abs(node.scale.x) * part.size[0]);
-              const sy = Math.max(0.05, Math.abs(node.scale.y) * part.size[1]);
-              const sz = Math.max(0.05, Math.abs(node.scale.z) * part.size[2]);
+              const fx = Math.abs(node.scale.x) || 1;
+              const fy = Math.abs(node.scale.y) || 1;
+              const fz = Math.abs(node.scale.z) || 1;
+              const sx = Math.max(0.05, fx * part.size[0]);
+              const sy = Math.max(0.05, fy * part.size[1]);
+              const sz = Math.max(0.05, fz * part.size[2]);
               onPartChange(part.id, {
                 position: [px, py, pz],
                 size: [
@@ -370,6 +372,18 @@ function EditablePart({
                   snap ? snapValue(sz, snapStep) : sz,
                 ],
                 rotation: [node.rotation.x, node.rotation.y, node.rotation.z],
+                // Baked geometry carries its own vertices — `size` alone would
+                // change the numbers without changing what is on screen.
+                ...(part.shape === "mesh" && part.mesh
+                  ? {
+                      mesh: {
+                        position: part.mesh.position.map((value, index) =>
+                          index % 3 === 0 ? value * fx : index % 3 === 1 ? value * fy : value * fz
+                        ),
+                        ...(part.mesh.normal ? { normal: part.mesh.normal } : {}),
+                      },
+                    }
+                  : {}),
               });
               node.scale.set(1, 1, 1);
             } else {
@@ -433,15 +447,6 @@ export default function ConceptViewer({
   return (
     <div className={`relative h-full min-h-[420px] overflow-hidden bg-[#2b2d33] ${className}`}>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.12),transparent_60%)]" />
-      <div className="pointer-events-none absolute left-4 top-4 z-10 rounded border border-white/15 bg-black/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-white/80 backdrop-blur">
-        {assembling
-          ? "ASSEMBLING…"
-          : exploded
-            ? "EXPLODED · IRON MAN"
-            : cadTool !== "select"
-              ? `CAD · ${cadTool.toUpperCase()}`
-              : "ORBIT · ZOOM · SELECT"}
-      </div>
       <Canvas
         key={`${view}-${concept.name}`}
         shadows={view === "perspective"}

@@ -79,8 +79,29 @@ function vector(
 function normalizeShape(value: unknown): PartShape {
   if (typeof value !== "string") return "box";
   const key = value.trim().toLowerCase();
+  if (key === "mesh") return "mesh";
   if ((SHAPES as string[]).includes(key)) return key as PartShape;
   return SHAPE_ALIASES[key] ?? "box";
+}
+
+/**
+ * Baked geometry from a boolean operation. It never comes from the model, but
+ * an edited concept round-trips through here, and dropping it would silently
+ * turn a boolean result back into a box.
+ */
+function normalizeMesh(value: unknown): ModelPart["mesh"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as { position?: unknown; normal?: unknown };
+  if (!Array.isArray(raw.position) || raw.position.length < 9) return undefined;
+  const numbers = (input: unknown[]) =>
+    input.filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry));
+  const position = numbers(raw.position);
+  if (position.length < 9) return undefined;
+  const normal = Array.isArray(raw.normal) ? numbers(raw.normal) : undefined;
+  return {
+    position,
+    ...(normal && normal.length === position.length ? { normal } : {}),
+  };
 }
 
 function normalizeColor(value: unknown, fallback: string): string {
@@ -141,11 +162,16 @@ export function sanitizeParts(value: unknown): ModelPart[] {
         : undefined;
 
     const role = text(raw.role, "detail");
+    const mesh = normalizeMesh(raw.mesh);
+    const shape = normalizeShape(raw.shape);
+    // "mesh" without vertices is not renderable — fall back to a solid block.
+    const safeShape: PartShape = shape === "mesh" && !mesh ? "box" : shape;
 
     parts.push({
       id,
       name: text(raw.name, `Деталь ${parts.length + 1}`).slice(0, 60),
-      shape: normalizeShape(raw.shape),
+      shape: safeShape,
+      ...(mesh && safeShape === "mesh" ? { mesh } : {}),
       position: vector(raw.position, [0, 0, 0], 400),
       size,
       rotation: vector(raw.rotation, [0, 0, 0], Math.PI * 4),

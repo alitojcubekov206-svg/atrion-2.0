@@ -1,22 +1,63 @@
 "use client";
 
 import type { PartShape } from "@/lib/types";
+import { BOOLEAN_SYMBOLS, type BooleanOp } from "@/lib/csg-types";
 
 export type CadTool = "select" | "translate" | "rotate" | "scale";
 
 const ADD_SHAPES: { id: PartShape; label: string }[] = [
-  { id: "box", label: "Box" },
-  { id: "cylinder", label: "Cylinder" },
-  { id: "sphere", label: "Sphere" },
-  { id: "cone", label: "Cone" },
-  { id: "pyramid", label: "Pyramid" },
-  { id: "prism", label: "Prism" },
-  { id: "wedge", label: "Wedge" },
-  { id: "torus", label: "Torus" },
-  { id: "capsule", label: "Capsule" },
-  { id: "tube", label: "Tube" },
-  { id: "plane", label: "Plane" },
+  { id: "box", label: "Куб" },
+  { id: "cylinder", label: "Цилиндр" },
+  { id: "sphere", label: "Сфера" },
+  { id: "cone", label: "Конус" },
+  { id: "pyramid", label: "Пирамида" },
+  { id: "prism", label: "Призма" },
+  { id: "wedge", label: "Клин" },
+  { id: "torus", label: "Тор" },
+  { id: "capsule", label: "Капсула" },
+  { id: "tube", label: "Труба" },
+  { id: "plane", label: "Панель" },
 ];
+
+const TOOLS: { id: CadTool; label: string; hint: string }[] = [
+  { id: "select", label: "Выбор", hint: "Выделение и орбита (Esc)" },
+  { id: "translate", label: "Сдвиг", hint: "Перемещение по осям (G)" },
+  { id: "rotate", label: "Поворот", hint: "Вращение (R)" },
+  { id: "scale", label: "Размер", hint: "Масштабирование (S)" },
+];
+
+const BOOLEANS: { id: BooleanOp; hint: string }[] = [
+  { id: "union", hint: "Объединить две детали в одну" },
+  { id: "subtract", hint: "Вычесть вторую деталь из первой" },
+  { id: "intersect", hint: "Оставить только пересечение" },
+];
+
+type Props = {
+  tool: CadTool;
+  onTool: (tool: CadTool) => void;
+  snap: boolean;
+  onSnap: (value: boolean) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  units: "m" | "cm";
+  addShape: PartShape;
+  onAddShape: (shape: PartShape) => void;
+  onAddPart: () => void;
+  onDuplicatePart: () => void;
+  onDeletePart: () => void;
+  canEditSelection: boolean;
+  onBoolean: (op: BooleanOp) => void;
+  pendingBoolean: BooleanOp | null;
+  booleanBusy: boolean;
+  measureMode: boolean;
+  onMeasureMode: (on: boolean) => void;
+};
+
+function Divider() {
+  return <span className="mx-0.5 hidden h-5 w-px bg-white/10 sm:block" />;
+}
 
 export default function CadToolbar({
   tool,
@@ -34,115 +75,149 @@ export default function CadToolbar({
   onDuplicatePart,
   onDeletePart,
   canEditSelection,
-}: {
-  tool: CadTool;
-  onTool: (t: CadTool) => void;
-  snap: boolean;
-  onSnap: (v: boolean) => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  onUndo: () => void;
-  onRedo: () => void;
-  units: "m" | "cm";
-  addShape: PartShape;
-  onAddShape: (shape: PartShape) => void;
-  onAddPart: () => void;
-  onDuplicatePart: () => void;
-  onDeletePart: () => void;
-  canEditSelection: boolean;
-}) {
-  const tools: { id: CadTool; label: string }[] = [
-    { id: "select", label: "Select" },
-    { id: "translate", label: "Move" },
-    { id: "rotate", label: "Rotate" },
-    { id: "scale", label: "Scale" },
-  ];
+  onBoolean,
+  pendingBoolean,
+  booleanBusy,
+  measureMode,
+  onMeasureMode,
+}: Props) {
+  const chip =
+    "rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-30";
 
   return (
-    <div className="absolute left-4 top-14 z-20 flex flex-wrap items-center gap-1 rounded-xl border border-violet-400/25 bg-[#0a0a0c]/80 px-2 py-1.5 backdrop-blur-xl">
-      <span className="mr-1 font-mono text-[9px] uppercase tracking-[0.18em] text-violet-300/70">
-        CAD
-      </span>
-      {tools.map((item) => (
+    <div className="pointer-events-auto absolute left-3 right-3 top-3 z-20 flex flex-wrap items-center gap-1 rounded-2xl border border-white/10 bg-[#0a0a0c]/85 px-2 py-1.5 shadow-lg shadow-black/40 backdrop-blur-xl md:right-auto md:max-w-[min(760px,calc(100%-1.5rem))]">
+      {TOOLS.map((item) => (
         <button
           key={item.id}
           type="button"
+          title={item.hint}
           onClick={() => onTool(item.id)}
-          className={`rounded-full px-2.5 py-1 text-[11px] transition ${
+          aria-pressed={tool === item.id}
+          className={`${chip} ${
             tool === item.id
-              ? "bg-violet-400/30 text-violet-100"
-              : "text-[#8f8a82] hover:text-white"
+              ? "bg-violet-400/25 text-violet-100"
+              : "text-[#9a948c] hover:bg-white/5 hover:text-white"
           }`}
         >
           {item.label}
         </button>
       ))}
-      <span className="mx-1 h-4 w-px bg-white/10" />
+
+      <Divider />
+
       <select
         value={addShape}
-        onChange={(e) => onAddShape(e.target.value as PartShape)}
+        onChange={(event) => onAddShape(event.target.value as PartShape)}
         title="Форма новой детали"
-        className="rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[11px] text-[#b8b2a8] outline-none"
+        aria-label="Форма новой детали"
+        className="rounded-lg border border-white/10 bg-black/50 px-2 py-1.5 text-[11px] text-[#cdc7bf] outline-none focus:border-violet-400/50"
       >
-        {ADD_SHAPES.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.label}
+        {ADD_SHAPES.map((shape) => (
+          <option key={shape.id} value={shape.id}>
+            {shape.label}
           </option>
         ))}
       </select>
       <button
         type="button"
         onClick={onAddPart}
-        title="Добавить деталь"
-        className="rounded-full bg-violet-400/25 px-2.5 py-1 text-[11px] text-violet-100 hover:bg-violet-400/35"
+        title="Добавить деталь в сцену"
+        className={`${chip} bg-violet-400/20 text-violet-100 hover:bg-violet-400/30`}
       >
-        + Add
+        + Деталь
       </button>
       <button
         type="button"
         disabled={!canEditSelection}
         onClick={onDuplicatePart}
         title="Дублировать выбранную деталь"
-        className="rounded-full px-2.5 py-1 text-[11px] text-[#8f8a82] hover:text-white disabled:opacity-30"
+        className={`${chip} text-[#9a948c] hover:bg-white/5 hover:text-white`}
       >
-        Dup
+        Копия
       </button>
       <button
         type="button"
         disabled={!canEditSelection}
         onClick={onDeletePart}
-        title="Удалить выбранную деталь"
-        className="rounded-full px-2.5 py-1 text-[11px] text-red-300/90 hover:bg-red-500/15 hover:text-red-200 disabled:opacity-30"
+        title="Удалить выбранную деталь (Del)"
+        className={`${chip} text-red-300/90 hover:bg-red-500/15 hover:text-red-200`}
       >
-        Del
+        Удалить
       </button>
-      <span className="mx-1 h-4 w-px bg-white/10" />
+
+      <Divider />
+
+      {BOOLEANS.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          disabled={!canEditSelection || booleanBusy}
+          onClick={() => onBoolean(item.id)}
+          title={item.hint}
+          aria-pressed={pendingBoolean === item.id}
+          className={`${chip} font-mono text-[13px] leading-none ${
+            pendingBoolean === item.id
+              ? "bg-amber-400/25 text-amber-100"
+              : "text-[#9a948c] hover:bg-white/5 hover:text-white"
+          }`}
+        >
+          {BOOLEAN_SYMBOLS[item.id]}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={() => onMeasureMode(!measureMode)}
+        title="Измерить расстояние между двумя деталями"
+        aria-pressed={measureMode}
+        className={`${chip} ${
+          measureMode
+            ? "bg-sky-400/25 text-sky-100"
+            : "text-[#9a948c] hover:bg-white/5 hover:text-white"
+        }`}
+      >
+        Замер
+      </button>
+
+      <Divider />
+
       <button
         type="button"
         onClick={() => onSnap(!snap)}
-        className={`rounded-full px-2.5 py-1 text-[11px] ${
-          snap ? "bg-violet-400/25 text-violet-100" : "text-[#8f8a82]"
+        title={`Привязка к сетке, шаг ${units === "cm" ? "5 см" : "0.1 м"}`}
+        aria-pressed={snap}
+        className={`${chip} ${
+          snap ? "bg-violet-400/20 text-violet-100" : "text-[#9a948c] hover:bg-white/5 hover:text-white"
         }`}
       >
-        Snap
+        Привязка
       </button>
       <button
         type="button"
         disabled={!canUndo}
         onClick={onUndo}
-        className="rounded-full px-2.5 py-1 text-[11px] text-[#8f8a82] disabled:opacity-30"
+        title="Отменить (Ctrl+Z)"
+        className={`${chip} text-[#9a948c] hover:bg-white/5 hover:text-white`}
       >
-        Undo
+        ↶
       </button>
       <button
         type="button"
         disabled={!canRedo}
         onClick={onRedo}
-        className="rounded-full px-2.5 py-1 text-[11px] text-[#8f8a82] disabled:opacity-30"
+        title="Вернуть (Ctrl+Y)"
+        className={`${chip} text-[#9a948c] hover:bg-white/5 hover:text-white`}
       >
-        Redo
+        ↷
       </button>
-      <span className="ml-1 font-mono text-[9px] text-[#6a6560]">{units}</span>
+      <span className="ml-auto hidden font-mono text-[10px] uppercase tracking-[0.16em] text-[#6a6560] sm:block">
+        {booleanBusy
+          ? "считаю…"
+          : pendingBoolean
+            ? "выбери вторую деталь"
+            : measureMode
+              ? "кликни две детали"
+              : units}
+      </span>
     </div>
   );
 }
