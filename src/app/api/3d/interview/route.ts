@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSessionUserId } from "@/lib/auth";
-import { generate3DInterview } from "@/lib/ai";
+import { getSessionUserId } from "@/backend/auth";
+import { generate3DInterview } from "@/backend/ai";
 
 export async function POST(req: Request) {
   const userId = await getSessionUserId();

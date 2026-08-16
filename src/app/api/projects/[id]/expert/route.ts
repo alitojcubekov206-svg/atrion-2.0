@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { getSessionUserId } from "@/lib/auth";
-import { consultProjectExpert } from "@/lib/ai";
-import type { Blueprint, ExpertRole } from "@/lib/types";
+import { db } from "@/backend/db";
+import { getSessionUserId } from "@/backend/auth";
+import { consultProjectExpert } from "@/backend/ai";
+import type { Blueprint, ExpertRole } from "@/shared/types";
 
 const ROLES: ExpertRole[] = ["architect", "programmer", "product", "security", "critic"];
 

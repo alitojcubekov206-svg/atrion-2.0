@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/auth";
-import StarkHudFrame, { StarkPanel } from "@/components/StarkHudFrame";
-import SettingsClient from "@/components/SettingsClient";
+import { getCurrentUser } from "@/backend/auth";
+import StarkHudFrame, { StarkPanel } from "@/frontend/components/StarkHudFrame";
+import SettingsClient from "@/frontend/components/SettingsClient";
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();

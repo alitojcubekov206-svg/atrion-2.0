@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { getSessionUserId } from "@/lib/auth";
-import { generateStarterKit } from "@/lib/ai";
-import type { Blueprint } from "@/lib/types";
+import { db } from "@/backend/db";
+import { getSessionUserId } from "@/backend/auth";
+import { generateStarterKit } from "@/backend/ai";
+import type { Blueprint } from "@/shared/types";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

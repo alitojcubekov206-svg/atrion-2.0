@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getSessionUserId, getUserPlan } from "@/lib/auth";
-import { refine3DConcept } from "@/lib/ai";
-import type { ThreeDConcept } from "@/lib/types";
+import { getSessionUserId, getUserPlan } from "@/backend/auth";
+import { refine3DConcept } from "@/backend/ai";
+import type { ThreeDConcept } from "@/shared/types";
 
 export async function POST(req: Request) {
   const userId = await getSessionUserId();

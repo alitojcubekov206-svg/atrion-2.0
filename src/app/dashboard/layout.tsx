@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
-import LogoutButton from "@/components/LogoutButton";
+import { getCurrentUser } from "@/backend/auth";
+import LogoutButton from "@/frontend/components/LogoutButton";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { getSessionUserId } from "@/lib/auth";
+import { db } from "@/backend/db";
+import { getSessionUserId } from "@/backend/auth";
 
 async function findOwnProject(id: string) {
   const userId = await getSessionUserId();

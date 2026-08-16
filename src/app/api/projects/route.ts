@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { getSessionUserId, isProPlanActive } from "@/lib/auth";
-import { canCreateProject, FREE_PROJECT_LIMIT } from "@/lib/plans";
+import { db } from "@/backend/db";
+import { getSessionUserId, isProPlanActive } from "@/backend/auth";
+import { canCreateProject, FREE_PROJECT_LIMIT } from "@/backend/plans";
 
 export async function GET() {
   const userId = await getSessionUserId();

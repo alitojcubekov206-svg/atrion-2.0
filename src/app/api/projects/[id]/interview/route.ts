@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { getSessionUserId } from "@/lib/auth";
-import { generateInterview } from "@/lib/ai";
+import { db } from "@/backend/db";
+import { getSessionUserId } from "@/backend/auth";
+import { generateInterview } from "@/backend/ai";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

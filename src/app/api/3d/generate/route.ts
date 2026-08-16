@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSessionUserId, getUserPlan } from "@/lib/auth";
-import { generate3DModel } from "@/lib/ai";
-import { planFor } from "@/lib/procedural-3d";
-import { db } from "@/lib/db";
+import { getSessionUserId, getUserPlan } from "@/backend/auth";
+import { generate3DModel } from "@/backend/ai";
+import { planFor } from "@/backend/procedural-3d";
+import { db } from "@/backend/db";
 
 export const maxDuration = 120;
 

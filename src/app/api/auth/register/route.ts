@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { db } from "@/lib/db";
-import { createSession } from "@/lib/auth";
+import { db } from "@/backend/db";
+import { createSession } from "@/backend/auth";
 
 export async function POST(req: Request) {
   let body: Record<string, unknown>;

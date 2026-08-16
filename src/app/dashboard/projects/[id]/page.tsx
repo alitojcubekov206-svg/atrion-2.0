@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { db } from "@/lib/db";
-import { getSessionUserId } from "@/lib/auth";
-import ProjectView from "@/components/project/ProjectView";
+import { db } from "@/backend/db";
+import { getSessionUserId } from "@/backend/auth";
+import ProjectView from "@/frontend/components/project/ProjectView";
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

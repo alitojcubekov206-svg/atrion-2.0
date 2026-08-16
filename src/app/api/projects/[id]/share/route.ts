@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { getSessionUserId } from "@/lib/auth";
-import { createProjectShareToken } from "@/lib/share";
+import { db } from "@/backend/db";
+import { getSessionUserId } from "@/backend/auth";
+import { createProjectShareToken } from "@/backend/share";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

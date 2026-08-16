@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db } from "@/backend/db";
 import {
   FINIK_PRO_PRICE_KGS,
   getFinikConfig,
   PRO_DURATION_DAYS,
   verifyFinikWebhook,
-} from "@/lib/finik";
+} from "@/backend/finik";
 
 function stringField(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;

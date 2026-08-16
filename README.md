@@ -100,12 +100,43 @@ to `https://api.acquiring.averspay.kg` and set `FINIK_ENABLED="true"`.
 
 ## Project Structure
 
+The code is split into three layers so a frontend and a backend developer can
+work in the same repository without touching the same files. Ownership is
+enforced on pull requests through `.github/CODEOWNERS`.
+
 ```
 Atrion 2.0/
-  prisma/          # database schema & migrations
+  prisma/              # database schema & migrations              (backend)
+  scripts/             # dev tools: generation report, CSG smoke test
   src/
-    app/           # Next.js App Router pages & API routes
-    components/    # UI components (incl. 3D scenes)
-    lib/           # AI engine, utilities
-  docs/            # documentation
+    app/
+      api/             # HTTP endpoints — server only              (backend)
+      **/page.tsx      # routes and screens                       (frontend)
+    backend/           # server-only code, never imported by a client component
+      ai.ts            #   model providers with fallback
+      auth.ts          #   JWT sessions, plans
+      db.ts            #   Prisma client
+      finik.ts         #   signed payment checkout & webhooks
+      procedural-3d.ts #   entry point of the model generator
+      gen/             #   text → blueprint → geometry, validation & repair
+    frontend/          # browser-only code
+      components/      #   UI, 3D viewport, CAD toolbar, voice panel
+      csg.ts           #   boolean operations on parts
+      export-3d.ts     #   GLB / STL / OBJ writers
+      voice-commands.ts#   speech → scene actions
+    shared/            # used by both sides
+      types.ts         #   the data contract (ModelPart, ThreeDConcept, …)
+      geometry.ts      #   primitive expansion, bounds, palettes
+```
+
+**The rule:** `frontend` never imports from `backend`, and `backend` never
+imports from `frontend`. Anything both sides need lives in `shared`. The two
+sides talk over the HTTP endpoints in `src/app/api` only.
+
+### Dev tools
+
+```bash
+npx tsx scripts/gen-report.ts          # what each prompt generates, with a summary
+npx tsx scripts/gen-report.ts "фраза"  # inspect one prompt
+npx tsx scripts/csg-smoke.ts           # verify the boolean engine
 ```

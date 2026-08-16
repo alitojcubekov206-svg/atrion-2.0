@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { db } from "@/lib/db";
-import { getSessionUserId, getUserPlan } from "@/lib/auth";
-import { FREE_PROJECT_LIMIT } from "@/lib/plans";
-import type { Blueprint } from "@/lib/types";
-import StarkHudFrame, { StarkPanel } from "@/components/StarkHudFrame";
+import { db } from "@/backend/db";
+import { getSessionUserId, getUserPlan } from "@/backend/auth";
+import { FREE_PROJECT_LIMIT } from "@/backend/plans";
+import type { Blueprint } from "@/shared/types";
+import StarkHudFrame, { StarkPanel } from "@/frontend/components/StarkHudFrame";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "Черновик",

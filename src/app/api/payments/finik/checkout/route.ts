@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { getSessionUserId, isProPlanActive } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSessionUserId, isProPlanActive } from "@/backend/auth";
+import { db } from "@/backend/db";
 import {
   appUrl,
   createFinikPayment,
   FINIK_PRO_PRICE_KGS,
   isFinikConfigured,
-} from "@/lib/finik";
+} from "@/backend/finik";
 
 export async function POST(req: Request) {
   const userId = await getSessionUserId();

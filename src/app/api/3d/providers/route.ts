@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSessionUserId } from "@/lib/auth";
-import { isDemoMode } from "@/lib/ai";
+import { getSessionUserId } from "@/backend/auth";
+import { isDemoMode } from "@/backend/ai";
 
 export async function GET() {
   const userId = await getSessionUserId();

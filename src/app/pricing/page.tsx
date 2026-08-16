@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/auth";
-import { PLANS } from "@/lib/plans";
-import { isFinikConfigured } from "@/lib/finik";
-import FinikPayButton from "@/components/payments/FinikPayButton";
+import { getCurrentUser } from "@/backend/auth";
+import { PLANS } from "@/backend/plans";
+import { isFinikConfigured } from "@/backend/finik";
+import FinikPayButton from "@/frontend/components/payments/FinikPayButton";
 
 export default async function PricingPage({
   searchParams,

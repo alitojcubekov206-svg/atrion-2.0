@@ -4,15 +4,15 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { DrawingView } from "@/components/three/ConceptViewer";
-import type { InterviewQuestion, ModelPart, PartShape, ThreeDConcept } from "@/lib/types";
-import { download } from "@/lib/export";
-import { loadSettings, speakText, stopSpeaking } from "@/lib/settings";
-import { structureFromGroups } from "@/lib/gen/kit";
-import VoiceMode from "@/components/VoiceMode";
-import CadToolbar, { type CadTool } from "@/components/CadToolbar";
-import { describeCommand, parseVoiceCommand } from "@/lib/voice-commands";
-import { BOOLEAN_LABELS, type BooleanOp } from "@/lib/csg-types";
+import type { DrawingView } from "@/frontend/components/three/ConceptViewer";
+import type { InterviewQuestion, ModelPart, PartShape, ThreeDConcept } from "@/shared/types";
+import { download } from "@/frontend/export";
+import { loadSettings, speakText, stopSpeaking } from "@/frontend/settings";
+import { structureFromGroups } from "@/shared/geometry";
+import VoiceMode from "@/frontend/components/VoiceMode";
+import CadToolbar, { type CadTool } from "@/frontend/components/CadToolbar";
+import { describeCommand, parseVoiceCommand } from "@/frontend/voice-commands";
+import { BOOLEAN_LABELS, type BooleanOp } from "@/frontend/csg-types";
 
 /**
  * Every network call in this page goes through here.
@@ -53,7 +53,7 @@ async function postJson<T>(
   }
 }
 
-const ConceptViewer = dynamic(() => import("@/components/three/ConceptViewer"), {
+const ConceptViewer = dynamic(() => import("@/frontend/components/three/ConceptViewer"), {
   ssr: false,
   loading: () => <div className="h-full animate-pulse bg-[#2b2d33]" />,
 });
@@ -419,7 +419,7 @@ export default function DesignEnginePage() {
     setError(null);
     try {
       // three + the CSG evaluator load on demand, not in the page's first chunk.
-      const { booleanParts } = await import("@/lib/csg");
+      const { booleanParts } = await import("@/frontend/csg");
       const merged = booleanParts(first, second, op);
       pushHistory(concept);
       const parts = concept.parts
@@ -800,7 +800,7 @@ export default function DesignEnginePage() {
     setExportBusy(format);
     setError(null);
     try {
-      const exporter = await import("@/lib/export-3d");
+      const exporter = await import("@/frontend/export-3d");
       const blob =
         format === "glb"
           ? await exporter.exportConceptGlb(concept)

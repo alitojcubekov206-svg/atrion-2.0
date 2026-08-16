@@ -7,10 +7,10 @@
  *   npx tsx scripts/gen-report.ts
  *   npx tsx scripts/gen-report.ts "своя фраза"
  */
-import { buildFromPrompt, detectCategory, planFor } from "@/lib/procedural-3d";
-import { primitiveCount } from "@/lib/gen/kit";
-import { scoreParts } from "@/lib/gen/validate";
-import type { ThreeDConcept } from "@/lib/types";
+import { buildFromPrompt, detectCategory, planFor } from "@/backend/procedural-3d";
+import { primitiveCount } from "@/shared/geometry";
+import { scoreParts } from "@/backend/gen/validate";
+import type { ThreeDConcept } from "@/shared/types";
 
 const PROMPTS = [
   "Двухэтажный дом 12×9 м с двускатной крышей и гаражом",

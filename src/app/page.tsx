@@ -1,6 +1,6 @@
 import Link from "next/link";
-import LandingHero from "@/components/LandingHero";
-import { getCurrentUser } from "@/lib/auth";
+import LandingHero from "@/frontend/components/LandingHero";
+import { getCurrentUser } from "@/backend/auth";
 
 export default async function Home() {
   const user = await getCurrentUser();

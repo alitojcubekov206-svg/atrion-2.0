@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db } from "@/lib/db";
-import { readProjectShareToken } from "@/lib/share";
-import type { Blueprint } from "@/lib/types";
+import { db } from "@/backend/db";
+import { readProjectShareToken } from "@/backend/share";
+import type { Blueprint } from "@/shared/types";
 
 export default async function SharedProjectPage({
   params,

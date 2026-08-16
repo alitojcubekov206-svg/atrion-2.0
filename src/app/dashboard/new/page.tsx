@@ -6,7 +6,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 
-const StarkAmbient = dynamic(() => import("@/components/three/StarkAmbient"), {
+const StarkAmbient = dynamic(() => import("@/frontend/components/three/StarkAmbient"), {
   ssr: false,
 });
 
