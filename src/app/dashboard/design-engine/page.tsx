@@ -58,7 +58,13 @@ const ConceptViewer = dynamic(() => import("@/components/three/ConceptViewer"), 
   loading: () => <div className="h-full animate-pulse bg-[#2b2d33]" />,
 });
 
-const PIPELINE = ["Analyzing", "Structure", "Geometry", "Assembly", "Ready"] as const;
+const PIPELINE = [
+  "Читаю описание",
+  "Считаю пропорции",
+  "Строю геометрию",
+  "Собираю детали",
+  "Готово",
+] as const;
 
 const EXAMPLES = [
   "Аниме девушка 3D модель с длинными волосами",
@@ -72,6 +78,16 @@ const EXAMPLES = [
 type ChatMessage = { role: "user" | "assistant"; text: string };
 type ExportFormat = "glb" | "stl" | "obj";
 type Providers = { aiConfigured?: boolean };
+/** What the server read out of the prompt — ТЗ 4.1 debugging log. */
+type Diagnostics = {
+  plan?: string;
+  matched?: string[];
+  source?: "procedural" | "ai";
+  score?: number;
+  primitives?: number;
+  parts?: number;
+  notes?: string[];
+};
 type Measurement = {
   from: string;
   to: string;
@@ -102,6 +118,8 @@ export default function DesignEnginePage() {
   const [future, setFuture] = useState<ThreeDConcept[]>([]);
   const [exportBusy, setExportBusy] = useState<ExportFormat | null>(null);
   const [voiceThinking, setVoiceThinking] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [measureMode, setMeasureMode] = useState(false);
   const [measureFrom, setMeasureFrom] = useState<string | null>(null);
   const [measurement, setMeasurement] = useState<Measurement | null>(null);
@@ -183,55 +201,68 @@ export default function DesignEnginePage() {
     await generate();
   }
 
-  async function generate() {
-    if (prompt.trim().length < 10) {
-      setError("Опиши объект подробнее (мин. 10 символов).");
+  /**
+   * The one generation path, shared by the button, the examples and the voice.
+   * The request is bounded by a timeout, and every outcome — model, limit,
+   * stall, refusal — ends with a message on screen and the spinner cleared.
+   */
+  async function runGeneration(text: string, echoPrompt: boolean) {
+    const cleaned = text.trim();
+    if (cleaned.length < 10) {
+      setError("Опиши объект подробнее — минимум 10 символов.");
       return;
     }
+
     setLoading(true);
     setError(null);
     setLimitReached(false);
     setConcept(null);
     setQuestions([]);
-    setChat((prev) => [...prev, { role: "user", text: prompt.trim() }]);
+    setDiagnostics(null);
+    setMeasurement(null);
+    setMeasureFrom(null);
+    if (echoPrompt) setChat((prev) => [...prev, { role: "user", text: cleaned }]);
     await runPipelineVisual();
+
     try {
       const interviewAnswers = questions.map((question) => ({
         question: question.question,
         answer: answers[question.id],
       }));
-      const response = await fetch("/api/3d/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim(), answers: interviewAnswers }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.ok && data.concept) {
+      const result = await postJson<{
+        concept?: ThreeDConcept;
+        diagnostics?: Diagnostics;
+      }>("/api/3d/generate", { prompt: cleaned, answers: interviewAnswers }, 90_000);
+
+      if (result.ok && result.data.concept) {
         setPipelineStep(PIPELINE.length - 1);
-        await playAssemble(data.concept);
+        setDiagnostics(result.data.diagnostics ?? null);
+        await playAssemble(result.data.concept);
         setChat((prev) => [
           ...prev,
           {
             role: "assistant",
-            text: `Готово: ${data.concept.name}. CAD слева сверху — выбери деталь и правь. Голос: «разбери», «собери», «поверни».`,
+            text: `Готово: ${result.data.concept!.name}. Выбери деталь в сцене и правь, или скажи голосом — «добавь куб», «удали крышу», «разбери».`,
           },
         ]);
-      } else {
-        setPipelineStep(-1);
-        setLimitReached(data.code === "THREE_D_LIMIT_REACHED");
-        const msg =
-          data.code === "THREE_D_LIMIT_REACHED"
-            ? "Лимит free генераций исчерпан. Нужен Pro."
-            : data.error ?? "Не удалось создать модель.";
-        setError(msg);
-        setChat((prev) => [...prev, { role: "assistant", text: msg }]);
+        return;
       }
-    } catch {
+
       setPipelineStep(-1);
-      setError("Соединение прервалось.");
+      const limited = result.data.code === "THREE_D_LIMIT_REACHED";
+      setLimitReached(limited);
+      const message = limited
+        ? "Бесплатные генерации закончились. Нужен Pro."
+        : (result.data.error ?? "Не удалось создать модель.");
+      setError(message);
+      setChat((prev) => [...prev, { role: "assistant", text: message }]);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function generate() {
+    await runGeneration(prompt, true);
   }
 
   function applyPartChange(id: string, patch: Partial<ModelPart>) {
@@ -485,40 +516,7 @@ export default function DesignEnginePage() {
 
   async function generateFromPrompt(textPrompt: string) {
     setPrompt(textPrompt);
-    setLoading(true);
-    setError(null);
-    setLimitReached(false);
-    setConcept(null);
-    await runPipelineVisual();
-    try {
-      const response = await fetch("/api/3d/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: textPrompt.trim(), answers: [] }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.ok && data.concept) {
-        setPipelineStep(PIPELINE.length - 1);
-        await playAssemble(data.concept);
-        setChat((prev) => [
-          ...prev,
-          { role: "assistant", text: `Готово: ${data.concept.name}. Скажи «разбери» или правь в CAD.` },
-        ]);
-      } else {
-        setPipelineStep(-1);
-        const msg =
-          data.code === "THREE_D_LIMIT_REACHED"
-            ? "Лимит free генераций. Нужен Pro."
-            : data.error || "Не удалось создать модель.";
-        setError(msg);
-        setChat((prev) => [...prev, { role: "assistant", text: msg }]);
-      }
-    } catch {
-      setPipelineStep(-1);
-      setError("Сбой связи при генерации.");
-    } finally {
-      setLoading(false);
-    }
+    await runGeneration(textPrompt, false);
   }
 
   function resetStudio() {
@@ -757,30 +755,40 @@ export default function DesignEnginePage() {
     }
   }
 
+  /**
+   * Typed instruction. Recognised editing commands run locally through the same
+   * path as speech, so typing "удали крышу" behaves exactly like saying it —
+   * and only free-form wording reaches the model.
+   */
   async function refine(event?: FormEvent) {
     event?.preventDefault();
-    if (!concept || chatInput.trim().length < 3) return;
     const instruction = chatInput.trim();
+    if (!concept || instruction.length < 3) return;
     setChatInput("");
+
+    if (parseVoiceCommand(instruction).kind !== "chat") {
+      await handleVoiceUtterance(instruction);
+      return;
+    }
+
     setChat((prev) => [...prev, { role: "user", text: instruction }]);
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/3d/refine", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ concept, instruction, selectedPartId: selectedId }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.ok && data.concept) {
+      const result = await postJson<{ concept?: ThreeDConcept }>(
+        "/api/3d/refine",
+        { concept, instruction, selectedPartId: selectedId },
+        40_000
+      );
+      if (result.ok && result.data.concept) {
         pushHistory(concept);
-        await playAssemble(data.concept);
+        await playAssemble(result.data.concept);
         setChat((prev) => [...prev, { role: "assistant", text: "Правка применена." }]);
       } else {
-        setError(data.error ?? "Не удалось применить правку.");
+        const message = result.data.error ?? "Не удалось применить правку.";
+        setError(message);
+        setChat((prev) => [...prev, { role: "assistant", text: message }]);
       }
-    } catch {
-      setError("Соединение прервалось.");
     } finally {
       setLoading(false);
     }
@@ -817,8 +825,10 @@ export default function DesignEnginePage() {
   const providerHint = providers.aiConfigured ? "AI-режим" : "Демо-режим";
 
   return (
-    <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex bg-[#141518] text-[#f4f1ea]">
-      <div className={`relative min-w-0 flex-1 ${panelOpen ? "md:w-[80%]" : "w-full"}`}>
+    <div className="fixed inset-x-0 bottom-0 top-[65px] z-30 flex flex-col bg-[#141518] text-[#f4f1ea] md:flex-row">
+      {/* The scene keeps the room it has; on narrow screens the panel becomes a
+          drawer under it rather than covering the model. */}
+      <div className="relative min-h-0 min-w-0 flex-1">
         {concept ? (
           <>
             <ConceptViewer
@@ -877,21 +887,23 @@ export default function DesignEnginePage() {
             />
           </>
         ) : (
-          <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-6">
+          <div className="relative flex h-full flex-col items-center justify-center overflow-y-auto px-5 py-8">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_35%,rgba(167,139,250,0.12),transparent_50%)]" />
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className="relative flex w-full max-w-2xl flex-col items-center"
             >
-              <div className="holo-ring mb-8" />
+              <div className="holo-ring mb-6 hidden sm:block" />
               <p className="hud-chip rounded-full px-3 py-1 text-[10px] text-[#a78bfa]/90">
                 Design Engine · {providerHint}
               </p>
-              <h1 className="display mt-5 text-center text-5xl font-semibold text-white md:text-6xl">
+              <h1 className="display mt-5 text-center text-4xl font-semibold text-white sm:text-5xl md:text-6xl">
                 ATRION
               </h1>
-              <p className="display mt-3 text-2xl text-[#a78bfa]">Just build it.</p>
+              <p className="display mt-3 text-center text-xl text-[#a78bfa] sm:text-2xl">
+                Опиши словами — получи 3D-модель
+              </p>
               <div className="gold-line mt-6 w-16" />
 
               <div className="mt-8 w-full space-y-3">
@@ -902,15 +914,15 @@ export default function DesignEnginePage() {
                   placeholder="Опиши объект — что угодно: дом, персонаж, машина, мебель, гаджет…"
                   className="w-full resize-none rounded-2xl border border-white/10 bg-black/45 px-5 py-4 text-sm outline-none focus:border-[#a78bfa]/50"
                 />
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap justify-center gap-2">
                   {EXAMPLES.map((example) => (
                     <button
                       key={example}
                       type="button"
                       onClick={() => setPrompt(example)}
-                      className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#8f8a82] hover:border-[#a78bfa]/40"
+                      className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#9a948c] transition hover:border-[#a78bfa]/40 hover:text-white"
                     >
-                      {example.slice(0, 36)}…
+                      {example}
                     </button>
                   ))}
                 </div>
@@ -920,21 +932,25 @@ export default function DesignEnginePage() {
                   onClick={startInterview}
                   className="btn-primary w-full rounded-full px-6 py-3.5 text-sm disabled:opacity-40"
                 >
-                  {loading ? "…" : "Создать →"}
+                  {loading ? "Собираю модель…" : "Создать модель →"}
                 </button>
+                <p className="text-center text-[11px] leading-relaxed text-[#6a6560]">
+                  Дальше можно править мышью или голосом: «добавь куб», «удали крышу»,
+                  «покрась в синий», «разбери».
+                </p>
               </div>
             </motion.div>
           </div>
         )}
 
         {concept && (
-          <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-full border border-[#a78bfa]/20 bg-[#050507]/75 px-2 py-1.5 backdrop-blur-xl">
+          <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-full border border-[#a78bfa]/20 bg-[#050507]/80 px-2 py-1.5 shadow-lg shadow-black/40 backdrop-blur-xl">
             {(
               [
-                ["perspective", "Orbit"],
-                ["top", "Top"],
-                ["front", "Front"],
-                ["side", "Side"],
+                ["perspective", "Обзор"],
+                ["top", "Сверху"],
+                ["front", "Спереди"],
+                ["side", "Сбоку"],
               ] as const
             ).map(([value, label]) => (
               <button
@@ -945,10 +961,10 @@ export default function DesignEnginePage() {
                   setExploded(false);
                   setCadTool("select");
                 }}
-                className={`rounded-full px-3 py-1.5 text-xs ${
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs transition ${
                   view === value && !exploded
                     ? "bg-[#a78bfa]/20 text-[#a78bfa]"
-                    : "text-[#8f8a82] hover:text-white"
+                    : "text-[#9a948c] hover:text-white"
                 }`}
               >
                 {label}
@@ -975,7 +991,7 @@ export default function DesignEnginePage() {
               }}
               className="rounded-full px-3 py-1.5 text-xs text-[#8f8a82] hover:text-white"
             >
-              Speak
+              Озвучить
             </button>
             <button
               type="button"
@@ -984,14 +1000,14 @@ export default function DesignEnginePage() {
                 voiceMode ? "bg-violet-400/25 text-violet-200" : "text-[#8f8a82]"
               }`}
             >
-              Mic
+              Микрофон
             </button>
             <button
               type="button"
               onClick={() => setPanelOpen((v) => !v)}
               className="rounded-full px-3 py-1.5 text-xs text-[#8f8a82]"
             >
-              {panelOpen ? "Hide" : "Panel"}
+              {panelOpen ? "Скрыть панель" : "Панель"}
             </button>
           </div>
         )}
@@ -1032,7 +1048,7 @@ export default function DesignEnginePage() {
       </div>
 
       {panelOpen && (
-        <aside className="flex w-full flex-col border-l border-[#a78bfa]/10 bg-[#0e0e10]/95 backdrop-blur-2xl md:w-[min(400px,22%)] md:min-w-[300px]">
+        <aside className="flex max-h-[52vh] w-full shrink-0 flex-col border-t border-[#a78bfa]/15 bg-[#0e0e10]/95 backdrop-blur-2xl md:max-h-none md:w-[360px] md:border-l md:border-t-0 lg:w-[400px]">
           <div className="border-b border-white/[0.06] px-4 py-4">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1120,7 +1136,7 @@ export default function DesignEnginePage() {
                 {concept && selectedPart && (
                   <div className="rounded-2xl border border-[#a78bfa]/25 bg-[#a78bfa]/05 p-3 text-xs">
                     <p className="font-semibold text-[#a78bfa]">{selectedPart.name}</p>
-                    <p className="mt-2 text-[#8f8a82]">CAD properties ({units})</p>
+                    <p className="mt-2 text-[#8f8a82]">Размеры и положение, {units}</p>
                     <div className="mt-2 grid grid-cols-3 gap-2">
                       {(
                         [
@@ -1152,7 +1168,7 @@ export default function DesignEnginePage() {
                     </div>
                     <div className="mt-2 grid grid-cols-3 gap-2">
                       <label className="col-span-2 space-y-1">
-                        <span className="font-mono text-[10px] text-[#6a6560]">Shape</span>
+                        <span className="font-mono text-[10px] text-[#6a6560]">Форма</span>
                         <select
                           value={selectedPart.shape}
                           onChange={(e) =>
@@ -1184,7 +1200,7 @@ export default function DesignEnginePage() {
                         </select>
                       </label>
                       <label className="space-y-1">
-                        <span className="font-mono text-[10px] text-[#6a6560]">Color</span>
+                        <span className="font-mono text-[10px] text-[#6a6560]">Цвет</span>
                         <input
                           type="color"
                           value={/^#[0-9a-f]{6}$/i.test(selectedPart.color) ? selectedPart.color : "#a78bfa"}
@@ -1194,7 +1210,7 @@ export default function DesignEnginePage() {
                       </label>
                     </div>
                     <label className="mt-2 block space-y-1">
-                      <span className="font-mono text-[10px] text-[#6a6560]">Name</span>
+                      <span className="font-mono text-[10px] text-[#6a6560]">Название</span>
                       <input
                         type="text"
                         value={selectedPart.name}
@@ -1202,6 +1218,56 @@ export default function DesignEnginePage() {
                         className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-[11px] outline-none focus:border-[#a78bfa]/45"
                       />
                     </label>
+                  </div>
+                )}
+
+                {voiceThinking && (
+                  <div className="flex items-center gap-2 rounded-2xl border border-violet-400/25 bg-violet-400/[0.07] px-3 py-2 text-xs text-violet-200">
+                    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-violet-300" />
+                    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-violet-300" />
+                    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-violet-300" />
+                    <span className="ml-1">Думаю над командой…</span>
+                  </div>
+                )}
+
+                {diagnostics && (
+                  <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setShowDiagnostics((value) => !value)}
+                      className="flex w-full items-center justify-between gap-2 text-left"
+                    >
+                      <span className="text-[10px] uppercase tracking-[0.18em] text-[#6a6560]">
+                        Как собрана модель
+                      </span>
+                      <span className="text-[#8f8a82]">{showDiagnostics ? "свернуть" : "показать"}</span>
+                    </button>
+                    <p className="mt-1.5 text-[#b8b2a8]">
+                      {diagnostics.parts ?? 0} деталей · {diagnostics.primitives ?? 0} примитивов ·
+                      цельность {Math.round((diagnostics.score ?? 0) * 100)}%
+                    </p>
+                    {showDiagnostics && (
+                      <div className="mt-2 space-y-1.5 border-t border-white/[0.06] pt-2 text-[11px] text-[#8f8a82]">
+                        {diagnostics.matched?.length ? (
+                          <p>
+                            <span className="text-[#6a6560]">Распознано в тексте: </span>
+                            {diagnostics.matched.join(", ")}
+                          </p>
+                        ) : null}
+                        {diagnostics.plan && (
+                          <p className="font-mono text-[10px] leading-relaxed text-[#6a6560]">
+                            {diagnostics.plan}
+                          </p>
+                        )}
+                        <p>
+                          <span className="text-[#6a6560]">Источник геометрии: </span>
+                          {diagnostics.source === "ai" ? "AI" : "параметрический движок"}
+                        </p>
+                        {diagnostics.notes?.map((note, index) => (
+                          <p key={index}>· {note}</p>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1262,7 +1328,7 @@ export default function DesignEnginePage() {
 
                 {concept && treeOpen && (
                   <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3">
-                    <p className="text-[10px] uppercase tracking-[0.18em] text-[#6a6560]">Parts</p>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-[#6a6560]">Детали модели</p>
                     <div className="mt-2 space-y-1">
                       {structure.flatMap((group) =>
                         group.partIds.map((partId) => {
@@ -1351,7 +1417,7 @@ export default function DesignEnginePage() {
                       }}
                       className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-[#b8b2a8]"
                     >
-                      New
+                      Новая модель
                     </button>
                   </div>
                 )}
