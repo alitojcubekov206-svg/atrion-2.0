@@ -5,7 +5,7 @@ import { loadSettings, stopSpeaking } from "@/frontend/settings";
 import { createRecognizer, speakReply, supportsSpeechRecognition } from "@/frontend/voice-chat";
 import { VOICE_EXAMPLES } from "@/frontend/voice-commands";
 
-export type VoiceStatus = "idle" | "listening" | "working" | "done" | "error";
+type Phase = "off" | "listening" | "working" | "speaking";
 
 type Props = {
   enabled: boolean;
@@ -15,24 +15,30 @@ type Props = {
   onUtterance: (text: string) => Promise<string | void>;
 };
 
-/** Hard ceiling on one command. Past this the UI unblocks and says why. */
+/** Hard ceiling on one command. Past this the session unblocks and says why. */
 const COMMAND_TIMEOUT_MS = 25_000;
 
+/**
+ * A continuous voice session, the way a voice assistant behaves: switch it on
+ * and it keeps listening — through pauses, through its own replies — until it
+ * is switched off. Recognition is suspended only while Atrion is speaking, so
+ * the reply is not fed back in as the next command.
+ */
 export default function VoiceMode({ enabled, onToggle, busy, onUtterance }: Props) {
-  const [status, setStatus] = useState<VoiceStatus>("idle");
+  const [phase, setPhase] = useState<Phase>("off");
   const [partial, setPartial] = useState("");
   const [heard, setHeard] = useState("");
   const [reply, setReply] = useState("");
   const [supported, setSupported] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [continuous, setContinuous] = useState(true);
 
   const recognizer = useRef<SpeechRecognition | null>(null);
+  const sessionOn = useRef(false);
   const handling = useRef(false);
-  const wantListening = useRef(false);
   const restartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // A recognizer created three commands ago still fires this ref's current
-  // value, so a spoken edit always sees the scene as it is now.
+  const startRef = useRef<() => void>(() => {});
+  // A recognizer created several commands ago still calls the current handler,
+  // so a spoken edit always sees the scene as it is now.
   const handler = useRef(onUtterance);
   handler.current = onUtterance;
 
@@ -40,77 +46,89 @@ export default function VoiceMode({ enabled, onToggle, busy, onUtterance }: Prop
     setSupported(supportsSpeechRecognition());
   }, []);
 
-  const stopListening = useCallback(() => {
-    wantListening.current = false;
+  const clearRestart = () => {
     if (restartTimer.current) clearTimeout(restartTimer.current);
     restartTimer.current = null;
+  };
+
+  const stopSession = useCallback(() => {
+    sessionOn.current = false;
+    clearRestart();
     recognizer.current?.abort();
     recognizer.current = null;
-    setStatus((current) => (current === "listening" ? "idle" : current));
+    stopSpeaking();
+    setPhase("off");
     setPartial("");
   }, []);
 
-  // Turning the panel off must release the microphone immediately.
-  useEffect(() => {
-    if (!enabled) {
-      stopListening();
-      stopSpeaking();
-      setHeard("");
-      setReply("");
-      setError(null);
-    }
-  }, [enabled, stopListening]);
-
-  useEffect(() => () => stopListening(), [stopListening]);
+  /** Restart the microphone unless the session ended or a command is running. */
+  const resume = useCallback((delay = 250) => {
+    clearRestart();
+    if (!sessionOn.current || handling.current) return;
+    restartTimer.current = setTimeout(() => startRef.current(), delay);
+  }, []);
 
   const runUtterance = useCallback(
     async (text: string) => {
       handling.current = true;
+      clearRestart();
+      recognizer.current?.stop();
       setHeard(text);
       setReply("");
       setError(null);
-      setStatus("working");
+      setPhase("working");
 
-      // The page owns its own timeouts, but a stuck promise must never leave the
-      // microphone button dead — this is the backstop for that.
+      // The page bounds its own requests, but a promise that never settles must
+      // not leave the session dead — this is the backstop for that.
       let timedOut = false;
       const guard = new Promise<string>((resolve) => {
         setTimeout(() => {
           timedOut = true;
-          resolve("Долго не отвечает. Попробуй сказать короче или повтори.");
+          resolve("Долго не отвечает. Скажи короче или повтори.");
         }, COMMAND_TIMEOUT_MS);
       });
 
+      let answer = "Готово.";
       try {
-        const answer = await Promise.race([
+        answer = await Promise.race([
           handler.current(text).then((value) => (typeof value === "string" ? value : "Готово.")),
           guard,
         ]);
-        setReply(answer);
-        setStatus(timedOut ? "error" : "done");
-        if (!timedOut && loadSettings().voiceEnabled) speakReply(answer);
       } catch {
-        setReply("");
-        setError("Команда не выполнилась. Повтори, пожалуйста.");
-        setStatus("error");
-      } finally {
-        handling.current = false;
-        if (wantListening.current && continuous) {
-          restartTimer.current = setTimeout(() => startListening(), 350);
-        }
+        answer = "Не получилось выполнить. Повтори, пожалуйста.";
+        setError(answer);
       }
+
+      setReply(answer);
+      handling.current = false;
+
+      if (!sessionOn.current) {
+        setPhase("off");
+        return;
+      }
+      if (timedOut || !loadSettings().voiceEnabled) {
+        setPhase("listening");
+        resume(150);
+        return;
+      }
+
+      setPhase("speaking");
+      speakReply(answer, () => {
+        if (!sessionOn.current) return;
+        setPhase("listening");
+        resume(120);
+      });
     },
-    // startListening is defined below and stable enough for this restart hop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [continuous]
+    [resume]
   );
 
-  const startListening = useCallback(() => {
-    if (!enabled || handling.current) return;
-    setError(null);
-    stopSpeaking();
+  const start = useCallback(() => {
+    if (!sessionOn.current || handling.current) return;
+    clearRestart();
+    recognizer.current?.abort();
 
     const recognition = createRecognizer({
+      continuous: true,
       onPartial: setPartial,
       onFinal: (text) => {
         setPartial("");
@@ -118,55 +136,101 @@ export default function VoiceMode({ enabled, onToggle, busy, onUtterance }: Prop
         void runUtterance(text);
       },
       onError: (message) => {
-        setStatus("error");
+        const fatal = message === "not-allowed" || message === "service-not-allowed";
         setError(
-          message === "not-allowed"
-            ? "Разреши доступ к микрофону в браузере."
+          message === "not-allowed" || message === "service-not-allowed"
+            ? "Браузер не дал доступ к микрофону. Разреши его в адресной строке и включи снова."
             : message === "network"
               ? "Распознавание речи недоступно без интернета."
               : message === "audio-capture"
                 ? "Микрофон не найден."
                 : `Микрофон: ${message}`
         );
-        wantListening.current = false;
+        if (fatal) {
+          sessionOn.current = false;
+          setPhase("off");
+        }
       },
       onEnd: () => {
         recognizer.current = null;
         setPartial("");
-        setStatus((current) => (current === "listening" ? "idle" : current));
-        // Chrome stops after each phrase; keep the session alive by restarting.
-        if (wantListening.current && continuous && !handling.current) {
-          restartTimer.current = setTimeout(() => startListening(), 250);
-        }
+        // Chrome ends the session on its own after a pause; keep it alive.
+        resume(200);
       },
     });
 
     if (!recognition) {
       setSupported(false);
+      sessionOn.current = false;
+      setPhase("off");
       return;
     }
 
     recognizer.current = recognition;
     try {
       recognition.start();
-      wantListening.current = true;
-      setStatus("listening");
+      setPhase("listening");
     } catch {
-      setError("Не удалось включить микрофон.");
-      setStatus("error");
+      // start() throws when the previous instance has not released the mic yet.
+      resume(400);
     }
-  }, [continuous, enabled, runUtterance]);
+  }, [resume, runUtterance]);
 
-  const listening = status === "listening";
-  const working = status === "working" || Boolean(busy);
+  startRef.current = start;
+
+  const beginSession = useCallback(() => {
+    setError(null);
+    setHeard("");
+    setReply("");
+    sessionOn.current = true;
+    start();
+  }, [start]);
+
+  // The panel switch owns the session: on means listening, off releases the mic.
+  useEffect(() => {
+    if (enabled) {
+      if (!sessionOn.current) beginSession();
+    } else {
+      stopSession();
+    }
+  }, [enabled, beginSession, stopSession]);
+
+  useEffect(() => () => stopSession(), [stopSession]);
+
+  const live = phase !== "off";
+  const status =
+    phase === "listening"
+      ? "Слушаю"
+      : phase === "working"
+        ? "Выполняю"
+        : phase === "speaking"
+          ? "Отвечаю"
+          : busy
+            ? "Занят"
+            : "Выключен";
 
   return (
-    <div className="rounded-2xl border border-violet-400/25 bg-violet-400/[0.06] p-3">
+    <div
+      className={`rounded-2xl border p-3 transition ${
+        live ? "border-violet-400/45 bg-violet-400/[0.09]" : "border-white/10 bg-white/[0.02]"
+      }`}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-violet-300/80">Голос</p>
+          <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-violet-300/80">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                phase === "listening"
+                  ? "animate-pulse bg-red-400"
+                  : phase === "working" || phase === "speaking"
+                    ? "animate-pulse bg-violet-300"
+                    : "bg-white/25"
+              }`}
+            />
+            Голос · {status}
+          </p>
           <p className="truncate text-xs text-[#8f8a82]">
-            Команды выполняются сразу, без ожидания сети
+            {live ? "Говори — я слушаю всё время" : "Включи и просто говори"}
           </p>
         </div>
         <button
@@ -174,73 +238,40 @@ export default function VoiceMode({ enabled, onToggle, busy, onUtterance }: Prop
           onClick={() => onToggle(!enabled)}
           aria-pressed={enabled}
           className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${
-            enabled
-              ? "bg-violet-400 text-[#050507]"
-              : "border border-white/15 text-[#8f8a82] hover:text-white"
+            live
+              ? "bg-red-500/90 text-white hover:bg-red-500"
+              : "btn-primary"
           }`}
         >
-          {enabled ? "ВКЛ" : "ВЫКЛ"}
+          {live ? "Стоп" : "Включить"}
         </button>
       </div>
 
-      {enabled && (
+      {!supported && enabled && (
+        <p className="mt-3 rounded-xl border border-amber-400/25 bg-amber-400/10 p-2 text-xs text-amber-200">
+          Этот браузер не умеет распознавать речь. Открой в Chrome — или набери ту же команду
+          текстом ниже, она выполнится точно так же.
+        </p>
+      )}
+
+      {live && (
         <div className="mt-3 space-y-2">
-          {!supported ? (
-            <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-2 text-xs text-amber-200">
-              Браузер не поддерживает распознавание речи. Открой в Chrome или набери команду
-              текстом ниже — она выполнится так же.
-            </p>
-          ) : (
-            <button
-              type="button"
-              onClick={listening ? stopListening : startListening}
-              disabled={working && !listening}
-              className={`flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold transition ${
-                listening
-                  ? "bg-red-500/90 text-white"
-                  : working
-                    ? "bg-white/10 text-[#8f8a82]"
-                    : "btn-primary"
-              }`}
-            >
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  listening ? "animate-pulse bg-white" : working ? "animate-pulse bg-violet-300" : "bg-current"
-                }`}
-              />
-              {listening ? "Слушаю — нажми, чтобы остановить" : working ? "Выполняю…" : "Говорить"}
-            </button>
-          )}
-
-          <label className="flex items-center gap-2 text-[11px] text-[#8f8a82]">
-            <input
-              type="checkbox"
-              checked={continuous}
-              onChange={(event) => setContinuous(event.target.checked)}
-              className="h-3 w-3 accent-violet-400"
-            />
-            Слушать непрерывно
-          </label>
-
-          {partial && (
-            <p className="rounded-lg bg-white/5 px-2 py-1.5 text-center text-xs italic text-violet-200/80">
-              {partial}…
-            </p>
-          )}
-
-          {heard && (
-            <div className="rounded-xl border border-white/10 bg-black/30 p-2 text-xs">
-              <p className="text-[10px] uppercase tracking-[0.16em] text-[#6a6560]">Распознано</p>
-              <p className="mt-0.5 text-[#f4f1ea]">«{heard}»</p>
-              {reply && (
-                <p
-                  className={`mt-1.5 ${status === "error" ? "text-amber-300" : "text-violet-200"}`}
-                >
-                  {status === "working" ? "Выполняю…" : reply}
-                </p>
-              )}
-            </div>
-          )}
+          <div className="min-h-[46px] rounded-xl border border-white/10 bg-black/30 p-2 text-xs">
+            {partial ? (
+              <p className="italic text-violet-200/80">{partial}…</p>
+            ) : heard ? (
+              <>
+                <p className="text-[#f4f1ea]">«{heard}»</p>
+                {reply && (
+                  <p className="mt-1 text-violet-200">
+                    {phase === "working" ? "Выполняю…" : reply}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-[#6a6560]">Скажи, например: «{VOICE_EXAMPLES[0]}»</p>
+            )}
+          </div>
 
           {error && (
             <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-300">

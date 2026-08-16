@@ -77,10 +77,30 @@ export function listVoicesForLang(language?: "ru" | "en"): SpeechSynthesisVoice[
     .sort((a, b) => scoreVoice(b, lang) - scoreVoice(a, lang));
 }
 
-export function speakText(text: string, language?: "ru" | "en") {
-  if (typeof window === "undefined" || !window.speechSynthesis) return;
+/**
+ * Speak a line.
+ *
+ * `onEnd` always fires — on completion, on error, and when speech is switched
+ * off entirely. A continuous voice session resumes listening from it, so a
+ * callback that never arrives would leave the microphone dead.
+ */
+export function speakText(text: string, language?: "ru" | "en", onEnd?: () => void) {
+  if (typeof window === "undefined" || !window.speechSynthesis) {
+    onEnd?.();
+    return;
+  }
   const settings = loadSettings();
-  if (!settings.voiceEnabled) return;
+  if (!settings.voiceEnabled) {
+    onEnd?.();
+    return;
+  }
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    onEnd?.();
+  };
 
   const run = () => {
     const utter = new SpeechSynthesisUtterance(text.slice(0, 400));
@@ -90,8 +110,12 @@ export function speakText(text: string, language?: "ru" | "en") {
     utter.pitch = 1;
     const voice = pickBestVoice(lang);
     if (voice) utter.voice = voice;
+    utter.onend = finish;
+    utter.onerror = finish;
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utter);
+    // Some Chrome builds drop `onend` for long utterances; this is the backstop.
+    window.setTimeout(finish, Math.min(15000, 1800 + text.length * 90));
   };
 
   // Chrome loads voices async

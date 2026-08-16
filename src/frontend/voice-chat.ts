@@ -14,6 +14,8 @@ export function createRecognizer(opts: {
   onFinal: (text: string) => void;
   onError?: (message: string) => void;
   onEnd?: () => void;
+  /** Keep the session open across pauses instead of ending after one phrase. */
+  continuous?: boolean;
 }): SpeechRec | null {
   if (typeof window === "undefined") return null;
   const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -23,8 +25,9 @@ export function createRecognizer(opts: {
   const rec = new Ctor();
   rec.lang = settings.language === "en" ? "en-US" : "ru-RU";
   rec.interimResults = true;
-  rec.continuous = false;
-  rec.maxAlternatives = 1;
+  rec.continuous = opts.continuous ?? false;
+  // More guesses give the command parser a second chance at a mumbled word.
+  rec.maxAlternatives = 3;
 
   rec.onresult = (event: SpeechRecognitionEvent) => {
     let interim = "";
@@ -39,6 +42,7 @@ export function createRecognizer(opts: {
   };
 
   rec.onerror = (event: SpeechRecognitionErrorEvent) => {
+    // Silence and deliberate aborts are normal in a long session, not failures.
     if (event.error === "aborted" || event.error === "no-speech") {
       opts.onEnd?.();
       return;
@@ -51,7 +55,8 @@ export function createRecognizer(opts: {
   return rec;
 }
 
-export function speakReply(text: string) {
+/** Speak a reply and report when the voice has stopped, so listening can resume. */
+export function speakReply(text: string, onEnd?: () => void) {
   stopSpeaking();
-  speakText(text);
+  speakText(text, undefined, onEnd);
 }

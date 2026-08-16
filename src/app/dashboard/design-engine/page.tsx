@@ -995,12 +995,19 @@ export default function DesignEnginePage() {
             </button>
             <button
               type="button"
-              onClick={() => setVoiceMode((v) => !v)}
-              className={`rounded-full px-3 py-1.5 text-xs ${
-                voiceMode ? "bg-violet-400/25 text-violet-200" : "text-[#8f8a82]"
+              onClick={() => {
+                // The voice panel lives in the side panel — turning the mic on
+                // with the panel collapsed would unmount the session at once.
+                setVoiceMode((on) => {
+                  if (!on) setPanelOpen(true);
+                  return !on;
+                });
+              }}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs transition ${
+                voiceMode ? "bg-red-500/80 text-white" : "text-[#9a948c] hover:text-white"
               }`}
             >
-              Микрофон
+              {voiceMode ? "Стоп" : "Микрофон"}
             </button>
             <button
               type="button"
