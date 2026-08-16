@@ -85,6 +85,8 @@ export type Blueprint = {
 
   floors: number;
   windows: number;
+  /** True when the prompt named a count, e.g. "6 окон". */
+  windowsExplicit: boolean;
   windowStyle: "punched" | "ribbon" | "curtain";
   doors: number;
   roof: RoofKind;
@@ -351,7 +353,7 @@ const RULES: Rule[] = [
   { label: "стадион", re: w("стадион|stadium|арен[аыу]|спорткомплекс|манеж|ипподром|амфитеатр"), apply: (b) => { b.massPlan = "shell"; b.hollow = true; b.sizeClass = "landmark"; b.columns = Math.max(b.columns, 16); b.roof = "flat"; b.length = Math.max(b.length, 90); b.width = Math.max(b.width, 70); b.height = Math.max(b.height, 22); } },
   { label: "комната", re: w("комнат|спальн|кухн|гостин|ванн|санузел|интерьер|interior|\\broom\\b|bedroom|kitchen|кабинет|квартир|студи[яю]|аудитори|класс${E}|прихож|коридор|лоджи"), apply: (b) => { b.massPlan = "shell"; b.hollow = true; b.sizeClass = "structure"; b.roof = "none"; b.windows = Math.max(b.windows, 1); b.doors = Math.max(b.doors, 1); b.height = 2.8; b.width = Math.max(b.width, 4.2); b.length = Math.max(b.length, 3.6); b.floors = 1; b.detail += 0.3; } },
   { label: "этажи", re: w("этаж|floor|storey|story|уровн|ярус"), counter: /этаж|floor|storey|story|уровн|ярус/i, apply: (b, n) => { if (n) { b.floors = n; b.massPlan = "stacked"; } } },
-  { label: "окна", re: w("окн[оаеы]|окон|window|остеклен|витраж|панорамн"), counter: /окн|окон|window/i, apply: (b, n) => { b.windows = n ?? Math.max(b.windows, 6); } },
+  { label: "окна", re: w("окн[оаеы]|окон|window|остеклен|витраж|панорамн"), counter: /окн|окон|window/i, apply: (b, n) => { b.windows = n ?? Math.max(b.windows, 6); if (n) b.windowsExplicit = true; } },
   { label: "панорамное остекление", re: w("панорамн|витраж|floor.?to.?ceiling|стеклянн(ый|ая|ое) фасад|curtain wall"), apply: (b) => { b.windowStyle = "curtain"; b.glassy = true; } },
   { label: "ленточное остекление", re: w("ленточн(ое|ым) остеклен|ribbon window|полос(а|ы) окон"), apply: (b) => { b.windowStyle = "ribbon"; } },
   { label: "дверь", re: w("двер[ьиями]|\\bdoor\\b|вход|калитк|ворот"), counter: /двер|\bdoor\b|ворот/i, apply: (b, n) => { b.doors = n ?? Math.max(b.doors, 1); } },
@@ -512,6 +514,7 @@ function baseBlueprint(prompt: string): Blueprint {
 
     floors: 0,
     windows: 0,
+    windowsExplicit: false,
     windowStyle: "punched",
     doors: 0,
     roof: "none",
@@ -656,6 +659,17 @@ export function planFromPrompt(prompt: string): Blueprint {
     if (!params.height) blueprint.height = Math.max(3.2, params.floors * 3.3);
     if (blueprint.roof === "none") blueprint.roof = params.floors > 5 ? "flat" : "gable";
     if (!blueprint.windows) blueprint.windows = params.floors * 4;
+
+    // A tall block needs a footprint to stand on. Without this a 20-storey
+    // house came out 9 × 10 m — a pencil rather than a building.
+    if (params.floors >= 5) {
+      if (!params.width) {
+        blueprint.width = Math.max(blueprint.width, Math.min(60, 13 + params.floors * 0.55));
+      }
+      if (!params.depth) {
+        blueprint.length = Math.max(blueprint.length, Math.min(45, 11 + params.floors * 0.35));
+      }
+    }
   }
   if (params.roof) blueprint.roof = params.roof;
   if (params.color) blueprint.primary = params.color;
@@ -681,9 +695,23 @@ export function planFromPrompt(prompt: string): Blueprint {
   blueprint.height = rng.vary(blueprint.height, 0.08);
   blueprint.detail = Math.max(0.5, Math.min(2.2, blueprint.detail + rng.float(-0.05, 0.15)));
 
-  if (params.count && blueprint.windows) blueprint.windows = params.count;
+  if (params.count && blueprint.windows) {
+    blueprint.windows = params.count;
+    blueprint.windowsExplicit = true;
+  }
   if (params.material === "glass") blueprint.glassy = true;
   if (params.material === "metal") blueprint.metalness = 0.78;
+
+  // A 200 x 150 m plan at 7 m tall is a pancake. When neither a height nor a
+  // storey count was given, let the footprint set a believable one.
+  if (
+    !params.height &&
+    !params.floors &&
+    (blueprint.sizeClass === "structure" || blueprint.sizeClass === "landmark")
+  ) {
+    const footprint = Math.sqrt(blueprint.width * blueprint.length);
+    blueprint.height = Math.max(blueprint.height, Math.min(26, footprint * 0.09));
+  }
 
   blueprint.length = Math.max(0.02, blueprint.length);
   blueprint.width = Math.max(0.02, blueprint.width);

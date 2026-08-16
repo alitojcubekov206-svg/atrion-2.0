@@ -163,21 +163,27 @@ export function windowUnit(options: WindowOptions): ModelPart[] {
 
   if (mullions > 0) {
     const gap = width / (mullions + 1);
-    parts.push(
-      part(id(), `${name} — импост`, {
-        shape: "box",
-        role: "detail",
-        position: shift(center, offset(facing, -width / 2 + gap, 0, depth * 0.45)),
-        size: orient(facing, bar * 0.6, height - bar, depth * 0.8),
-        color: frameColor,
-        material: "Профиль",
-        ...common,
-        repeat: {
-          count: mullions,
-          step: offset(facing, gap, 0, 0),
-        },
-      })
-    );
+    // A part carries one `repeat`. When the caller already spends it — glazing a
+    // whole facade from a single unit — the glazing bars are emitted one by one
+    // so they appear on every copy instead of only the first.
+    const spans = repeat ? Array.from({ length: mullions }, (_, i) => i) : [0];
+    for (const index of spans) {
+      parts.push(
+        part(id(), `${name} — импост${repeat ? ` ${index + 1}` : ""}`, {
+          shape: "box",
+          role: "detail",
+          position: shift(
+            center,
+            offset(facing, -width / 2 + gap * (index + 1), 0, depth * 0.45)
+          ),
+          size: orient(facing, bar * 0.6, height - bar, depth * 0.8),
+          color: frameColor,
+          material: "Профиль",
+          ...common,
+          ...(repeat ? {} : { repeat: { count: mullions, step: offset(facing, gap, 0, 0) } }),
+        })
+      );
+    }
   }
 
   if (transom) {

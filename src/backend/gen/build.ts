@@ -246,6 +246,66 @@ function massStacked(ctx: Ctx) {
     );
   }
 
+  // A tall building is a few massed volumes, not one box per storey. Emitting
+  // forty boxes made the model heavy to edit and read as a stack of crates;
+  // this groups the storeys into a podium and two-to-four shafts and lets one
+  // repeated part draw every floor band.
+  if (levels > 4) {
+    const shafts = clamp(Math.round(levels / 9) + 1, 2, 4);
+    const podium = levels >= 10 ? Math.min(2, levels - 2) : 0;
+    const blocks: { from: number; to: number; k: number; label: string }[] = [];
+
+    if (podium > 0) blocks.push({ from: 0, to: podium, k: 1.16, label: "Стилобат" });
+    const remaining = levels - podium;
+    const perShaft = Math.ceil(remaining / shafts);
+    for (let i = 0; i < shafts; i++) {
+      const from = podium + i * perShaft;
+      const to = Math.min(levels, from + perShaft);
+      if (to <= from) break;
+      blocks.push({ from, to, k: 1 - i * 0.09, label: `Объём ${i + 1}` });
+    }
+
+    for (const block of blocks) {
+      const count = block.to - block.from;
+      const centre = body.y0 + step * (block.from + count / 2);
+      push(
+        ctx,
+        part(ctx.id(), `${block.label} · этажи ${block.from + 1}–${block.to}`, {
+          shape: bp.bodyShape === "prism" ? "box" : bp.bodyShape,
+          role: "volume",
+          group: "Этажи",
+          position: [0, centre, 0],
+          size: [bp.width * block.k, step * count, bp.length * block.k],
+          color: block.k >= 1 ? shade(bp.primary, -0.06) : bp.primary,
+          material: "Основной объём",
+          metalness: bp.metalness,
+          roughness: bp.roughness,
+          ...(bp.glassy ? { opacity: 0.72 } : {}),
+        }),
+        part(ctx.id(), `Межэтажный пояс · ${block.label}`, {
+          shape: "box",
+          role: "detail",
+          group: "Фасад",
+          position: [0, body.y0 + step * (block.from + 1), 0],
+          size: [
+            bp.width * block.k + bp.width * 0.025,
+            step * 0.08,
+            bp.length * block.k + bp.length * 0.025,
+          ],
+          color: bp.trim,
+          material: "Пояс",
+          roughness: 0.8,
+          repeat: { count, step: [0, step, 0] },
+        })
+      );
+    }
+
+    const base = blocks[0]?.k ?? 1;
+    body.halfW = (bp.width * base) / 2;
+    body.halfL = (bp.length * base) / 2;
+    return;
+  }
+
   for (let i = 0; i < levels; i++) {
     const k = profile[i];
     const y = body.y0 + step * (i + 0.5);
@@ -1311,65 +1371,97 @@ function addFins(ctx: Ctx) {
 
 /* ================= architecture ================= */
 
+/**
+ * Glazing for a whole facade.
+ *
+ * `repeat` is one-dimensional, so a grid of windows is either one part per
+ * storey repeated across, or one part per column repeated upward. Picking the
+ * cheaper axis is what makes tall buildings viable: a 20-storey block used to
+ * cost 160 parts and stopped glazing at floor 12; column-major it is a couple
+ * of dozen parts and every storey is glazed.
+ */
 function addWindows(ctx: Ctx) {
   const { bp, body } = ctx;
   const levels = Math.max(1, bp.floors || 1);
-  const perLevel = clamp(Math.ceil(bp.windows / levels), 1, 14);
   const span = body.y1 - body.y0;
   const levelHeight = span / levels;
   const frameColor = shade(bp.trim, 0.35);
   const glass = bp.glassy ? "#a7d8f5" : "#8ecbf0";
 
-  const usable = bp.width * 0.86;
-  const step = usable / perLevel;
-  const windowWidth = step * (bp.windowStyle === "curtain" ? 0.94 : 0.62);
-  const windowHeight = levelHeight * (bp.windowStyle === "curtain" ? 0.78 : 0.5);
+  // Bay spacing follows the building, not an arbitrary window count: a 200 m
+  // mall gets a rhythm of bays instead of six lonely openings.
+  const bay = bp.sizeClass === "structure" || bp.sizeClass === "landmark" ? 3.6 : 1.6;
 
-  for (let level = 0; level < Math.min(levels, 12); level++) {
-    const y = body.y0 + levelHeight * (level + 0.55);
-    push(
-      ctx,
-      windowUnit({
-        id: ctx.id,
-        group: "Фасад",
-        name: `Окно ${level + 1}`,
-        center: [-usable / 2 + step / 2, y, body.halfL],
-        width: windowWidth,
-        height: windowHeight,
-        facing: "front",
-        frameColor,
-        glassColor: glass,
-        mullions: bp.windowStyle === "curtain" ? 2 : 1,
-        transom: bp.windowStyle !== "punched",
-        sill: bp.windowStyle === "punched",
-        shutters: bp.detail > 1.3 && bp.windowStyle === "punched" && levels <= 2,
-        repeat: { count: perLevel, step: [step, 0, 0] },
-      })
-    );
+  const facade = (
+    label: string,
+    facing: "front" | "right",
+    facadeWidth: number,
+    axis: "x" | "z",
+    offsetOut: number
+  ) => {
+    // Bay rhythm decides the count, unless the prompt named one outright.
+    const maxColumns = bp.windowsExplicit
+      ? clamp(Math.ceil(bp.windows / levels), 2, 20)
+      : 20;
+    const columns = clamp(Math.round((facadeWidth * 0.86) / bay), 2, maxColumns);
+    const usable = facadeWidth * 0.86;
+    const stepAcross = usable / columns;
+    const windowWidth = stepAcross * (bp.windowStyle === "curtain" ? 0.9 : 0.6);
+    const windowHeight = levelHeight * (bp.windowStyle === "curtain" ? 0.74 : 0.48);
+    const columnMajor = levels > columns;
 
-    // The back and the sides get glazing too, at a lower density.
-    if (bp.detail > 0.9) {
-      const sideCount = clamp(Math.round((bp.length * 0.8) / step), 1, 10);
+    const positionFor = (index: number, level: number): Vec3 => {
+      const across = -usable / 2 + stepAcross * (index + 0.5);
+      const y = body.y0 + levelHeight * (level + 0.55);
+      return axis === "x" ? [across, y, offsetOut] : [offsetOut, y, across];
+    };
+
+    const shared = {
+      id: ctx.id,
+      group: "Фасад",
+      width: windowWidth,
+      height: windowHeight,
+      facing,
+      frameColor,
+      glassColor: glass,
+      mullions: bp.windowStyle === "curtain" ? 2 : 1,
+      transom: bp.windowStyle !== "punched",
+      sill: bp.windowStyle === "punched",
+      ...(facing === "right" ? { mirror: "x" as const } : {}),
+    };
+
+    if (columnMajor) {
+      for (let column = 0; column < columns; column++) {
+        push(
+          ctx,
+          windowUnit({
+            ...shared,
+            name: `${label} · ось ${column + 1}`,
+            center: positionFor(column, 0),
+            repeat: { count: levels, step: [0, levelHeight, 0] },
+          })
+        );
+      }
+      return;
+    }
+
+    for (let level = 0; level < levels; level++) {
+      const stepVector: Vec3 = axis === "x" ? [stepAcross, 0, 0] : [0, 0, stepAcross];
       push(
         ctx,
         windowUnit({
-          id: ctx.id,
-          group: "Фасад",
-          name: `Окно бок ${level + 1}`,
-          center: [body.halfW, y, -bp.length * 0.4 + step / 2],
-          width: windowWidth,
-          height: windowHeight,
-          facing: "right",
-          frameColor,
-          glassColor: glass,
-          mullions: 1,
-          sill: bp.windowStyle === "punched",
-          mirror: "x",
-          repeat: { count: sideCount, step: [0, 0, step] },
+          ...shared,
+          name: `${label} · этаж ${level + 1}`,
+          center: positionFor(0, level),
+          shutters: bp.detail > 1.3 && bp.windowStyle === "punched" && levels <= 2,
+          repeat: { count: columns, step: stepVector },
         })
       );
     }
-  }
+  };
+
+  facade("Окно", "front", bp.width, "x", body.halfL);
+  if (bp.detail > 0.9) facade("Окно бок", "right", bp.length, "z", body.halfW);
 }
 
 function addDoors(ctx: Ctx) {
