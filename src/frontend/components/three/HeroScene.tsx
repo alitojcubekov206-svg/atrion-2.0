@@ -1,10 +1,10 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import { Float, Grid, Stars } from "@react-three/drei";
 import { useRef } from "react";
 import type { Group, Mesh } from "three";
-import * as THREE from "three";
+import AmbientCanvas from "@/frontend/components/three/AmbientCanvas";
 
 const VIOLET = "#a78bfa";
 const VIOLET_HOT = "#c4b5fd";
@@ -117,17 +117,7 @@ function PulseCore() {
 export default function HeroScene() {
   return (
     <div className="absolute inset-0 -z-10">
-      <Canvas
-        dpr={[1, 1.25]}
-        camera={{ position: [5.5, 3.2, 7.2], fov: 42 }}
-        gl={{
-          antialias: false,
-          alpha: true,
-          powerPreference: "low-power",
-          toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.25,
-        }}
-      >
+      <AmbientCanvas fps={30} camera={{ position: [5.5, 3.2, 7.2], fov: 42 }}>
         <color attach="background" args={[BG]} />
         <fog attach="fog" args={[BG, 12, 30]} />
         <hemisphereLight args={["#e9d5ff", BG, 0.9]} />
@@ -150,7 +140,7 @@ export default function HeroScene() {
           infiniteGrid
         />
         <Stars radius={60} depth={30} count={400} factor={2.2} saturation={0} fade speed={0.35} />
-      </Canvas>
+      </AmbientCanvas>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_25%,rgba(5,5,7,0.4)_75%,#050507_96%)]" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#050507] to-transparent" />
     </div>
