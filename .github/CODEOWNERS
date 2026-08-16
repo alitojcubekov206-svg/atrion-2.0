@@ -1,0 +1,24 @@
+# Кто за какую часть отвечает.
+#
+# Это служебный файл GitHub — его нельзя переименовывать и переносить,
+# иначе правило перестаёт работать. GitHub читает его только по путям
+# .github/CODEOWNERS, CODEOWNERS или docs/CODEOWNERS.
+#
+# Понятная инструкция для людей — в файле «инструкция фронтенд и бекенд»
+# в корне репозитория.
+#
+# ВАЖНО: замени @frontend-developer на настоящий ник друга на GitHub
+# (тот, что в адресе его профиля: github.com/НИК).
+
+# Фронтенд — страницы, компоненты, 3D-вьюпорт, голосовой интерфейс
+/src/frontend/            @frontend-developer
+/src/app/dashboard/       @frontend-developer
+/src/app/globals.css      @frontend-developer
+
+# Бэкенд — API, база, авторизация, платежи, генератор моделей
+/src/backend/             @alitojcubekov206-svg
+/src/app/api/             @alitojcubekov206-svg
+/prisma/                  @alitojcubekov206-svg
+
+# Общее — типы и геометрия, меняются вдвоём
+/src/shared/              @alitojcubekov206-svg @frontend-developer
