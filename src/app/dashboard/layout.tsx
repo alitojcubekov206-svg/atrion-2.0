@@ -6,6 +6,7 @@ import LogoutButton from "@/frontend/components/LogoutButton";
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (!user.emailVerified) redirect("/verify");
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[#050507]">

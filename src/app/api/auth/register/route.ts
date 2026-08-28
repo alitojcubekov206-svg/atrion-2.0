@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/backend/db";
 import { createSession } from "@/backend/auth";
+import { issueVerificationCode } from "@/backend/verification";
 
 export async function POST(req: Request) {
   let body: Record<string, unknown>;
@@ -35,10 +36,12 @@ export async function POST(req: Request) {
       name,
       email,
       password: passwordHash,
-      emailVerified: true,
+      emailVerified: false,
     },
   });
 
+  const { devCode } = await issueVerificationCode(user.id, user.email);
+
   await createSession(user.id);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, devCode });
 }

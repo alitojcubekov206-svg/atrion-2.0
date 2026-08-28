@@ -82,6 +82,7 @@ export async function getCurrentUser() {
       email: true,
       plan: true,
       planExpiresAt: true,
+      emailVerified: true,
       createdAt: true,
     },
   });
@@ -102,6 +103,7 @@ export async function getCurrentUser() {
         email: true,
         plan: true,
         planExpiresAt: true,
+        emailVerified: true,
         createdAt: true,
       },
     });
