@@ -43,7 +43,7 @@ export default function AuthForm({
     const data = await res.json().catch(() => ({}));
 
     if (res.ok) {
-      router.push("/dashboard");
+      router.push(mode === "register" ? "/verify" : "/dashboard");
       router.refresh();
     } else {
       setError(data.error ?? "Что-то пошло не так");
