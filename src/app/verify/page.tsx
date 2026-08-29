@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/backend/auth";
+import { isEmailVerificationEnabled } from "@/backend/verification";
 import VerifyForm from "@/frontend/components/VerifyForm";
 
 export default async function VerifyPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.emailVerified) redirect("/dashboard");
+  if (!isEmailVerificationEnabled() || user.emailVerified) redirect("/dashboard");
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#050507] px-6">
