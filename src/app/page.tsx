@@ -19,7 +19,7 @@ export default async function Home() {
               href="/dashboard/design-engine"
               className="btn-primary rounded-full px-5 py-2 text-sm"
             >
-              Engine
+              Открыть Engine
             </Link>
           ) : (
             <>
@@ -30,7 +30,7 @@ export default async function Home() {
                 href="/register"
                 className="btn-ghost rounded-full px-5 py-2 text-sm"
               >
-                Start
+                Начать
               </Link>
             </>
           )}
