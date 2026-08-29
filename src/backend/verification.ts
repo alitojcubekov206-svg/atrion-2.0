@@ -6,6 +6,11 @@ const CODE_TTL_MS = 10 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 export const MAX_VERIFICATION_ATTEMPTS = 5;
 
+// Off until a verified sending domain is set up in Resend (test mode can only email the account owner).
+export function isEmailVerificationEnabled() {
+  return process.env.EMAIL_VERIFICATION_ENABLED === "true";
+}
+
 function generateCode() {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
 }

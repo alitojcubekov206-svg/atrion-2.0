@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/backend/db";
 import { createSession } from "@/backend/auth";
-import { issueVerificationCode } from "@/backend/verification";
+import { isEmailVerificationEnabled, issueVerificationCode } from "@/backend/verification";
 
 export async function POST(req: Request) {
   let body: Record<string, unknown>;
@@ -30,17 +30,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Пользователь с таким email уже существует" }, { status: 409 });
   }
 
+  const verificationEnabled = isEmailVerificationEnabled();
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await db.user.create({
     data: {
       name,
       email,
       password: passwordHash,
-      emailVerified: false,
+      emailVerified: !verificationEnabled,
     },
   });
 
-  const { devCode } = await issueVerificationCode(user.id, user.email);
+  const devCode = verificationEnabled
+    ? (await issueVerificationCode(user.id, user.email)).devCode
+    : undefined;
 
   await createSession(user.id);
   return NextResponse.json({ ok: true, devCode });
