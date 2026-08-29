@@ -1,12 +1,14 @@
 import Link from "next/link";
 import LandingHero from "@/frontend/components/LandingHero";
+import LandingCTA from "@/frontend/components/LandingCTA";
+import ScrollShowcaseLoader from "@/frontend/components/three/ScrollShowcaseLoader";
 import { getCurrentUser } from "@/backend/auth";
 
 export default async function Home() {
   const user = await getCurrentUser();
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#050507]">
+    <main className="relative min-h-screen bg-[#050507]">
       <nav className="fixed top-0 z-50 flex w-full items-center justify-between px-6 py-5 md:px-10">
         <Link href="/" className="display text-lg font-semibold tracking-tight text-white">
           ATRION
@@ -36,6 +38,8 @@ export default async function Home() {
       </nav>
 
       <LandingHero loggedIn={Boolean(user)} />
+      <ScrollShowcaseLoader />
+      <LandingCTA loggedIn={Boolean(user)} />
     </main>
   );
 }
