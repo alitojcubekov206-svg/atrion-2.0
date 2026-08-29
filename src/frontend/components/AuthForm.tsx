@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, type Variants } from "framer-motion";
+import AuthTransition from "@/frontend/components/AuthTransition";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -26,6 +27,7 @@ export default function AuthForm({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -43,12 +45,21 @@ export default function AuthForm({
     const data = await res.json().catch(() => ({}));
 
     if (res.ok) {
-      router.push(mode === "register" ? "/verify" : "/dashboard");
-      router.refresh();
+      setTransitioning(true);
+      setTimeout(() => {
+        router.push(mode === "register" ? "/verify" : "/dashboard");
+        router.refresh();
+      }, 1100);
     } else {
       setError(data.error ?? "Что-то пошло не так");
       setLoading(false);
     }
+  }
+
+  if (transitioning) {
+    return (
+      <AuthTransition label={mode === "register" ? "Создаём аккаунт…" : "Входим…"} />
+    );
   }
 
   if (variant === "gate") {
