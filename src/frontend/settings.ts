@@ -14,7 +14,7 @@ const KEY = "atrion_settings_v1";
 export const DEFAULT_SETTINGS: AtrionSettings = {
   language: "ru",
   voiceEnabled: true,
-  voiceAuto: true,
+  voiceAuto: false,
   units: "m",
   voiceURI: "",
   voiceRate: 1,

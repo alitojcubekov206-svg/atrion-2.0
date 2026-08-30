@@ -78,7 +78,7 @@ const EXAMPLES = [
 ];
 
 type ChatMessage = { role: "user" | "assistant"; text: string };
-type ExportFormat = "glb" | "stl" | "obj";
+type ExportFormat = "glb" | "stl" | "obj" | "ply" | "usdz";
 type Providers = { aiConfigured?: boolean };
 /** What the server read out of the prompt — ТЗ 4.1 debugging log. */
 type Diagnostics = {
@@ -808,7 +808,11 @@ export default function DesignEnginePage() {
           ? await exporter.exportConceptGlb(concept)
           : format === "stl"
             ? exporter.exportConceptStl(concept)
-            : exporter.exportConceptObj(concept);
+            : format === "obj"
+              ? exporter.exportConceptObj(concept)
+              : format === "ply"
+                ? exporter.exportConceptPly(concept)
+                : await exporter.exportConceptUsdz(concept);
       exporter.downloadBlob(`${concept.name}.${format}`, blob);
     } catch (exportError) {
       setError(
@@ -1074,6 +1078,28 @@ export default function DesignEnginePage() {
               </Link>
             </div>
           </div>
+
+          {concept && (
+            <div className="border-b border-white/[0.06] px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white">{concept.name}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-[#8f8a82]">{concept.description}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopSpeaking();
+                    speakText(`${concept.name}. ${concept.description}`);
+                  }}
+                  title="Озвучить описание"
+                  className="shrink-0 rounded-full border border-white/10 px-2.5 py-1.5 text-[11px] text-[#8f8a82] hover:border-[#a78bfa]/40 hover:text-white"
+                >
+                  🔊
+                </button>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="mx-4 mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
@@ -1399,6 +1425,22 @@ export default function DesignEnginePage() {
                       className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-[#b8b2a8] disabled:opacity-40"
                     >
                       {exportBusy === "obj" ? "готовим файл…" : "OBJ"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => exportModel("ply")}
+                      disabled={exportBusy !== null}
+                      className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-[#b8b2a8] disabled:opacity-40"
+                    >
+                      {exportBusy === "ply" ? "готовим файл…" : "PLY"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => exportModel("usdz")}
+                      disabled={exportBusy !== null}
+                      className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-[#b8b2a8] disabled:opacity-40"
+                    >
+                      {exportBusy === "usdz" ? "готовим файл…" : "USDZ"}
                     </button>
                     <button
                       type="button"

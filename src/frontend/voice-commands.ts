@@ -32,7 +32,7 @@ export type VoiceCommand =
   | { kind: "view"; view: DrawingViewName; label: string }
   | { kind: "tool"; tool: CadToolName; label: string }
   | { kind: "snap"; on: boolean }
-  | { kind: "export"; format: "glb" | "stl" | "obj" }
+  | { kind: "export"; format: "glb" | "stl" | "obj" | "ply" | "usdz" }
   | { kind: "measure" }
   | { kind: "reset" }
   | { kind: "generate"; prompt: string }
@@ -224,6 +224,8 @@ export function parseVoiceCommand(raw: string): VoiceCommand {
   if (word("скачай|скачать|экспорт|экспортируй|сохрани|сохранить|выгрузи|download|export").test(lower)) {
     if (/stl/i.test(lower)) return { kind: "export", format: "stl" };
     if (/obj/i.test(lower)) return { kind: "export", format: "obj" };
+    if (/ply/i.test(lower)) return { kind: "export", format: "ply" };
+    if (/usdz/i.test(lower)) return { kind: "export", format: "usdz" };
     return { kind: "export", format: "glb" };
   }
 

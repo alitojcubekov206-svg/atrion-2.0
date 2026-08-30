@@ -20,12 +20,16 @@ import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { OBJExporter } from "three/examples/jsm/exporters/OBJExporter.js";
+import { PLYExporter } from "three/examples/jsm/exporters/PLYExporter.js";
+import { USDZExporter } from "three/examples/jsm/exporters/USDZExporter.js";
 import { expandPart } from "@/shared/geometry";
 import type { ModelPart, ThreeDConcept } from "@/shared/types";
 
 const MIME_GLB = "model/gltf-binary";
 const MIME_STL = "model/stl";
 const MIME_OBJ = "model/obj";
+const MIME_PLY = "application/octet-stream";
+const MIME_USDZ = "model/vnd.usdz+zip";
 
 /** Nothing thinner than a millimetre — keeps STL solids printable. */
 const MIN_SIZE = 0.001;
@@ -372,6 +376,32 @@ export function exportConceptObj(concept: ThreeDConcept): Blob {
   try {
     const text: string = new OBJExporter().parse(scene);
     return new Blob([text], { type: MIME_OBJ });
+  } finally {
+    disposeScene(scene);
+  }
+}
+
+/** Binary PLY — vertex/color mesh format used by scanning and point-cloud tools. */
+export function exportConceptPly(concept: ThreeDConcept): Blob {
+  requireParts(concept);
+  const scene = buildConceptScene(concept);
+  try {
+    const result = new PLYExporter().parse(scene, () => {}, { binary: true }) as
+      | ArrayBuffer
+      | string;
+    return new Blob([result as BlobPart], { type: MIME_PLY });
+  } finally {
+    disposeScene(scene);
+  }
+}
+
+/** USDZ — the zipped USD package Apple Quick Look and AR viewers expect. */
+export async function exportConceptUsdz(concept: ThreeDConcept): Promise<Blob> {
+  requireParts(concept);
+  const scene = buildConceptScene(concept);
+  try {
+    const result = await new USDZExporter().parseAsync(scene);
+    return new Blob([result as BlobPart], { type: MIME_USDZ });
   } finally {
     disposeScene(scene);
   }
