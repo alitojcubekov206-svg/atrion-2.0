@@ -58,6 +58,8 @@ const ConceptViewer = dynamic(() => import("@/frontend/components/three/ConceptV
   loading: () => <div className="h-full animate-pulse bg-[#2b2d33]" />,
 });
 
+const CubesLoop = dynamic(() => import("@/frontend/components/three/CubesLoop"), { ssr: false });
+
 const PIPELINE = [
   "Читаю описание",
   "Считаю пропорции",
@@ -1027,9 +1029,10 @@ export default function DesignEnginePage() {
               exit={{ opacity: 0 }}
               className="absolute inset-0 z-30 flex items-center justify-center bg-[#050507]/55 backdrop-blur-sm"
             >
-              <div className="w-full max-w-xs rounded-2xl border border-[#a78bfa]/25 bg-[#121214]/95 p-5">
+              <div className="w-full max-w-md rounded-2xl border border-[#a78bfa]/25 bg-[#121214]/95 p-6">
+                <CubesLoop className="mx-auto mb-3 h-80 w-full" />
                 <p className="mb-3 text-[10px] uppercase tracking-[0.28em] text-[#a78bfa]/80">
-                  {pipelineStep >= 3 ? "Собираем детали…" : "Building"}
+                  {pipelineStep >= 3 ? "Собираем детали…" : "Строим модель…"}
                 </p>
                 <ul className="space-y-2">
                   {PIPELINE.map((step, index) => (
