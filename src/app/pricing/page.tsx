@@ -1,8 +1,12 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { getCurrentUser } from "@/backend/auth";
 import { PLANS } from "@/backend/plans";
 import { isFinikConfigured } from "@/backend/finik";
 import FinikPayButton from "@/frontend/components/payments/FinikPayButton";
+import Footer from "@/frontend/components/Footer";
+
+export const metadata: Metadata = { title: "Тарифы" };
 
 export default async function PricingPage({
   searchParams,
@@ -18,11 +22,12 @@ export default async function PricingPage({
   const wa = process.env.PAYMENT_WHATSAPP;
   const waLink = wa
     ? `https://wa.me/${wa}?text=${encodeURIComponent(
-        `Привет! Хочу подписку Atrion Pro ($2/мес). Мой email на сайте: ${user?.email ?? ""}`
+        `Привет! Хочу подписку Atrion Pro (${PLANS.pro.price}). Мой email на сайте: ${user?.email ?? ""}`
       )}`
     : null;
 
   return (
+    <>
     <main className="min-h-screen px-6 py-16">
       <nav className="mx-auto mb-16 flex max-w-5xl items-center justify-between">
         <Link href="/" className="display text-lg font-semibold tracking-tight">
@@ -123,7 +128,7 @@ export default async function PricingPage({
                 rel="noopener noreferrer"
                 className="btn-primary block rounded-full py-3 text-center font-semibold text-white"
               >
-                Оплатить $2 — написать в WhatsApp
+                Оплатить {PLANS.pro.price} — написать в WhatsApp
               </a>
               <p className="mt-3 text-center text-xs text-muted">
                 Перевод через Mbank / O!Деньги / Элсом. Активация Pro в течение часа после оплаты.
@@ -145,5 +150,7 @@ export default async function PricingPage({
         </div>
       </div>
     </main>
+    <Footer />
+    </>
   );
 }

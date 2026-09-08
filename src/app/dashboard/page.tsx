@@ -1,9 +1,12 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { db } from "@/backend/db";
 import { getSessionUserId, getUserPlan } from "@/backend/auth";
 import { FREE_PROJECT_LIMIT } from "@/backend/plans";
 import type { Blueprint } from "@/shared/types";
 import StarkHudFrame, { StarkPanel } from "@/frontend/components/StarkHudFrame";
+
+export const metadata: Metadata = { title: "Проекты" };
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "Черновик",

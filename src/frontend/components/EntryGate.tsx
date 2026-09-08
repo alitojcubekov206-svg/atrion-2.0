@@ -82,7 +82,9 @@ function GateBrand({ mode }: { mode: "login" | "register" }) {
 export function LoginGate() {
   return (
     <main className="relative flex min-h-screen overflow-hidden bg-[#050507]">
-      <EntryGateScene />
+      <div aria-hidden="true">
+        <EntryGateScene />
+      </div>
       <div className="relative z-10 flex min-h-screen w-full flex-col justify-center px-6 py-16 md:w-[46%] md:px-12 lg:px-16">
         <GateBrand mode="login" />
       </div>
@@ -93,7 +95,9 @@ export function LoginGate() {
 export function RegisterGate() {
   return (
     <main className="relative flex min-h-screen overflow-hidden bg-[#050507]">
-      <EntryGateScene />
+      <div aria-hidden="true">
+        <EntryGateScene />
+      </div>
       <div className="relative z-10 flex min-h-screen w-full flex-col justify-center px-6 py-16 md:w-[46%] md:px-12 lg:px-16">
         <GateBrand mode="register" />
       </div>

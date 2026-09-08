@@ -142,7 +142,9 @@ export default function LandingHero({ loggedIn }: { loggedIn: boolean }) {
 
   return (
     <section className="relative flex min-h-screen items-end overflow-hidden px-6 pb-24 pt-28 md:items-center md:pb-0 md:pt-0">
-      <HeroScene />
+      <div aria-hidden="true">
+        <HeroScene />
+      </div>
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#050507]/85 via-[#050507]/35 to-transparent" />
       <DotGrid className="inset-y-0 left-0 w-full md:w-3/5" />
       <div className="pointer-events-none absolute -left-24 top-1/4 h-80 w-80 rounded-full bg-[radial-gradient(circle,rgba(167,139,250,0.18),transparent_65%)] blur-2xl" />

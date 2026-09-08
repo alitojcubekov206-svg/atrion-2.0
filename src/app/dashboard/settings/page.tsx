@@ -1,7 +1,10 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { getCurrentUser } from "@/backend/auth";
 import StarkHudFrame, { StarkPanel } from "@/frontend/components/StarkHudFrame";
 import SettingsClient from "@/frontend/components/SettingsClient";
+
+export const metadata: Metadata = { title: "Настройки" };
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();

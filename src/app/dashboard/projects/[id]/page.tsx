@@ -1,7 +1,18 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/backend/db";
 import { getSessionUserId } from "@/backend/auth";
 import ProjectView from "@/frontend/components/project/ProjectView";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const project = await db.project.findUnique({ where: { id }, select: { title: true } });
+  return { title: project?.title || "Проект" };
+}
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

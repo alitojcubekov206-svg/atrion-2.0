@@ -64,7 +64,7 @@ export default function AuthForm({
 
   if (variant === "gate") {
     const gateInput =
-      "w-full border-0 border-b border-white/12 bg-transparent px-1 py-3.5 text-[15px] text-white outline-none transition placeholder:text-[#6a6560] focus:border-[#a78bfa]/70";
+      "w-full border-0 border-b border-white/12 bg-transparent px-1 py-3.5 text-[15px] text-white transition placeholder:text-muted focus:border-[#a78bfa]/70 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a78bfa]";
 
     return (
       <motion.form
@@ -79,11 +79,21 @@ export default function AuthForm({
       >
         {mode === "register" && (
           <motion.div variants={gateItem}>
-            <input name="name" placeholder="Имя" required autoComplete="name" className={gateInput} />
+            <label htmlFor="gate-name" className="sr-only">Имя</label>
+            <input
+              id="gate-name"
+              name="name"
+              placeholder="Имя"
+              required
+              autoComplete="name"
+              className={gateInput}
+            />
           </motion.div>
         )}
         <motion.div variants={gateItem}>
+          <label htmlFor="gate-email" className="sr-only">Email</label>
           <input
+            id="gate-email"
             name="email"
             type="email"
             placeholder="Email"
@@ -93,7 +103,9 @@ export default function AuthForm({
           />
         </motion.div>
         <motion.div variants={gateItem}>
+          <label htmlFor="gate-password" className="sr-only">Пароль</label>
           <input
+            id="gate-password"
             name="password"
             type="password"
             placeholder="Пароль"
@@ -118,7 +130,20 @@ export default function AuthForm({
         >
           {loading ? "…" : mode === "login" ? "Войти" : "Начать"}
         </motion.button>
-        <motion.p variants={gateItem} className="pt-1 text-center text-sm text-[#6a6560]">
+        {mode === "register" && (
+          <motion.p variants={gateItem} className="text-center text-xs leading-relaxed text-muted">
+            Создавая аккаунт, вы соглашаетесь с{" "}
+            <Link href="/legal#terms" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
+              условиями
+            </Link>{" "}
+            и{" "}
+            <Link href="/legal#privacy" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
+              политикой конфиденциальности
+            </Link>
+            .
+          </motion.p>
+        )}
+        <motion.p variants={gateItem} className="pt-1 text-center text-sm text-muted">
           {mode === "login" ? (
             <Link href="/register" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
               Создать аккаунт
@@ -134,7 +159,7 @@ export default function AuthForm({
   }
 
   const inputCls =
-    "w-full rounded-xl border border-line bg-surface2 px-4 py-3 text-sm outline-none transition focus:border-accent";
+    "w-full rounded-xl border border-line bg-surface2 px-4 py-3 text-sm transition focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
   return (
     <motion.div
@@ -152,10 +177,16 @@ export default function AuthForm({
 
       <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-4">
         {mode === "register" && (
-          <input name="name" placeholder="Имя" required className={inputCls} />
+          <>
+            <label htmlFor="card-name" className="sr-only">Имя</label>
+            <input id="card-name" name="name" placeholder="Имя" required className={inputCls} />
+          </>
         )}
-        <input name="email" type="email" placeholder="Email" required className={inputCls} />
+        <label htmlFor="card-email" className="sr-only">Email</label>
+        <input id="card-email" name="email" type="email" placeholder="Email" required className={inputCls} />
+        <label htmlFor="card-password" className="sr-only">Пароль</label>
         <input
+          id="card-password"
           name="password"
           type="password"
           placeholder="Пароль (мин. 6 символов)"
@@ -171,6 +202,15 @@ export default function AuthForm({
           {loading ? "..." : mode === "login" ? "Войти" : "Зарегистрироваться"}
         </button>
       </form>
+
+      {mode === "register" && (
+        <p className="mt-4 text-center text-xs leading-relaxed text-muted">
+          Регистрируясь, вы соглашаетесь с{" "}
+          <Link href="/legal#terms" className="text-accent hover:underline">условиями</Link>{" "}
+          и{" "}
+          <Link href="/legal#privacy" className="text-accent hover:underline">политикой конфиденциальности</Link>.
+        </p>
+      )}
 
       <p className="mt-6 text-center text-sm text-muted">
         {mode === "login" ? (

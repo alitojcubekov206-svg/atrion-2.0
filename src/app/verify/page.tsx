@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/backend/auth";
 import { isEmailVerificationEnabled } from "@/backend/verification";
 import VerifyForm from "@/frontend/components/VerifyForm";
+
+export const metadata: Metadata = { title: "Подтверждение email" };
 
 export default async function VerifyPage() {
   const user = await getCurrentUser();

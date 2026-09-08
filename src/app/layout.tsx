@@ -16,10 +16,29 @@ const display = Unbounded({
   weight: ["500", "600", "700"],
 });
 
+const SITE_URL = process.env.APP_URL || "https://atrion-2-0.vercel.app";
+const SITE_DESCRIPTION =
+  "Atrion понимает человека и создаёт вместе с ним: 3D-объекты, архитектура и intelligent design в браузере.";
+
 export const metadata: Metadata = {
-  title: "Atrion — AI Design Engine",
-  description:
-    "Atrion понимает человека и создаёт вместе с ним: 3D-объекты, архитектура и intelligent design в браузере.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Atrion — AI Design Engine",
+    template: "%s · Atrion",
+  },
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    type: "website",
+    siteName: "Atrion",
+    title: "Atrion — AI Design Engine",
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Atrion — AI Design Engine",
+    description: SITE_DESCRIPTION,
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

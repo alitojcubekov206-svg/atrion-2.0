@@ -13,7 +13,7 @@ export default function VerifyForm() {
   const [resending, setResending] = useState(false);
 
   const inputCls =
-    "w-full border-0 border-b border-white/12 bg-transparent px-1 py-3.5 text-center text-2xl tracking-[0.5em] text-white outline-none transition placeholder:text-[#6a6560] focus:border-[#a78bfa]/70";
+    "w-full border-0 border-b border-white/12 bg-transparent px-1 py-3.5 text-center text-2xl tracking-[0.5em] text-white transition placeholder:text-muted focus:border-[#a78bfa]/70 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a78bfa]";
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -59,7 +59,9 @@ export default function VerifyForm() {
       transition={{ duration: 0.4 }}
       className="mt-9 flex w-full flex-col gap-5"
     >
+      <label htmlFor="verify-code" className="sr-only">Код подтверждения</label>
       <input
+        id="verify-code"
         value={code}
         onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
         inputMode="numeric"
@@ -82,7 +84,7 @@ export default function VerifyForm() {
         type="button"
         onClick={resend}
         disabled={resending}
-        className="pt-1 text-center text-sm text-[#6a6560] transition hover:text-[#a78bfa] disabled:opacity-60"
+        className="pt-1 text-center text-sm text-muted transition hover:text-[#a78bfa] disabled:opacity-60"
       >
         {resending ? "Отправка…" : "Отправить код повторно"}
       </button>
