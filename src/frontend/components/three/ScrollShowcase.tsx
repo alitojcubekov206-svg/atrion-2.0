@@ -5,6 +5,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
 import { animate, motion, useMotionValue, useScroll, useTransform } from "framer-motion";
 import * as THREE from "three";
+import { useEffects } from "@/frontend/effects";
 
 const VIOLET = "#a78bfa";
 const VIOLET_HOT = "#c4b5fd";
@@ -329,6 +330,8 @@ export default function ScrollShowcase() {
   const progress = useMotionValue(0);
   const [isMobile, setIsMobile] = useState(false);
   const hasPlayedRef = useRef(false);
+  const level = useEffects();
+  const effectsOff = level === "off";
 
   useEffect(() => {
     setIsMobile(window.matchMedia(MOBILE_QUERY).matches);
@@ -356,6 +359,10 @@ export default function ScrollShowcase() {
   // programmatic scrolling at all.
   useEffect(() => {
     if (!isMobile) return;
+    if (effectsOff) {
+      progress.set(1);
+      return;
+    }
     let raf = 0;
     const check = () => {
       const el = containerRef.current;
@@ -374,7 +381,7 @@ export default function ScrollShowcase() {
     };
     raf = requestAnimationFrame(check);
     return () => cancelAnimationFrame(raf);
-  }, [isMobile, progress]);
+  }, [isMobile, progress, effectsOff]);
 
   const cap1 = useTransform(progress, [0, 0.06, 0.28, 0.34], [0, 1, 1, 0]);
   const cap2 = useTransform(progress, [0.34, 0.4, 0.6, 0.66], [0, 1, 1, 0]);
@@ -397,7 +404,11 @@ export default function ScrollShowcase() {
         className={`h-screen w-full overflow-hidden ${isMobile ? "relative" : "sticky top-0"}`}
       >
         <div className="pointer-events-none absolute inset-0 bg-[#050507]/45" />
-        <ScrollCanvas progressRef={progressRef} />
+        {level !== null && !effectsOff ? (
+          <ScrollCanvas progressRef={progressRef} />
+        ) : (
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(167,139,250,0.14),transparent_60%)]" />
+        )}
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(5,5,7,0.3)_75%,rgba(5,5,7,0.8)_97%)]" />
 
         <Caption

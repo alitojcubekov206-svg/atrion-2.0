@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import HeroScene from "@/frontend/components/three/HeroSceneLoader";
 import ScrambleText from "@/frontend/components/ScrambleText";
+import { effectsLevel } from "@/frontend/settings";
 import { AmbientDrift, DotGrid, type DriftDot } from "@/frontend/components/AmbientDots";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -74,7 +75,7 @@ const MIN_AUTO_SCROLL_MS = 6000;
 function useAutoScrollIntro() {
   useEffect(() => {
     if (window.matchMedia("(max-width: 768px)").matches) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (effectsLevel() === "off") return;
     if (sessionStorage.getItem(SESSION_KEY)) return;
 
     let lastActivity = Date.now();

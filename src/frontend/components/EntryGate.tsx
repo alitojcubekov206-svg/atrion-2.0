@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import AuthForm from "@/frontend/components/AuthForm";
 import ForgotPasswordForm from "@/frontend/components/ForgotPasswordForm";
+import { useEffects } from "@/frontend/effects";
 
 const EntryGateScene = dynamic(() => import("@/frontend/components/three/EntryGateScene"), {
   ssr: false,
@@ -87,10 +88,15 @@ function GateBrand({ mode }: { mode: GateMode }) {
 }
 
 function Gate({ mode }: { mode: GateMode }) {
+  const level = useEffects();
   return (
     <main className="relative flex min-h-screen overflow-hidden bg-[#050507]">
       <div aria-hidden="true">
-        <EntryGateScene />
+        {level !== null && level !== "off" ? (
+          <EntryGateScene />
+        ) : (
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_75%_40%,rgba(167,139,250,0.18),transparent_55%)]" />
+        )}
       </div>
       <div className="relative z-10 flex min-h-screen w-full flex-col justify-center px-6 py-16 md:w-[46%] md:px-12 lg:px-16">
         <GateBrand mode={mode} />
