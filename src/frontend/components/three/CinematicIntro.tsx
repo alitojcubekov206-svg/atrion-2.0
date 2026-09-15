@@ -218,9 +218,12 @@ export default function CinematicIntro() {
 
     let cancelled = false;
     const family = displayFontFamily();
+    // Load only the primary face: asking for the whole family list resolves as
+    // soon as the metric fallback is available, before Unbounded itself has loaded.
+    const primary = family.split(",")[0].trim();
     const ready = Promise.race([
-      document.fonts.load(`700 230px ${family}`).then(() => document.fonts.ready),
-      new Promise((resolve) => setTimeout(resolve, 600)),
+      document.fonts.load(`700 230px ${primary}`).then(() => document.fonts.ready),
+      new Promise((resolve) => setTimeout(resolve, 1200)),
     ]);
     ready.then(() => {
       if (!cancelled) setTargets(sampleText("ATRION", count, family));
