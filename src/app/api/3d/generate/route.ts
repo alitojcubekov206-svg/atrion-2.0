@@ -7,7 +7,8 @@ import { planFor } from "@/backend/procedural-3d";
 import { db } from "@/backend/db";
 import { FREE_3D_LIMIT } from "@/backend/plans";
 
-export const maxDuration = 120;
+// 60 is the Vercel Hobby ceiling; anything higher fails the deploy on that plan.
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const auth = await requireApiUser();
