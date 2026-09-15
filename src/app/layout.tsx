@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Manrope, Unbounded } from "next/font/google";
+import MotionProvider from "@/frontend/components/MotionProvider";
 import "./globals.css";
 
 const body = Manrope({
@@ -44,7 +45,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ru" className={`${body.variable} ${display.variable}`}>
-      <body className="font-[family-name:var(--font-body)] antialiased">{children}</body>
+      <body className="font-[family-name:var(--font-body)] antialiased">
+        <MotionProvider>{children}</MotionProvider>
+      </body>
     </html>
   );
 }

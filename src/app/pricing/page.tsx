@@ -37,7 +37,7 @@ export default async function PricingPage({
           href={user ? "/dashboard" : "/login"}
           className="rounded-full border border-line px-5 py-2 text-sm text-muted transition hover:border-accent hover:text-fg"
         >
-          {user ? "Dashboard" : "Sign in"}
+          {user ? "Кабинет" : "Войти"}
         </Link>
       </nav>
 
@@ -93,13 +93,13 @@ export default async function PricingPage({
             ))}
           </ul>
           {isPro ? (
-            <div className="btn-primary mt-8 block rounded-full py-3 text-center font-semibold text-white opacity-70">
+            <div className="btn-primary mt-8 block rounded-full py-3 text-center font-semibold opacity-70">
               Pro активен ✓
             </div>
           ) : !user ? (
             <Link
               href="/login"
-              className="btn-primary mt-8 block rounded-full py-3 text-center font-semibold text-white"
+              className="btn-primary mt-8 block rounded-full py-3 text-center font-semibold"
             >
               Войти для оплаты
             </Link>
@@ -126,7 +126,7 @@ export default async function PricingPage({
                 href={waLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn-primary block rounded-full py-3 text-center font-semibold text-white"
+                className="btn-primary block rounded-full py-3 text-center font-semibold"
               >
                 Оплатить {PLANS.pro.price} — написать в WhatsApp
               </a>
@@ -139,7 +139,7 @@ export default async function PricingPage({
             </div>
           ) : (
             <div className="mt-8">
-              <div className="btn-primary block cursor-not-allowed rounded-full py-3 text-center font-semibold text-white opacity-80">
+              <div className="btn-primary block cursor-not-allowed rounded-full py-3 text-center font-semibold opacity-80">
                 Оплата через WhatsApp настраивается
               </div>
               <p className="mt-3 text-center text-xs text-accent2">

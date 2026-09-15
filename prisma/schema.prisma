@@ -20,6 +20,12 @@ model User {
   verificationExpires DateTime?
   verificationSentAt  DateTime?
   verificationAttempts Int      @default(0)
+  passwordResetCode     String?
+  passwordResetExpires  DateTime?
+  passwordResetSentAt   DateTime?
+  passwordResetAttempts Int      @default(0)
+  aiCallsToday        Int       @default(0)
+  aiCallsDate         DateTime?
   threeDGenerations   Int       @default(0)
   createdAt DateTime  @default(now())
   projects  Project[]
@@ -40,6 +46,8 @@ model Project {
   blueprint String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Payment {

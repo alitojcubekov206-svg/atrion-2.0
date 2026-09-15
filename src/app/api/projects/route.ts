@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/backend/db";
-import { getSessionUserId, isProPlanActive } from "@/backend/auth";
+import { isProPlanActive } from "@/backend/auth";
+import { requireApiUser } from "@/backend/api-auth";
 import { canCreateProject, FREE_PROJECT_LIMIT } from "@/backend/plans";
 
 export async function GET() {
-  const userId = await getSessionUserId();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireApiUser();
+  if (auth.response) return auth.response;
 
   const projects = await db.project.findMany({
-    where: { userId },
+    where: { userId: auth.userId },
     orderBy: { updatedAt: "desc" },
     select: { id: true, title: true, idea: true, status: true, updatedAt: true },
   });
@@ -16,15 +17,25 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const userId = await getSessionUserId();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireApiUser();
+  if (auth.response) return auth.response;
+  const userId = auth.userId;
 
-  const { idea } = await req.json();
-  if (!idea || typeof idea !== "string" || idea.trim().length < 10) {
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Некорректный запрос" }, { status: 400 });
+  }
+  const idea = typeof body.idea === "string" ? body.idea.trim() : "";
+  if (idea.length < 10) {
     return NextResponse.json({ error: "Опишите идею подробнее (минимум 10 символов)" }, { status: 400 });
   }
+  if (idea.length > 2000) {
+    return NextResponse.json({ error: "Описание слишком длинное (максимум 2000 символов)" }, { status: 400 });
+  }
 
-  const title = idea.trim().length > 60 ? idea.trim().slice(0, 57) + "..." : idea.trim();
+  const title = idea.length > 60 ? idea.slice(0, 57) + "..." : idea;
   const result = await db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
     const user = await tx.user.findUnique({
@@ -36,13 +47,13 @@ export async function POST(req: Request) {
     const count = await tx.project.count({ where: { userId } });
     if (!canCreateProject(plan, count)) return null;
     return tx.project.create({
-      data: { userId, title, idea: idea.trim(), status: "draft" },
+      data: { userId, title, idea, status: "draft" },
     });
   });
   if (!result) {
     return NextResponse.json(
       {
-        error: `Бесплатный лимит — ${FREE_PROJECT_LIMIT} проектов. Перейдите на Pro для безлимита.`,
+        error: `Бесплатный лимит - ${FREE_PROJECT_LIMIT} проектов. Перейдите на Pro для безлимита.`,
         code: "LIMIT_REACHED",
       },
       { status: 403 }

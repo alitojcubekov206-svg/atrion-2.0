@@ -158,7 +158,7 @@ export default function ExpertTeam({ projectId }: { projectId: string }) {
             <button
               onClick={send}
               disabled={loading || !question.trim()}
-              className="btn-primary rounded-xl px-5 text-sm font-semibold text-white disabled:opacity-50"
+              className="btn-primary rounded-xl px-5 text-sm font-semibold disabled:opacity-50"
             >
               Отправить
             </button>

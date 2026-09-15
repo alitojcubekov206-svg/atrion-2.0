@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
-import { getSessionUserId } from "@/backend/auth";
+import { requireApiUser } from "@/backend/api-auth";
+import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
 import { chatAboutConcept } from "@/backend/ai";
 
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
-  const userId = await getSessionUserId();
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser();
+  if (auth.response) return auth.response;
+  const userId = auth.userId;
 
   let message: unknown;
   let concept: unknown;
@@ -24,6 +26,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Пустое сообщение." }, { status: 400 });
   }
 
+  const quota = await consumeAiQuota(userId);
+  if (!quota.ok) return NextResponse.json({ error: quota.error, code: quota.code }, { status: 429 });
+
   try {
     const reply = await chatAboutConcept({
       message: message.trim().slice(0, 800),
@@ -40,6 +45,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json(reply);
   } catch (error) {
+    await refundAiQuota(userId);
     console.error("3D voice chat failed", error);
     return NextResponse.json(
       { error: "Не удалось ответить голосом. Попробуй ещё раз." },

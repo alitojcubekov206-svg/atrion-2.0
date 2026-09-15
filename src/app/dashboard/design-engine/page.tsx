@@ -13,45 +13,7 @@ import VoiceMode from "@/frontend/components/VoiceMode";
 import CadToolbar, { type CadTool } from "@/frontend/components/CadToolbar";
 import { describeCommand, parseVoiceCommand } from "@/frontend/voice-commands";
 import { BOOLEAN_LABELS, type BooleanOp } from "@/frontend/csg-types";
-
-/**
- * Every network call in this page goes through here.
- *
- * A request that never settles is what used to freeze the studio, so each one
- * carries its own abort timer and turns a stall into a message the user can act
- * on rather than a spinner that never stops.
- */
-async function postJson<T>(
-  url: string,
-  body: unknown,
-  timeoutMs = 45_000
-): Promise<{ ok: boolean; data: T & { error?: string; code?: string }; timedOut?: boolean }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    const data = (await response.json().catch(() => ({}))) as T & { error?: string };
-    return { ok: response.ok, data };
-  } catch (error) {
-    const aborted = error instanceof DOMException && error.name === "AbortError";
-    return {
-      ok: false,
-      timedOut: aborted,
-      data: {
-        error: aborted
-          ? "Сервер долго не отвечает. Попробуй ещё раз или упрости описание."
-          : "Нет связи с сервером.",
-      } as T & { error?: string },
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
+import { postJson } from "@/frontend/api";
 
 const ConceptViewer = dynamic(() => import("@/frontend/components/three/ConceptViewer"), {
   ssr: false,

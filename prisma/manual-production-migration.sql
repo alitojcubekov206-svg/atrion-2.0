@@ -68,3 +68,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS "Payment_providerTransactionId_key"
   ON "Payment"("providerTransactionId");
 CREATE INDEX IF NOT EXISTS "Payment_userId_status_idx"
   ON "Payment"("userId", "status");
+
+-- Password reset codes, per-day AI quota, and the missing Project.userId index.
+ALTER TABLE "User"
+  ADD COLUMN IF NOT EXISTS "passwordResetCode" TEXT,
+  ADD COLUMN IF NOT EXISTS "passwordResetExpires" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "passwordResetSentAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "passwordResetAttempts" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS "aiCallsToday" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS "aiCallsDate" TIMESTAMP(3);
+
+CREATE INDEX IF NOT EXISTS "Project_userId_idx" ON "Project"("userId");

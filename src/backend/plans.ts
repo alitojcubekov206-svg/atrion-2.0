@@ -1,4 +1,6 @@
 export const FREE_PROJECT_LIMIT = 5;
+export const FREE_3D_LIMIT = 5;
+export const AI_DAILY_LIMIT = { free: 25, pro: 300 } as const;
 
 export const PLANS = {
   free: {
@@ -7,9 +9,10 @@ export const PLANS = {
     limit: FREE_PROJECT_LIMIT,
     features: [
       `До ${FREE_PROJECT_LIMIT} проектов`,
+      `${FREE_3D_LIMIT} генераций 3D (всего)`,
+      `До ${AI_DAILY_LIMIT.free} AI-запросов в день`,
       "AI-интервью и генерация плана",
       "Архитектура, БД, API, Roadmap",
-      "Project Score и AI-критика",
       "Экспорт в Markdown / JSON / PDF",
     ],
   },
@@ -19,10 +22,11 @@ export const PLANS = {
     limit: Infinity,
     features: [
       "Безлимитные проекты",
+      "Безлимитные генерации 3D",
+      `До ${AI_DAILY_LIMIT.pro} AI-запросов в день`,
       "Всё из Free",
       "Приоритетная генерация",
       "Новые функции раньше всех",
-      "Поддержка автора",
     ],
   },
 } as const;

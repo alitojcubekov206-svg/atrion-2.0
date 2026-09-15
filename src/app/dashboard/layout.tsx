@@ -3,64 +3,71 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/backend/auth";
 import { isEmailVerificationEnabled } from "@/backend/verification";
 import LogoutButton from "@/frontend/components/LogoutButton";
+import Footer from "@/frontend/components/Footer";
+
+const NAV = [
+  { href: "/dashboard", label: "Проекты", always: false },
+  { href: "/dashboard/design-engine", label: "Design Engine", always: true },
+  { href: "/dashboard/settings", label: "Настройки", always: false },
+  { href: "/pricing", label: "Тарифы", always: false },
+];
+
+function formatDate(date: Date) {
+  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (isEmailVerificationEnabled() && !user.emailVerified) redirect("/verify");
 
+  const isPro = user.plan === "pro";
+
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#050507]">
-      <nav className="sticky top-0 z-50 flex items-center justify-between border-b border-white/[0.06] bg-[#050507]/80 px-5 py-3.5 backdrop-blur-xl md:px-10">
-        <div className="flex items-center gap-6 md:gap-8">
-          <Link href="/" className="display text-lg font-semibold tracking-tight text-white">
-            ATRION <span className="text-[#a78bfa]">2.0</span>
-          </Link>
-          <Link
-            href="/dashboard"
-            className="hidden text-[11px] uppercase tracking-[0.2em] text-[#8f8a82] transition hover:text-white sm:inline"
-          >
-            Projects
-          </Link>
-          <Link
-            href="/dashboard/design-engine"
-            className="text-[11px] uppercase tracking-[0.2em] text-[#a78bfa] transition hover:text-[#c4b5fd]"
-          >
-            Design Engine
-          </Link>
-          <Link
-            href="/dashboard/settings"
-            className="hidden text-[11px] uppercase tracking-[0.2em] text-[#8f8a82] transition hover:text-white sm:inline"
-          >
-            Settings
-          </Link>
-          <Link
-            href="/pricing"
-            className="hidden text-[11px] uppercase tracking-[0.2em] text-[#8f8a82] transition hover:text-white sm:inline"
-          >
-            Pricing
-          </Link>
-        </div>
-        <div className="flex items-center gap-3 text-sm">
-          <span className="hidden font-mono text-[10px] uppercase tracking-wider text-[#6a6560] sm:inline">
-            {user.name}
-          </span>
-          {user.plan === "pro" ? (
-            <span className="rounded border border-[#a78bfa]/35 bg-[#a78bfa]/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#a78bfa]">
-              PRO
-            </span>
-          ) : (
-            <Link
-              href="/pricing"
-              className="rounded border border-[#a78bfa]/30 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#a78bfa] transition hover:bg-[#a78bfa]/10"
-            >
-              Upgrade
+    <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-bg">
+      <header className="sticky top-0 z-50 border-b border-line bg-bg/80 backdrop-blur-xl">
+        <nav className="flex items-center justify-between px-5 py-3.5 md:px-10" aria-label="Основная навигация">
+          <div className="flex items-center gap-5 md:gap-8">
+            <Link href="/" className="display text-lg font-semibold tracking-tight text-white">
+              ATRION <span className="text-accent">2.0</span>
             </Link>
-          )}
-          <LogoutButton />
-        </div>
-      </nav>
-      <main>{children}</main>
+            {NAV.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`text-[11px] uppercase tracking-[0.2em] transition ${
+                  item.always ? "text-accent hover:text-accent2" : "hidden text-muted hover:text-white sm:inline"
+                }`}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+          <div className="flex items-center gap-3 text-sm">
+            <span className="hidden font-mono text-[10px] uppercase tracking-wider text-muted sm:inline">
+              {user.name}
+            </span>
+            {isPro ? (
+              <span
+                title={user.planExpiresAt ? `Pro до ${formatDate(user.planExpiresAt)}` : "Pro"}
+                className="rounded border border-accent/35 bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-accent"
+              >
+                PRO
+              </span>
+            ) : (
+              <Link
+                href="/pricing"
+                className="rounded border border-accent/30 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-accent transition hover:bg-accent/10"
+              >
+                Улучшить
+              </Link>
+            )}
+            <LogoutButton />
+          </div>
+        </nav>
+      </header>
+      <main className="flex-1">{children}</main>
+      <Footer />
     </div>
   );
 }

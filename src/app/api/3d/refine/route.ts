@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
-import { getSessionUserId, getUserPlan } from "@/backend/auth";
+import { requireApiUser } from "@/backend/api-auth";
+import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
 import { refine3DConcept } from "@/backend/ai";
 import type { ThreeDConcept } from "@/shared/types";
 
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
-  const userId = await getSessionUserId();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireApiUser();
+  if (auth.response) return auth.response;
+  const userId = auth.userId;
 
   let body: Record<string, unknown>;
   try {
@@ -30,16 +34,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Сначала создайте модель." }, { status: 400 });
   }
 
-  const plan = await getUserPlan(userId);
-  if (plan !== "pro") {
-    // Free users can refine the one concept they already generated.
-    // Generation quota is enforced on /api/3d/generate.
-  }
+  const quota = await consumeAiQuota(userId);
+  if (!quota.ok) return NextResponse.json({ error: quota.error, code: quota.code }, { status: 429 });
 
   try {
     const refined = await refine3DConcept(concept, instruction, selectedPartId);
     return NextResponse.json({ concept: refined });
   } catch (error) {
+    await refundAiQuota(userId);
     console.error("3D refine failed", error);
     return NextResponse.json(
       { error: "AI не смог применить правку. Попробуйте короче сформулировать." },

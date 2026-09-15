@@ -30,7 +30,7 @@ export default function FinikPayButton() {
         type="button"
         onClick={pay}
         disabled={loading}
-        className="btn-primary block w-full rounded-full py-3 text-center font-semibold text-white disabled:opacity-60"
+        className="btn-primary block w-full rounded-full py-3 text-center font-semibold disabled:opacity-60"
       >
         {loading ? "Открываем Finik…" : "Оплатить 200 сом через Finik"}
       </button>

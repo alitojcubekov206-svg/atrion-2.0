@@ -39,7 +39,7 @@ export default function StarterKitPanel({ projectId }: { projectId: string }) {
         {loading ? (
           <div className="mx-auto mt-8 w-fit"><Thinking label="Senior Programmer пишет стартовый код" /></div>
         ) : (
-          <button onClick={generate} className="btn-primary mt-7 rounded-full px-7 py-3 font-semibold text-white">
+          <button onClick={generate} className="btn-primary mt-7 rounded-full px-7 py-3 font-semibold">
             Создать Starter Kit →
           </button>
         )}

@@ -108,9 +108,9 @@ export default function AuthForm({
             id="gate-password"
             name="password"
             type="password"
-            placeholder="Пароль"
+            placeholder={mode === "login" ? "Пароль" : "Пароль (мин. 8 символов)"}
             required
-            minLength={6}
+            minLength={mode === "login" ? undefined : 8}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
             className={gateInput}
           />
@@ -145,9 +145,15 @@ export default function AuthForm({
         )}
         <motion.p variants={gateItem} className="pt-1 text-center text-sm text-muted">
           {mode === "login" ? (
-            <Link href="/register" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
-              Создать аккаунт
-            </Link>
+            <>
+              <Link href="/register" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
+                Создать аккаунт
+              </Link>
+              <span className="mx-2 text-white/20">·</span>
+              <Link href="/forgot-password" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
+                Забыли пароль?
+              </Link>
+            </>
           ) : (
             <Link href="/login" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
               Уже есть доступ
@@ -189,9 +195,9 @@ export default function AuthForm({
           id="card-password"
           name="password"
           type="password"
-          placeholder="Пароль (мин. 6 символов)"
+          placeholder={mode === "login" ? "Пароль" : "Пароль (мин. 8 символов)"}
           required
-          minLength={6}
+          minLength={mode === "login" ? undefined : 8}
           className={inputCls}
         />
         {error && <p className="text-sm text-red-400">{error}</p>}
@@ -218,6 +224,10 @@ export default function AuthForm({
             Нет аккаунта?{" "}
             <Link href="/register" className="text-accent hover:underline">
               Регистрация
+            </Link>
+            <span className="mx-2 text-white/20">·</span>
+            <Link href="/forgot-password" className="text-accent hover:underline">
+              Забыли пароль?
             </Link>
           </>
         ) : (

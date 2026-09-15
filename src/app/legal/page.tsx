@@ -16,6 +16,9 @@ export default function LegalPage() {
       </Link>
 
       <h1 className="display mt-8 text-3xl font-semibold text-fg">Правовая информация</h1>
+      <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-muted/70">
+        Обновлено: 15 сентября 2026
+      </p>
       <p className="mt-3">
         Atrion сейчас — независимый проект, а не зарегистрированная компания. Здесь честно
         описано, какие данные мы собираем, как обрабатываются платежи и как с нами связаться.

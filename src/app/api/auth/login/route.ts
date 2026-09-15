@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/backend/db";
 import { createSession } from "@/backend/auth";
+import { clientIp, rateLimit, rateLimitedResponse } from "@/backend/rate-limit";
 
 export async function POST(req: Request) {
+  const ipLimit = rateLimit(`login:ip:${clientIp(req)}`, 20, 15 * 60_000);
+  if (!ipLimit.ok) return rateLimitedResponse(ipLimit.retryAfterSec);
+
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -17,6 +21,9 @@ export async function POST(req: Request) {
   if (!email || !password) {
     return NextResponse.json({ error: "Введите email и пароль" }, { status: 400 });
   }
+
+  const emailLimit = rateLimit(`login:email:${email}`, 8, 15 * 60_000);
+  if (!emailLimit.ok) return rateLimitedResponse(emailLimit.retryAfterSec);
 
   const user = await db.user.findUnique({ where: { email } });
   if (!user || !(await bcrypt.compare(password, user.password))) {

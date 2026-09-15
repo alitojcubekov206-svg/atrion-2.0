@@ -167,14 +167,14 @@ export function SharePanel({ projectId }: { projectId: string }) {
         <button
           onClick={createLink}
           disabled={loading}
-          className="btn-primary mt-7 rounded-full px-7 py-3 font-semibold text-white disabled:opacity-50"
+          className="btn-primary mt-7 rounded-full px-7 py-3 font-semibold disabled:opacity-50"
         >
           {loading ? "Создание…" : "Создать публичную ссылку"}
         </button>
       ) : (
         <div className="mx-auto mt-7 flex max-w-2xl gap-2">
           <input readOnly value={url} className="min-w-0 flex-1 rounded-xl border border-line bg-bg px-4 py-3 text-sm text-muted" />
-          <button onClick={copy} className="btn-primary rounded-xl px-5 text-sm font-semibold text-white">
+          <button onClick={copy} className="btn-primary rounded-xl px-5 text-sm font-semibold">
             {copied ? "Скопировано ✓" : "Копировать"}
           </button>
         </div>

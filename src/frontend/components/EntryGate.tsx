@@ -4,6 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import AuthForm from "@/frontend/components/AuthForm";
+import ForgotPasswordForm from "@/frontend/components/ForgotPasswordForm";
 
 const EntryGateScene = dynamic(() => import("@/frontend/components/three/EntryGateScene"), {
   ssr: false,
@@ -12,7 +13,15 @@ const EntryGateScene = dynamic(() => import("@/frontend/components/three/EntryGa
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
-function GateBrand({ mode }: { mode: "login" | "register" }) {
+type GateMode = "login" | "register" | "forgot";
+
+const COPY: Record<GateMode, string> = {
+  login: "Войди в мастерскую. Идея → цельный 3D.",
+  register: "Создай доступ. Дальше - Design Engine.",
+  forgot: "Введи email - пришлём код для нового пароля.",
+};
+
+function GateBrand({ mode }: { mode: GateMode }) {
   return (
     <motion.div
       initial="hidden"
@@ -69,38 +78,35 @@ function GateBrand({ mode }: { mode: "login" | "register" }) {
         }}
         className="mt-6 text-sm leading-relaxed text-[#8f8a82]"
       >
-        {mode === "login"
-          ? "Войди в мастерскую. Идея → цельный 3D."
-          : "Создай доступ. Дальше — Design Engine."}
+        {COPY[mode]}
       </motion.p>
 
-      <AuthForm mode={mode} variant="gate" />
+      {mode === "forgot" ? <ForgotPasswordForm /> : <AuthForm mode={mode} variant="gate" />}
     </motion.div>
   );
 }
 
-export function LoginGate() {
+function Gate({ mode }: { mode: GateMode }) {
   return (
     <main className="relative flex min-h-screen overflow-hidden bg-[#050507]">
       <div aria-hidden="true">
         <EntryGateScene />
       </div>
       <div className="relative z-10 flex min-h-screen w-full flex-col justify-center px-6 py-16 md:w-[46%] md:px-12 lg:px-16">
-        <GateBrand mode="login" />
+        <GateBrand mode={mode} />
       </div>
     </main>
   );
 }
 
+export function LoginGate() {
+  return <Gate mode="login" />;
+}
+
 export function RegisterGate() {
-  return (
-    <main className="relative flex min-h-screen overflow-hidden bg-[#050507]">
-      <div aria-hidden="true">
-        <EntryGateScene />
-      </div>
-      <div className="relative z-10 flex min-h-screen w-full flex-col justify-center px-6 py-16 md:w-[46%] md:px-12 lg:px-16">
-        <GateBrand mode="register" />
-      </div>
-    </main>
-  );
+  return <Gate mode="register" />;
+}
+
+export function ForgotGate() {
+  return <Gate mode="forgot" />;
 }

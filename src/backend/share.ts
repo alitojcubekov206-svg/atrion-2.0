@@ -6,11 +6,13 @@ function secret() {
   return new TextEncoder().encode(value);
 }
 
+export const SHARE_TOKEN_DAYS = 30;
+
 export async function createProjectShareToken(projectId: string) {
   return new SignJWT({ projectId, purpose: "project-share" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("30d")
+    .setExpirationTime(`${SHARE_TOKEN_DAYS}d`)
     .sign(secret());
 }
 

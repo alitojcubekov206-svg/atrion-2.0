@@ -149,6 +149,29 @@ body {
   100% { background-position: 200% 50%; }
 }
 
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .thinking-dot,
+  .holo-ring {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 .score-ring circle.fill {
   animation: ring-fill 1.2s ease-out forwards;
 }

@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/backend/db";
 import { getSessionUserId } from "@/backend/auth";
 import { cooldownRemainingMs, issueVerificationCode } from "@/backend/verification";
+import { clientIp, rateLimit, rateLimitedResponse } from "@/backend/rate-limit";
 
 export async function POST(req: Request) {
+  const ipLimit = rateLimit(`resend:ip:${clientIp(req)}`, 10, 15 * 60_000);
+  if (!ipLimit.ok) return rateLimitedResponse(ipLimit.retryAfterSec);
+
   const userId = await getSessionUserId();
   if (!userId) {
     return NextResponse.json({ error: "Требуется вход" }, { status: 401 });

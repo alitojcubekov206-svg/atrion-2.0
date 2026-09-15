@@ -93,6 +93,23 @@ create a key under **SMTP & API → API Keys**. Test with
 register an account and confirm the code shows up in the email inbox, not
 just the dev fallback — before flipping verification on for real users.
 
+## Limits and abuse protection
+
+- **AI calls** are metered per user per UTC day: `AI_DAILY_LIMIT` in
+  `src/backend/plans.ts` (Free 25 / Pro 300). Every AI route reserves a call
+  up front and refunds it if the provider fails.
+- **3D generations** for Free are a lifetime allowance (`FREE_3D_LIMIT`, 5).
+- **Auth endpoints** (login, register, verify, resend, forgot/reset password,
+  account changes) are rate-limited per IP in `src/backend/rate-limit.ts`.
+  The limiter is in-memory per serverless instance - good enough for now,
+  swap in Upstash if it needs to be global.
+- API routes require a verified email when `EMAIL_VERIFICATION_ENABLED="true"`
+  (`requireApiUser` in `src/backend/api-auth.ts`).
+
+After pulling these changes, run `prisma/manual-production-migration.sql` in
+Neon again - it adds the password-reset and AI-quota columns and the
+`Project.userId` index. The script is idempotent.
+
 ## Finik Pro payments
 
 Atrion charges **200 KGS for 30 days of Pro**. WhatsApp remains available until
