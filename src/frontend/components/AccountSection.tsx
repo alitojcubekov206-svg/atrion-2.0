@@ -124,7 +124,7 @@ export default function AccountSection() {
       <div className="mt-8 border-t border-line pt-6">
         <h3 className="text-sm font-semibold text-white">Удалить аккаунт</h3>
         <p className="mt-1 text-xs leading-relaxed text-muted">
-          Проекты, планы и история платежей будут удалены безвозвратно.
+          Проекты и планы будут удалены безвозвратно.
         </p>
         <button
           type="button"

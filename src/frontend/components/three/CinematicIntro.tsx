@@ -9,10 +9,10 @@ export const INTRO_DONE_EVENT = "atrion:intro-done";
 const SESSION_KEY = "atrion_intro_played";
 
 const ASSEMBLE_START = 0.15;
-const ASSEMBLE_END = 1.35;
-const BLAST_START = 2.7;
-const BLAST_END = 3.4;
-const TOTAL = 3.5;
+const ASSEMBLE_END = 1.25;
+const BLAST_START = 2.3;
+const BLAST_END = 2.95;
+const TOTAL = 3.05;
 
 const VERTEX = /* glsl */ `
   uniform float uProgress;
@@ -298,7 +298,7 @@ export default function CinematicIntro() {
           <motion.p
             initial={{ opacity: 0, y: 10, letterSpacing: "0.3em" }}
             animate={{ opacity: [0, 1, 1, 0], y: 0, letterSpacing: "0.08em" }}
-            transition={{ duration: 2.9, delay: 1.2, times: [0, 0.2, 0.75, 1], ease: "easeOut" }}
+            transition={{ duration: 2.4, delay: 1.1, times: [0, 0.2, 0.75, 1], ease: "easeOut" }}
             className="display pointer-events-none absolute inset-x-0 top-[62%] text-center text-lg text-[#a78bfa] md:text-2xl"
           >
             Just build it.

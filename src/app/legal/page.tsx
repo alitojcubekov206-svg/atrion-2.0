@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { PLANS } from "@/backend/plans";
-import { PRO_DURATION_DAYS } from "@/backend/finik";
+import { PLANS, PRO_DURATION_DAYS } from "@/backend/plans";
 
 export const metadata: Metadata = { title: "Правовая информация" };
 
@@ -32,13 +31,13 @@ export default function LegalPage() {
           при регистрации. Пароли хранятся в виде хэша (bcrypt) и никогда — в открытом виде.
         </p>
         <p className="mt-3">
-          При оплате Pro-подписки платёжный провайдер Finik/AversPay передаёт нам ID платежа,
-          сумму и статус транзакции — этого достаточно для активации подписки. Мы не видим и не
-          храним данные вашей карты.
+          Оплата Pro сейчас проходит вручную - переводом через Mbank / O!Деньги / Элсом по
+          договорённости в WhatsApp. Мы не подключаем сторонние платёжные сервисы и не
+          обрабатываем и не храним данные карт.
         </p>
         <p className="mt-3">
-          Мы не передаём ваши данные третьим лицам, кроме случаев, необходимых для обработки
-          платежа. Мы не используем рекламные или аналитические cookie — см.{" "}
+          Мы не передаём ваши данные третьим лицам. Мы не используем рекламные или
+          аналитические cookie - см.{" "}
           <a href="#cookies" className="text-accent hover:underline">раздел про cookie</a> ниже.
         </p>
         <p className="mt-3">

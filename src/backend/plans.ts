@@ -1,5 +1,6 @@
 export const FREE_PROJECT_LIMIT = 5;
 export const FREE_3D_LIMIT = 5;
+export const PRO_DURATION_DAYS = 30;
 export const AI_DAILY_LIMIT = { free: 25, pro: 300 } as const;
 
 export const PLANS = {

@@ -17,7 +17,6 @@ Atrion 2.0 is an **AI Software Architect** — a SaaS application that transform
 - **AI Critic Mode** — honest criticism, not agreement
 - **Design Engine** — text → fully CAD-editable 3D model (procedural generator + AI-authored geometry per object category — house, character, vehicle, animal, furniture, product, room, and more), with Move/Rotate/Scale on every part, explode view, undo/redo, GLB/STL/OBJ export and voice control
 - **Export System** — Markdown / JSON / PDF
-- **Finik Pro Payments** — signed QR checkout with verified, idempotent webhooks
 
 ## Tech Stack
 
@@ -31,7 +30,7 @@ Atrion 2.0 is an **AI Software Architect** — a SaaS application that transform
 
 ```bash
 npm install
-npx prisma migrate dev
+npx prisma db push
 npm run dev
 ```
 
@@ -106,39 +105,9 @@ just the dev fallback — before flipping verification on for real users.
 - API routes require a verified email when `EMAIL_VERIFICATION_ENABLED="true"`
   (`requireApiUser` in `src/backend/api-auth.ts`).
 
-After pulling these changes, run `prisma/manual-production-migration.sql` in
-Neon again - it adds the password-reset and AI-quota columns and the
-`Project.userId` index. The script is idempotent.
-
-## Finik Pro payments
-
-Atrion charges **200 KGS for 30 days of Pro**. WhatsApp remains available until
-the Finik business account is approved. Run `prisma/manual-production-migration.sql`
-in Neon before deploying the payment code.
-
-Finik must first be tested against its beta environment:
-
-```env
-APP_URL="https://atrion-2-0.vercel.app"
-FINIK_ENABLED="false"
-FINIK_BASE_URL="https://beta.api.acquiring.averspay.kg"
-FINIK_API_KEY=""
-FINIK_ACCOUNT_ID=""
-FINIK_QR_NAME="Atrion Pro"
-FINIK_PRIVATE_PEM="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
-FINIK_PUBLIC_PEM="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
-```
-
-Generate the merchant RSA key pair according to the official Finik Web SDK guide.
-Upload only the public key to Finik. Keep the private key and all API credentials as
-Sensitive Vercel variables; never commit them. `FINIK_PUBLIC_PEM` is Finik's public
-key for verifying incoming webhooks, not the merchant public key.
-
-The checkout endpoint creates a pending payment and sends the browser to Finik.
-The redirect never grants Pro. Only a correctly signed webhook with the expected
-payment ID and exact amount can activate the subscription. Duplicate webhook
-deliveries are processed once. After beta checkout and webhook tests pass, switch
-to `https://api.acquiring.averspay.kg` and set `FINIK_ENABLED="true"`.
+The database schema is applied with `npx prisma db push` against the linked
+Neon project (`neon link` writes `DATABASE_URL` into `.env`). There are no
+migration files to run by hand.
 
 ## Project Structure
 
@@ -158,7 +127,6 @@ Atrion 2.0/
       ai.ts            #   model providers with fallback
       auth.ts          #   JWT sessions, plans
       db.ts            #   Prisma client
-      finik.ts         #   signed payment checkout & webhooks
       procedural-3d.ts #   entry point of the model generator
       gen/             #   text → blueprint → geometry, validation & repair
     frontend/          # browser-only code
