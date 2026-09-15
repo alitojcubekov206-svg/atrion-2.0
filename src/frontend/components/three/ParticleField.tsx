@@ -7,7 +7,6 @@ import AmbientCanvas from "@/frontend/components/three/AmbientCanvas";
 
 const VERTEX = /* glsl */ `
   uniform float uTime;
-  uniform vec2 uMouse;
   uniform vec3 uRipple;
   uniform float uPixelRatio;
   uniform float uReduced;
@@ -22,19 +21,13 @@ const VERTEX = /* glsl */ `
     p.x += sin(t * 0.35 + aSeed * 6.2831 + p.y * 0.35) * 0.18;
     p.y += cos(t * 0.28 + aSeed * 4.0 + p.x * 0.3) * 0.18;
 
-    vec2 toMouse = uMouse - p.xy;
-    float dist = length(toMouse);
-    float pull = smoothstep(3.4, 0.0, dist) * (1.0 - uReduced);
-    p.xy += normalize(toMouse + 0.0001) * pull * 0.9;
-    p.z += pull * 1.4;
-
     float age = uTime - uRipple.z;
     float rd = distance(p.xy, uRipple.xy);
     float ring = exp(-pow((rd - age * 5.5) * 1.3, 2.0)) * exp(-age * 1.1) * step(0.0, age) * (1.0 - uReduced);
     p.xy += normalize(p.xy - uRipple.xy + 0.0001) * ring * 0.8;
     p.z += ring * 1.6;
 
-    vGlow = clamp(pull * 1.6 + ring * 2.2, 0.0, 1.0);
+    vGlow = clamp(ring * 2.2, 0.0, 1.0);
     vSeed = aSeed;
 
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -67,7 +60,6 @@ const FRAGMENT = /* glsl */ `
 function Field({ reduced, mobile }: { reduced: boolean; mobile: boolean }) {
   const viewport = useThree((s) => s.viewport);
   const dpr = useThree((s) => s.gl.getPixelRatio());
-  const mouseTarget = useRef(new THREE.Vector2(0, 0));
   const scrollTarget = useRef(0);
 
   const material = useMemo(
@@ -80,7 +72,6 @@ function Field({ reduced, mobile }: { reduced: boolean; mobile: boolean }) {
         blending: THREE.AdditiveBlending,
         uniforms: {
           uTime: { value: 0 },
-          uMouse: { value: new THREE.Vector2(99, 99) },
           uRipple: { value: new THREE.Vector3(0, 0, -100) },
           uPixelRatio: { value: dpr },
           uReduced: { value: reduced ? 1 : 0 },
@@ -130,11 +121,6 @@ function Field({ reduced, mobile }: { reduced: boolean; mobile: boolean }) {
       const ny = -((clientY / window.innerHeight) * 2 - 1);
       return [nx * (viewport.width / 2), ny * (viewport.height / 2)] as const;
     };
-    const onMove = (e: PointerEvent) => {
-      const [x, y] = toWorld(e.clientX, e.clientY);
-      mouseTarget.current.set(x, y);
-    };
-    const onLeave = () => mouseTarget.current.set(99, 99);
     const onClick = (e: PointerEvent) => {
       const [x, y] = toWorld(e.clientX, e.clientY);
       material.uniforms.uRipple.value.set(x, y, material.uniforms.uTime.value);
@@ -143,24 +129,18 @@ function Field({ reduced, mobile }: { reduced: boolean; mobile: boolean }) {
       const max = document.documentElement.scrollHeight - window.innerHeight;
       scrollTarget.current = max > 0 ? window.scrollY / max : 0;
     };
-    window.addEventListener("pointermove", onMove, { passive: true });
     window.addEventListener("pointerdown", onClick, { passive: true });
     window.addEventListener("scroll", onScroll, { passive: true });
-    document.addEventListener("pointerleave", onLeave);
     onScroll();
     return () => {
-      window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerdown", onClick);
       window.removeEventListener("scroll", onScroll);
-      document.removeEventListener("pointerleave", onLeave);
     };
   }, [viewport.width, viewport.height, material]);
 
   useFrame((state, delta) => {
     const u = material.uniforms;
     u.uTime.value = state.clock.elapsedTime;
-    const m = u.uMouse.value as THREE.Vector2;
-    m.lerp(mouseTarget.current, 1 - Math.exp(-delta * 9));
     u.uScroll.value = THREE.MathUtils.lerp(u.uScroll.value, scrollTarget.current, 1 - Math.exp(-delta * 4));
   });
 

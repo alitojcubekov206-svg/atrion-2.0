@@ -318,7 +318,7 @@ function Caption({
 /** Below this width, scrubbing a 340vh section by touch is a poor experience —
  * the sequence autoplays on a loop instead once it scrolls into view. */
 const MOBILE_QUERY = "(max-width: 768px)";
-const AUTOPLAY_SECONDS = 7.5;
+const AUTOPLAY_SECONDS = 21;
 /** Pause after the section is reached before the first loop starts, so it
  * doesn't fire the instant a user's scroll flicks past the trigger point. */
 const AUTOPLAY_START_DELAY = 1.4;
@@ -361,9 +361,11 @@ export default function ScrollShowcase() {
       const el = containerRef.current;
       if (el && !hasPlayedRef.current && el.getBoundingClientRect().top < window.innerHeight * 0.6) {
         hasPlayedRef.current = true;
-        animate(progress, [0, 1], {
+        // Dwell on each of the three captions instead of sweeping straight through.
+        animate(progress, [0, 0.17, 0.17, 0.5, 0.5, 0.87, 0.87, 1], {
           duration: AUTOPLAY_SECONDS,
           delay: AUTOPLAY_START_DELAY,
+          times: [0, 0.1, 0.34, 0.42, 0.66, 0.74, 0.96, 1],
           ease: "easeInOut",
           repeat: Infinity,
         });

@@ -22,8 +22,24 @@ const HERO_DRIFT_DOTS: readonly DriftDot[] = [
 ];
 
 const IDLE_DELAY_MS = 4500;
-const AUTO_SCROLL_MS = 9000;
+const AUTO_SCROLL_MS = 26000;
 const SESSION_KEY = "atrion_auto_intro_played";
+
+/** Where each showcase caption is centred, as a fraction of the section. The
+ * auto-scroll moves briskly to each one and then dwells so it can be read. */
+const STEP_STOPS = [0.17, 0.5, 0.87, 1];
+const STEP_MOVE_SHARE = 0.32;
+
+function dwellEase(t: number) {
+  const perStep = 1 / STEP_STOPS.length;
+  const index = Math.min(STEP_STOPS.length - 1, Math.floor(t / perStep));
+  const local = (t - index * perStep) / perStep;
+  const from = index === 0 ? 0 : STEP_STOPS[index - 1];
+  const to = STEP_STOPS[index];
+  const move = Math.min(1, local / STEP_MOVE_SHARE);
+  const eased = 1 - Math.pow(1 - move, 3);
+  return from + (to - from) * eased;
+}
 
 /**
  * Desktop's scroll-scrubbed showcase only plays while someone scrolls it —
@@ -53,7 +69,7 @@ const SCROLL_KEYS = new Set([
   " ",
 ]);
 const CHECK_INTERVAL_MS = 700;
-const MIN_AUTO_SCROLL_MS = 1800;
+const MIN_AUTO_SCROLL_MS = 6000;
 
 function useAutoScrollIntro() {
   useEffect(() => {
@@ -99,12 +115,11 @@ function useAutoScrollIntro() {
         Math.min(AUTO_SCROLL_MS, (Math.abs(distance) / fullDistance) * AUTO_SCROLL_MS)
       );
       const start = performance.now();
-      const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
       const step = (now: number) => {
         if (!autoScrolling) return;
         const t = Math.min(1, (now - start) / duration);
-        window.scrollTo(0, startY + distance * easeOutCubic(t));
+        window.scrollTo(0, startY + distance * dwellEase(t));
         if (t < 1) {
           rafId = requestAnimationFrame(step);
         } else {
