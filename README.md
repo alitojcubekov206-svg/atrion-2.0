@@ -68,6 +68,31 @@ In Vercel, add the six variables above in **Project Settings → Environment Var
 for Production (and Preview if required), then redeploy. `OPENAI_BASE_URL` and all
 three `AI_FALLBACK_*` values are optional; without `OPENAI_API_KEY`, AI runs in demo mode.
 
+## Email verification
+
+Off by default (`EMAIL_VERIFICATION_ENABLED="false"`). Registration and
+password checks work without it — it only gates access behind a 6-digit
+email code when turned on.
+
+Sending goes through [Brevo](https://brevo.com) (free tier: 300 emails/day,
+forever), not a custom-domain provider — no domain purchase required. Brevo
+verifies a single sender **email address** (click a confirmation link),
+not a domain, so any real inbox you already own (a Gmail works) is enough:
+
+```env
+BREVO_API_KEY="your-brevo-api-key"
+EMAIL_FROM_ADDRESS="you@example.com"   # the address you verified in Brevo
+EMAIL_FROM_NAME="Atrion"
+EMAIL_VERIFICATION_ENABLED="false"     # flip to "true" only after a real code arrives
+EMAIL_DEV_RETURN_CODE="true"           # dev only: echoes the OTP back if delivery fails
+```
+
+Sign up free, add and verify a sender under **Senders & IP → Senders**, then
+create a key under **SMTP & API → API Keys**. Test with
+`EMAIL_VERIFICATION_ENABLED="false"` and `EMAIL_DEV_RETURN_CODE="true"` first —
+register an account and confirm the code shows up in the email inbox, not
+just the dev fallback — before flipping verification on for real users.
+
 ## Finik Pro payments
 
 Atrion charges **200 KGS for 30 days of Pro**. WhatsApp remains available until

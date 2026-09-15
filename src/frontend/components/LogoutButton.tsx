@@ -2,7 +2,13 @@
 
 import { useRouter } from "next/navigation";
 
-export default function LogoutButton() {
+export default function LogoutButton({
+  className = "rounded-full border border-line px-4 py-1.5 text-muted transition hover:border-accent hover:text-fg",
+  children = "Выйти",
+}: {
+  className?: string;
+  children?: React.ReactNode;
+}) {
   const router = useRouter();
 
   async function logout() {
@@ -12,11 +18,8 @@ export default function LogoutButton() {
   }
 
   return (
-    <button
-      onClick={logout}
-      className="rounded-full border border-line px-4 py-1.5 text-muted transition hover:border-accent hover:text-fg"
-    >
-      Выйти
+    <button onClick={logout} className={className}>
+      {children}
     </button>
   );
 }

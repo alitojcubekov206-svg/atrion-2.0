@@ -6,7 +6,7 @@ const CODE_TTL_MS = 10 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 export const MAX_VERIFICATION_ATTEMPTS = 5;
 
-// Off until a verified sending domain is set up in Resend (test mode can only email the account owner).
+// Off until a Brevo sender is verified (BREVO_API_KEY + EMAIL_FROM_ADDRESS set).
 export function isEmailVerificationEnabled() {
   return process.env.EMAIL_VERIFICATION_ENABLED === "true";
 }
@@ -28,7 +28,7 @@ export async function issueVerificationCode(userId: string, email: string) {
   });
 
   const sent = await sendVerificationEmail(email, code);
-  const devReturnCode = process.env.RESEND_DEV_RETURN_CODE === "true";
+  const devReturnCode = process.env.EMAIL_DEV_RETURN_CODE === "true";
 
   return { sent, devCode: !sent && devReturnCode ? code : undefined };
 }
