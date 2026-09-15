@@ -7,6 +7,7 @@ import { FREE_PROJECT_LIMIT } from "@/backend/plans";
 import type { Blueprint } from "@/shared/types";
 import StarkHudFrame, { StarkPanel } from "@/frontend/components/StarkHudFrame";
 import CountUp from "@/frontend/components/CountUp";
+import DashboardTour from "@/frontend/components/DashboardTour";
 
 export const metadata: Metadata = { title: "Проекты" };
 
@@ -59,6 +60,7 @@ export default async function DashboardPage() {
 
   return (
     <StarkHudFrame>
+      <DashboardTour show={projects.length === 0} />
       <StarkPanel>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -91,6 +93,7 @@ export default async function DashboardPage() {
           ) : (
             <Link
               href="/dashboard/new"
+              data-tour="new-project"
               className="rounded-full border border-accent/40 bg-accent/10 px-6 py-2.5 text-sm font-semibold text-accent2 transition hover:bg-accent/20"
             >
               + Новый проект
@@ -115,6 +118,7 @@ export default async function DashboardPage() {
       <StarkPanel delay={0.08} className="mt-8">
         <Link
           href="/dashboard/design-engine"
+          data-tour="engine"
           className="card glass group relative block overflow-hidden p-6 transition-all duration-300 hover:-translate-y-0.5 md:p-8"
         >
           <div className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full bg-accent/15 blur-3xl transition duration-500 group-hover:bg-accent/25" />

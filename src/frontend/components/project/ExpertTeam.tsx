@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ExpertReply, ExpertRole } from "@/shared/types";
-import Thinking from "@/frontend/components/Thinking";
+import MeshLoader from "@/frontend/components/MeshLoader";
 
 type Message = {
   id: string;
@@ -140,7 +140,7 @@ export default function ExpertTeam({ projectId }: { projectId: string }) {
               )}
             </div>
           ))}
-          {loading && <Thinking label="Эксперт изучает Blueprint" />}
+          {loading && <MeshLoader label="Эксперт изучает Blueprint" />}
           {error && <p className="text-sm text-red-400">{error}</p>}
         </div>
 

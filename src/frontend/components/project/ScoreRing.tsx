@@ -1,5 +1,7 @@
 "use client";
 
+import CountUp from "@/frontend/components/CountUp";
+
 export default function ScoreRing({ value, label }: { value: number; label: string }) {
   const r = 41;
   const c = 2 * Math.PI * r;
@@ -21,9 +23,12 @@ export default function ScoreRing({ value, label }: { value: number; label: stri
           strokeLinecap="round"
           strokeDasharray={c}
           strokeDashoffset={offset}
+          style={{ filter: `drop-shadow(0 0 6px ${color}66)` }}
         />
       </svg>
-      <span className="-mt-[74px] text-xl font-bold">{value}</span>
+      <span className="-mt-[74px] text-xl font-bold">
+        <CountUp value={value} duration={1200} />
+      </span>
       <span className="mt-[38px] text-xs uppercase tracking-wider text-muted">{label}</span>
     </div>
   );

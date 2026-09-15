@@ -38,6 +38,25 @@ const METHOD_COLOR: Record<string, string> = {
   DELETE: "text-red-400",
 };
 
+const EASE = [0.22, 1, 0.36, 1] as const;
+
+const revealContainer = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.14, delayChildren: 0.05 } },
+};
+const revealItem = {
+  hidden: { opacity: 0, y: 22, filter: "blur(6px)" },
+  show: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.65, ease: EASE } },
+};
+const revealTabBar = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.04 } },
+};
+const revealTab = {
+  hidden: { opacity: 0, y: 8, scale: 0.9 },
+  show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.35, ease: EASE } },
+};
+
 export default function BlueprintView({
   blueprint: bp,
   projectId,
@@ -45,6 +64,7 @@ export default function BlueprintView({
   onRegenerate,
   regenerating,
   onDelete,
+  reveal = false,
 }: {
   blueprint: Blueprint;
   projectId: string;
@@ -52,16 +72,21 @@ export default function BlueprintView({
   onRegenerate: () => void;
   regenerating: boolean;
   onDelete: () => void;
+  reveal?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("Overview");
 
   return (
-    <div>
-      <div className="no-print flex flex-wrap items-start justify-between gap-4">
+    <motion.div initial={reveal ? "hidden" : "show"} animate="show" variants={revealContainer}>
+      <motion.div variants={revealItem} className="no-print flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-muted">Project Blueprint</p>
           <h1 className="mt-1 text-3xl font-bold leading-tight">{bp.overview.name}</h1>
           <p className="mt-1 text-muted">{bp.overview.tagline}</p>
+          <motion.div
+            variants={{ hidden: { scaleX: 0 }, show: { scaleX: 1, transition: { duration: 0.8, ease: EASE } } }}
+            className="gold-line mt-3 w-24 origin-left"
+          />
         </div>
         <div className="flex gap-2">
           <button
@@ -78,12 +103,16 @@ export default function BlueprintView({
             Удалить
           </button>
         </div>
-      </div>
+      </motion.div>
 
-      <div className="no-print mt-8 flex flex-wrap gap-1 rounded-2xl border border-line bg-surface p-1.5">
+      <motion.div
+        variants={revealTabBar}
+        className="no-print mt-8 flex flex-wrap gap-1 rounded-2xl border border-line bg-surface p-1.5"
+      >
         {TABS.map((t) => (
-          <button
+          <motion.button
             key={t}
+            variants={revealTab}
             onClick={() => setTab(t)}
             className={`relative rounded-xl px-4 py-2 text-sm transition ${
               tab === t ? "text-white" : "text-muted hover:text-fg"
@@ -97,10 +126,11 @@ export default function BlueprintView({
               />
             )}
             <span className="relative">{t}</span>
-          </button>
+          </motion.button>
         ))}
-      </div>
+      </motion.div>
 
+      <motion.div variants={revealItem}>
       <motion.div key={tab} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mt-8">
         {tab === "Overview" && <Overview bp={bp} idea={idea} />}
         {tab === "Health" && <HealthScore blueprint={bp} />}
@@ -270,7 +300,8 @@ export default function BlueprintView({
           </div>
         )}
       </motion.div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 

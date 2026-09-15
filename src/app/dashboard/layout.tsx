@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/backend/auth";
 import { isEmailVerificationEnabled } from "@/backend/verification";
 import LogoutButton from "@/frontend/components/LogoutButton";
 import Footer from "@/frontend/components/Footer";
+import CommandPalette, { CommandPaletteTrigger } from "@/frontend/components/CommandPalette";
 
 const NAV = [
   { href: "/dashboard", label: "Проекты", always: false },
@@ -35,6 +36,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <TransitionLink
                 key={item.href}
                 href={item.href}
+                data-tour={item.href === "/dashboard/settings" ? "settings" : undefined}
                 className={`text-[11px] uppercase tracking-[0.2em] transition ${
                   item.always ? "text-accent hover:text-accent2" : "hidden text-muted hover:text-white sm:inline"
                 }`}
@@ -44,6 +46,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             ))}
           </div>
           <div className="flex items-center gap-3 text-sm">
+            <CommandPaletteTrigger />
             <span className="hidden font-mono text-[10px] uppercase tracking-wider text-muted sm:inline">
               {user.name}
             </span>
@@ -68,6 +71,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </header>
       <main className="flex-1">{children}</main>
       <Footer />
+      <CommandPalette />
     </div>
   );
 }

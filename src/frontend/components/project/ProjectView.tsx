@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Blueprint, InterviewState } from "@/shared/types";
-import Thinking from "@/frontend/components/Thinking";
+import MeshLoader from "@/frontend/components/MeshLoader";
 import ConfirmDialog from "@/frontend/components/ConfirmDialog";
 import { postJson, requestJson } from "@/frontend/api";
 import BlueprintView from "./BlueprintView";
@@ -25,6 +25,7 @@ export default function ProjectView({ project }: { project: ProjectData }) {
   const [answers, setAnswers] = useState<Record<string, string>>(project.interview?.answers ?? {});
   const [phase, setPhase] = useState<"idle" | "interviewing" | "generating">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [justGenerated, setJustGenerated] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export default function ProjectView({ project }: { project: ProjectData }) {
       70_000
     );
     if (res.ok && res.data.blueprint) {
+      setJustGenerated(true);
       setBlueprint(res.data.blueprint);
       router.refresh();
     } else {
@@ -99,14 +101,16 @@ export default function ProjectView({ project }: { project: ProjectData }) {
           onRegenerate={generate}
           regenerating={phase === "generating"}
           onDelete={() => setDeleteOpen(true)}
+          reveal={justGenerated}
         />
         {dialog}
       </>
     );
   }
 
-  const allAnswered =
-    interview !== null && interview.questions.every((q) => answers[q.id]);
+  const questions = interview?.questions ?? [];
+  const answered = questions.filter((q) => answers[q.id]).length;
+  const allAnswered = interview !== null && answered === questions.length;
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -124,7 +128,7 @@ export default function ProjectView({ project }: { project: ProjectData }) {
         <div className="mt-8">
           {phase === "interviewing" ? (
             <div className="card p-6">
-              <Thinking label="AI изучает идею и готовит вопросы" />
+              <MeshLoader label="AI изучает идею и готовит вопросы" />
             </div>
           ) : (
             <button onClick={startInterview} className="btn-primary rounded-full px-8 py-3 font-semibold">
@@ -137,7 +141,7 @@ export default function ProjectView({ project }: { project: ProjectData }) {
       {interview && (
         <div className="mt-8 flex flex-col gap-6">
           <AnimatePresence>
-            {interview.questions.map((q, i) => (
+            {questions.map((q, i) => (
               <motion.div
                 key={q.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -150,21 +154,37 @@ export default function ProjectView({ project }: { project: ProjectData }) {
                   {q.question}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label={q.question}>
-                  {q.options.map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      aria-pressed={answers[q.id] === opt}
-                      onClick={() => setAnswers((a) => ({ ...a, [q.id]: opt }))}
-                      className={`rounded-full border px-4 py-2 text-sm transition ${
-                        answers[q.id] === opt
-                          ? "border-accent bg-accent/15 text-white"
-                          : "border-line text-muted hover:border-accent/50 hover:text-white"
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
+                  {q.options.map((opt) => {
+                    const selected = answers[q.id] === opt;
+                    return (
+                      <motion.button
+                        key={opt}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setAnswers((a) => ({ ...a, [q.id]: opt }))}
+                        whileTap={{ scale: 0.95 }}
+                        animate={selected ? { scale: [1, 1.07, 1] } : { scale: 1 }}
+                        transition={{ duration: 0.35 }}
+                        className={`relative rounded-full border px-4 py-2 text-sm transition ${
+                          selected
+                            ? "border-accent bg-accent/15 text-white"
+                            : "border-line text-muted hover:border-accent/50 hover:text-white"
+                        }`}
+                      >
+                        {selected && (
+                          <motion.span
+                            key={`${q.id}-${opt}`}
+                            aria-hidden="true"
+                            initial={{ opacity: 0.7, scale: 1 }}
+                            animate={{ opacity: 0, scale: 1.7 }}
+                            transition={{ duration: 0.6, ease: "easeOut" }}
+                            className="pointer-events-none absolute inset-0 rounded-full border border-accent"
+                          />
+                        )}
+                        {opt}
+                      </motion.button>
+                    );
+                  })}
                 </div>
               </motion.div>
             ))}
@@ -172,15 +192,39 @@ export default function ProjectView({ project }: { project: ProjectData }) {
 
           {phase === "generating" ? (
             <div className="card p-6">
-              <Thinking label="AI проектирует архитектуру, БД, API и roadmap" />
+              <MeshLoader label="AI проектирует архитектуру, БД, API и roadmap" />
             </div>
+          ) : allAnswered ? (
+            <motion.button
+              onClick={generate}
+              initial={{ scale: 0.96, opacity: 0.8 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 300, damping: 18 }}
+              className="btn-primary relative self-start overflow-hidden rounded-full px-8 py-3 font-semibold"
+            >
+              <motion.span
+                aria-hidden="true"
+                initial={{ x: "-120%" }}
+                animate={{ x: "220%" }}
+                transition={{ duration: 0.9, ease: "easeInOut", delay: 0.15 }}
+                className="pointer-events-none absolute inset-y-0 w-1/3 -skew-x-12 bg-white/40"
+              />
+              <span className="relative">Сгенерировать план проекта →</span>
+            </motion.button>
           ) : (
             <button
-              onClick={generate}
-              disabled={!allAnswered}
-              className="btn-primary self-start rounded-full px-8 py-3 font-semibold disabled:opacity-50"
+              disabled
+              className="relative self-start overflow-hidden rounded-full border border-line px-8 py-3 text-sm font-semibold text-muted"
             >
-              {allAnswered ? "Сгенерировать план проекта →" : "Ответьте на все вопросы"}
+              <motion.span
+                aria-hidden="true"
+                animate={{ width: `${questions.length ? (answered / questions.length) * 100 : 0}%` }}
+                transition={{ type: "spring", stiffness: 200, damping: 26 }}
+                className="absolute inset-y-0 left-0 bg-accent/20"
+              />
+              <span className="relative">
+                Ответьте на все вопросы · {answered}/{questions.length}
+              </span>
             </button>
           )}
         </div>

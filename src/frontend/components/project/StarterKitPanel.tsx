@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Thinking from "@/frontend/components/Thinking";
+import MeshLoader from "@/frontend/components/MeshLoader";
 import { download } from "@/frontend/export";
 import type { StarterKit } from "@/shared/types";
 
@@ -37,7 +37,7 @@ export default function StarterKitPanel({ projectId }: { projectId: string }) {
           вертикального среза: конфигурацию, модели, API и README.
         </p>
         {loading ? (
-          <div className="mx-auto mt-8 w-fit"><Thinking label="Senior Programmer пишет стартовый код" /></div>
+          <div className="mx-auto mt-8 w-fit"><MeshLoader label="Senior Programmer пишет стартовый код" /></div>
         ) : (
           <button onClick={generate} className="btn-primary mt-7 rounded-full px-7 py-3 font-semibold">
             Создать Starter Kit →
