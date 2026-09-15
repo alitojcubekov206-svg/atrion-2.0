@@ -1,11 +1,11 @@
 import type { MetadataRoute } from "next";
-
-const SITE_URL = process.env.APP_URL || "https://atrion-2-0.vercel.app";
+import { siteUrl } from "@/backend/site";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const routes = ["", "/pricing", "/legal", "/login", "/register"];
+  const base = siteUrl();
+  const routes = ["", "/pricing", "/legal", "/login", "/register", "/forgot-password"];
   return routes.map((route) => ({
-    url: `${SITE_URL}${route}`,
+    url: `${base}${route}`,
     lastModified: new Date(),
   }));
 }

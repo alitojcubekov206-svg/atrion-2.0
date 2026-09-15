@@ -1,14 +1,13 @@
 import type { MetadataRoute } from "next";
-
-const SITE_URL = process.env.APP_URL || "https://atrion-2-0.vercel.app";
+import { siteUrl } from "@/backend/site";
 
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: ["/api/", "/dashboard/"],
+      disallow: ["/api/", "/dashboard/", "/share/"],
     },
-    sitemap: `${SITE_URL}/sitemap.xml`,
+    sitemap: `${siteUrl()}/sitemap.xml`,
   };
 }

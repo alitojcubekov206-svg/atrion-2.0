@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Manrope, Unbounded } from "next/font/google";
 import MotionProvider from "@/frontend/components/MotionProvider";
+import { siteUrl } from "@/backend/site";
 import "./globals.css";
 
 const body = Manrope({
@@ -17,7 +18,7 @@ const display = Unbounded({
   weight: ["500", "600", "700"],
 });
 
-const SITE_URL = process.env.APP_URL || "https://atrion-2-0.vercel.app";
+const SITE_URL = siteUrl();
 const SITE_DESCRIPTION =
   "Atrion понимает человека и создаёт вместе с ним: 3D-объекты, архитектура и intelligent design в браузере.";
 
