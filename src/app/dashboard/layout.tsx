@@ -1,4 +1,4 @@
-import Link from "next/link";
+import TransitionLink from "@/frontend/components/TransitionLink";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/backend/auth";
 import { isEmailVerificationEnabled } from "@/backend/verification";
@@ -28,11 +28,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <header className="sticky top-0 z-50 border-b border-line bg-bg/80 backdrop-blur-xl">
         <nav className="flex items-center justify-between px-5 py-3.5 md:px-10" aria-label="Основная навигация">
           <div className="flex items-center gap-5 md:gap-8">
-            <Link href="/" className="display text-lg font-semibold tracking-tight text-white">
+            <TransitionLink href="/" className="display text-lg font-semibold tracking-tight text-white">
               ATRION <span className="text-accent">2.0</span>
-            </Link>
+            </TransitionLink>
             {NAV.map((item) => (
-              <Link
+              <TransitionLink
                 key={item.href}
                 href={item.href}
                 className={`text-[11px] uppercase tracking-[0.2em] transition ${
@@ -40,7 +40,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 }`}
               >
                 {item.label}
-              </Link>
+              </TransitionLink>
             ))}
           </div>
           <div className="flex items-center gap-3 text-sm">
@@ -55,12 +55,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 PRO
               </span>
             ) : (
-              <Link
+              <TransitionLink
                 href="/pricing"
                 className="rounded border border-accent/30 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-accent transition hover:bg-accent/10"
               >
                 Улучшить
-              </Link>
+              </TransitionLink>
             )}
             <LogoutButton />
           </div>

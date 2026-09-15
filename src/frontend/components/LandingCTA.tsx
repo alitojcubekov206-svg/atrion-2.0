@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { motion } from "framer-motion";
 import { AmbientDrift, DotGrid, type DriftDot } from "@/frontend/components/AmbientDots";
+import TransitionLink from "@/frontend/components/TransitionLink";
+import Magnetic from "@/frontend/components/Magnetic";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -20,7 +21,7 @@ const DRIFT_DOTS: readonly DriftDot[] = [
 
 export default function LandingCTA({ loggedIn }: { loggedIn: boolean }) {
   return (
-    <section className="relative overflow-hidden bg-[#050507] px-6 py-28 md:py-40">
+    <section className="relative overflow-hidden px-6 py-28 md:py-40">
       <DotGrid className="inset-0" />
       <div className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-[radial-gradient(circle,rgba(167,139,250,0.16),transparent_65%)] blur-2xl" />
       <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-[radial-gradient(circle,rgba(232,121,249,0.14),transparent_65%)] blur-2xl" />
@@ -63,7 +64,7 @@ export default function LandingCTA({ loggedIn }: { loggedIn: boolean }) {
           }}
           className="mt-5 max-w-md text-[15px] leading-relaxed text-[#908a9e] md:text-base"
         >
-          Начните с одной идеи — через минуту у вас будет цельная 3D-модель, готовая к правкам.
+          Начните с одной идеи - через минуту у вас будет цельная 3D-модель, готовая к правкам.
         </motion.p>
 
         <motion.div
@@ -73,23 +74,27 @@ export default function LandingCTA({ loggedIn }: { loggedIn: boolean }) {
           }}
           className="mt-10 flex flex-wrap items-center justify-center gap-4"
         >
-          <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
-            <Link
-              href={loggedIn ? "/dashboard/design-engine" : "/register"}
-              className="btn-primary inline-block rounded-full px-10 py-4 text-base"
-            >
-              {loggedIn ? "Открыть Engine" : "Начать бесплатно"}
-            </Link>
-          </motion.div>
-          {!loggedIn && (
-            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-              <Link
-                href="/login"
-                className="btn-ghost inline-block rounded-full px-8 py-4 text-base"
+          <Magnetic strength={0.4}>
+            <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
+              <TransitionLink
+                href={loggedIn ? "/dashboard/design-engine" : "/register"}
+                className="btn-primary inline-block rounded-full px-10 py-4 text-base"
               >
-                Войти
-              </Link>
+                {loggedIn ? "Открыть Engine" : "Начать бесплатно"}
+              </TransitionLink>
             </motion.div>
+          </Magnetic>
+          {!loggedIn && (
+            <Magnetic strength={0.3}>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <TransitionLink
+                  href="/login"
+                  className="btn-ghost inline-block rounded-full px-8 py-4 text-base"
+                >
+                  Войти
+                </TransitionLink>
+              </motion.div>
+            </Magnetic>
           )}
         </motion.div>
       </motion.div>

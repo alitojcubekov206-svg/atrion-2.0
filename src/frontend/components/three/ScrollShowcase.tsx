@@ -237,7 +237,6 @@ function ShowcaseScene({ progressRef }: { progressRef: React.MutableRefObject<nu
 
   return (
     <>
-      <color attach="background" args={[BG]} />
       <fog attach="fog" args={[BG, 14, 34]} />
       <hemisphereLight args={["#e9d5ff", BG, 0.85]} />
       <ambientLight intensity={0.7} />
@@ -277,6 +276,7 @@ function ScrollCanvas({ progressRef }: { progressRef: React.MutableRefObject<num
         camera={{ position: [0, 5, 24], fov: 42 }}
         gl={{
           antialias: true,
+          alpha: true,
           powerPreference: "high-performance",
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.4,
@@ -389,13 +389,14 @@ export default function ScrollShowcase() {
     <section
       ref={containerRef}
       data-scroll-showcase
-      className={`relative bg-[#050507] ${isMobile ? "h-screen" : "h-[340vh]"}`}
+      className={`relative ${isMobile ? "h-screen" : "h-[340vh]"}`}
     >
       <div
         className={`h-screen w-full overflow-hidden ${isMobile ? "relative" : "sticky top-0"}`}
       >
+        <div className="pointer-events-none absolute inset-0 bg-[#050507]/45" />
         <ScrollCanvas progressRef={progressRef} />
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(5,5,7,0.35)_75%,#050507_97%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(5,5,7,0.3)_75%,rgba(5,5,7,0.8)_97%)]" />
 
         <Caption
           opacity={cap1}

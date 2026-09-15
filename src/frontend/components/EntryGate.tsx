@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import TransitionLink from "@/frontend/components/TransitionLink";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import AuthForm from "@/frontend/components/AuthForm";
@@ -32,7 +32,7 @@ function GateBrand({ mode }: { mode: GateMode }) {
       }}
       className="max-w-md"
     >
-      <Link href="/" className="inline-block">
+      <TransitionLink href="/" className="inline-block">
         <motion.h1
           variants={{
             hidden: { opacity: 0, y: 28, letterSpacing: "0.4em" },
@@ -47,7 +47,7 @@ function GateBrand({ mode }: { mode: GateMode }) {
         >
           ATRION
         </motion.h1>
-      </Link>
+      </TransitionLink>
 
       <motion.p
         variants={{

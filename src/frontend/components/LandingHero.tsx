@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import HeroScene from "@/frontend/components/three/HeroSceneLoader";
+import ScrambleText from "@/frontend/components/ScrambleText";
 import { AmbientDrift, DotGrid, type DriftDot } from "@/frontend/components/AmbientDots";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -145,7 +146,7 @@ export default function LandingHero({ loggedIn }: { loggedIn: boolean }) {
       <div aria-hidden="true">
         <HeroScene />
       </div>
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#050507]/85 via-[#050507]/35 to-transparent" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#050507]/70 via-[#050507]/25 to-transparent" />
       <DotGrid className="inset-y-0 left-0 w-full md:w-3/5" />
       <div className="pointer-events-none absolute -left-24 top-1/4 h-80 w-80 rounded-full bg-[radial-gradient(circle,rgba(167,139,250,0.18),transparent_65%)] blur-2xl" />
       <div className="pointer-events-none absolute -left-10 bottom-0 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(232,121,249,0.12),transparent_65%)] blur-2xl" />
@@ -198,7 +199,7 @@ export default function LandingHero({ loggedIn }: { loggedIn: boolean }) {
             }}
             className="display mt-5 text-2xl font-medium tracking-tight text-[#a78bfa] md:text-4xl"
           >
-            Just build it.
+            <ScrambleText text="Just build it." delay={250} duration={1000} />
           </motion.p>
 
           <motion.div

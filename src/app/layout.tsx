@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Manrope, Unbounded } from "next/font/google";
 import MotionProvider from "@/frontend/components/MotionProvider";
+import PageWipeProvider from "@/frontend/components/PageWipe";
 import { siteUrl } from "@/backend/site";
 import "./globals.css";
 
@@ -47,7 +48,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ru" className={`${body.variable} ${display.variable}`}>
       <body className="font-[family-name:var(--font-body)] antialiased">
-        <MotionProvider>{children}</MotionProvider>
+        <MotionProvider>
+          <PageWipeProvider>{children}</PageWipeProvider>
+        </MotionProvider>
       </body>
     </html>
   );

@@ -118,7 +118,6 @@ export default function HeroScene() {
   return (
     <div className="absolute inset-0 -z-10">
       <AmbientCanvas fps={30} camera={{ position: [5.5, 3.2, 7.2], fov: 42 }}>
-        <color attach="background" args={[BG]} />
         <fog attach="fog" args={[BG, 12, 30]} />
         <hemisphereLight args={["#e9d5ff", BG, 0.9]} />
         <ambientLight intensity={0.8} />
@@ -141,8 +140,8 @@ export default function HeroScene() {
         />
         <Stars radius={60} depth={30} count={400} factor={2.2} saturation={0} fade speed={0.35} />
       </AmbientCanvas>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_25%,rgba(5,5,7,0.4)_75%,#050507_96%)]" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#050507] to-transparent" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_25%,rgba(5,5,7,0.35)_75%,rgba(5,5,7,0.8)_96%)]" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#050507]/80 to-transparent" />
     </div>
   );
 }

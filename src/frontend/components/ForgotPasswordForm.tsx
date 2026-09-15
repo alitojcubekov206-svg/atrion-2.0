@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import TransitionLink from "@/frontend/components/TransitionLink";
 import { AnimatePresence, motion } from "framer-motion";
 import AuthTransition from "@/frontend/components/AuthTransition";
 import { postJson } from "@/frontend/api";
@@ -201,9 +201,9 @@ export default function ForgotPasswordForm() {
 
       <p className="mt-5 text-center text-sm text-muted">
         Вспомнили пароль?{" "}
-        <Link href="/login" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
+        <TransitionLink href="/login" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
           Войти
-        </Link>
+        </TransitionLink>
       </p>
     </div>
   );

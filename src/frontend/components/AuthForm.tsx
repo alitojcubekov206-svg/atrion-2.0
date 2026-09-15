@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import TransitionLink from "@/frontend/components/TransitionLink";
 import { motion, type Variants } from "framer-motion";
 import AuthTransition from "@/frontend/components/AuthTransition";
 
@@ -133,31 +133,31 @@ export default function AuthForm({
         {mode === "register" && (
           <motion.p variants={gateItem} className="text-center text-xs leading-relaxed text-muted">
             Создавая аккаунт, вы соглашаетесь с{" "}
-            <Link href="/legal#terms" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
+            <TransitionLink href="/legal#terms" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
               условиями
-            </Link>{" "}
+            </TransitionLink>{" "}
             и{" "}
-            <Link href="/legal#privacy" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
+            <TransitionLink href="/legal#privacy" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
               политикой конфиденциальности
-            </Link>
+            </TransitionLink>
             .
           </motion.p>
         )}
         <motion.p variants={gateItem} className="pt-1 text-center text-sm text-muted">
           {mode === "login" ? (
             <>
-              <Link href="/register" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
+              <TransitionLink href="/register" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
                 Создать аккаунт
-              </Link>
+              </TransitionLink>
               <span className="mx-2 text-white/20">·</span>
-              <Link href="/forgot-password" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
+              <TransitionLink href="/forgot-password" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
                 Забыли пароль?
-              </Link>
+              </TransitionLink>
             </>
           ) : (
-            <Link href="/login" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
+            <TransitionLink href="/login" className="text-[#a78bfa]/85 transition hover:text-[#a78bfa]">
               Уже есть доступ
-            </Link>
+            </TransitionLink>
           )}
         </motion.p>
       </motion.form>
@@ -212,9 +212,9 @@ export default function AuthForm({
       {mode === "register" && (
         <p className="mt-4 text-center text-xs leading-relaxed text-muted">
           Регистрируясь, вы соглашаетесь с{" "}
-          <Link href="/legal#terms" className="text-accent hover:underline">условиями</Link>{" "}
+          <TransitionLink href="/legal#terms" className="text-accent hover:underline">условиями</TransitionLink>{" "}
           и{" "}
-          <Link href="/legal#privacy" className="text-accent hover:underline">политикой конфиденциальности</Link>.
+          <TransitionLink href="/legal#privacy" className="text-accent hover:underline">политикой конфиденциальности</TransitionLink>.
         </p>
       )}
 
@@ -222,20 +222,20 @@ export default function AuthForm({
         {mode === "login" ? (
           <>
             Нет аккаунта?{" "}
-            <Link href="/register" className="text-accent hover:underline">
+            <TransitionLink href="/register" className="text-accent hover:underline">
               Регистрация
-            </Link>
+            </TransitionLink>
             <span className="mx-2 text-white/20">·</span>
-            <Link href="/forgot-password" className="text-accent hover:underline">
+            <TransitionLink href="/forgot-password" className="text-accent hover:underline">
               Забыли пароль?
-            </Link>
+            </TransitionLink>
           </>
         ) : (
           <>
             Уже есть аккаунт?{" "}
-            <Link href="/login" className="text-accent hover:underline">
+            <TransitionLink href="/login" className="text-accent hover:underline">
               Войти
-            </Link>
+            </TransitionLink>
           </>
         )}
       </p>
