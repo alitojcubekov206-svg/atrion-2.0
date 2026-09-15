@@ -1,4 +1,5 @@
 import Link from "next/link";
+import EffectsToggle from "@/frontend/components/EffectsToggle";
 
 export default function Footer() {
   return (
@@ -19,6 +20,7 @@ export default function Footer() {
             Cookies
           </Link>
         </nav>
+        <EffectsToggle />
       </div>
     </footer>
   );

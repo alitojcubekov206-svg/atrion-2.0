@@ -92,6 +92,17 @@ create a key under **SMTP & API → API Keys**. Test with
 register an account and confirm the code shows up in the email inbox, not
 just the dev fallback — before flipping verification on for real users.
 
+## Effects levels
+
+Decorative motion (cinematic intro, particle fields, route wipes, generation
+reveals) runs at one of three levels stored in the browser
+(`effects` in `src/frontend/settings.ts`): **full**, **lite** (fewer particles,
+lower frame rate, no ripple) and **off**. Phones and low-spec machines start on
+lite via `detectEffectsLevel()`; the OS reduced-motion preference always forces
+off. Users change it in Settings or from the footer toggle. Components read it
+through `useEffects()` in `src/frontend/effects.ts` and must render nothing
+WebGL-related while it is `null` (pre-hydration) or `off`.
+
 ## Limits and abuse protection
 
 - **AI calls** are metered per user per UTC day: `AI_DAILY_LIMIT` in

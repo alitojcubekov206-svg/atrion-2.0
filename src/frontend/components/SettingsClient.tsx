@@ -48,6 +48,33 @@ export default function SettingsClient() {
 
       <div className="mt-6 space-y-5">
         <div>
+          <p className="text-xs text-muted">Эффекты и анимации</p>
+          <div className="mt-2 flex gap-2">
+            {(
+              [
+                ["full", "Полные"],
+                ["lite", "Лёгкие"],
+                ["off", "Выкл"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={settings.effects === value}
+                onClick={() => update({ effects: value })}
+                className={pillCls(settings.effects === value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-muted/80">
+            Полные - интро, частицы, переходы. Лёгкие - меньше частиц и кадров для слабых
+            устройств и телефонов (выбирается автоматически). Выкл - только необходимое.
+          </p>
+        </div>
+
+        <div>
           <p className="text-xs text-muted">Язык озвучки</p>
           <div className="mt-2 flex gap-2">
             {(

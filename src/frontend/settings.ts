@@ -1,5 +1,7 @@
 "use client";
 
+export type EffectsLevel = "full" | "lite" | "off";
+
 export type AtrionSettings = {
   language: "ru" | "en";
   voiceEnabled: boolean;
@@ -7,6 +9,7 @@ export type AtrionSettings = {
   units: "m" | "cm";
   voiceURI: string;
   voiceRate: number;
+  effects: EffectsLevel;
 };
 
 const KEY = "atrion_settings_v1";
@@ -18,17 +21,43 @@ export const DEFAULT_SETTINGS: AtrionSettings = {
   units: "m",
   voiceURI: "",
   voiceRate: 1,
+  effects: "full",
 };
+
+// First-visit default for the decorative effects: phones and low-spec machines
+// start on "lite" so the landing doesn't stutter before the user ever finds
+// the setting. An explicit choice in Settings overrides this.
+export function detectEffectsLevel(): EffectsLevel {
+  if (typeof window === "undefined") return "full";
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return "off";
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  const weakCpu = (navigator.hardwareConcurrency ?? 8) <= 4;
+  const lowMemory = (nav.deviceMemory ?? 8) <= 4;
+  const phone = window.matchMedia("(max-width: 768px)").matches;
+  return weakCpu || lowMemory || phone ? "lite" : "full";
+}
 
 export function loadSettings(): AtrionSettings {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    if (!raw) return { ...DEFAULT_SETTINGS, effects: detectEffectsLevel() };
+    const stored = JSON.parse(raw) as Partial<AtrionSettings>;
+    return {
+      ...DEFAULT_SETTINGS,
+      ...stored,
+      effects: stored.effects ?? detectEffectsLevel(),
+    };
   } catch {
     return DEFAULT_SETTINGS;
   }
+}
+
+/** The level to actually render at: the OS reduced-motion preference always wins. */
+export function effectsLevel(): EffectsLevel {
+  if (typeof window === "undefined") return "full";
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return "off";
+  return loadSettings().effects;
 }
 
 export function saveSettings(next: Partial<AtrionSettings>): AtrionSettings {

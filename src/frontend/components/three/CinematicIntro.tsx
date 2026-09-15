@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
+import { effectsLevel } from "@/frontend/settings";
 
 export const INTRO_DONE_EVENT = "atrion:intro-done";
 const SESSION_KEY = "atrion_intro_played";
@@ -191,21 +192,17 @@ export default function CinematicIntro() {
   const [instant, setInstant] = useState(false);
   const [targets, setTargets] = useState<Float32Array | null>(null);
   const [blasting, setBlasting] = useState(false);
-  const count = useMemo(
-    () =>
-      typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches ? 2600 : 6500,
-    []
-  );
+  const [count, setCount] = useState(6500);
 
   useEffect(() => {
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const level = effectsLevel();
     let played = false;
     try {
       played = sessionStorage.getItem(SESSION_KEY) === "1";
     } catch {
       played = false;
     }
-    if (reduced || played) {
+    if (level === "off" || played) {
       setInstant(true);
       setVisible(false);
       window.dispatchEvent(new Event(INTRO_DONE_EVENT));
@@ -217,6 +214,9 @@ export default function CinematicIntro() {
     document.body.style.overflow = "hidden";
 
     let cancelled = false;
+    const phone = window.matchMedia("(max-width: 768px)").matches;
+    const particles = level === "lite" || phone ? 2600 : 6500;
+    setCount(particles);
     const family = displayFontFamily();
     // Load only the primary face: asking for the whole family list resolves as
     // soon as the metric fallback is available, before Unbounded itself has loaded.
@@ -226,7 +226,7 @@ export default function CinematicIntro() {
       new Promise((resolve) => setTimeout(resolve, 1200)),
     ]);
     ready.then(() => {
-      if (!cancelled) setTargets(sampleText("ATRION", count, family));
+      if (!cancelled) setTargets(sampleText("ATRION", particles, family));
     });
 
     const blastTimer = setTimeout(() => setBlasting(true), BLAST_START * 1000 + 350);
@@ -236,7 +236,7 @@ export default function CinematicIntro() {
       clearTimeout(blastTimer);
       document.body.style.overflow = previousOverflow;
     };
-  }, [count]);
+  }, []);
 
   function finish() {
     try {

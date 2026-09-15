@@ -14,6 +14,8 @@ import CadToolbar, { type CadTool } from "@/frontend/components/CadToolbar";
 import { describeCommand, parseVoiceCommand } from "@/frontend/voice-commands";
 import { BOOLEAN_LABELS, type BooleanOp } from "@/frontend/csg-types";
 import { postJson } from "@/frontend/api";
+import GenerationReveal from "@/frontend/components/GenerationReveal";
+import ParticleField from "@/frontend/components/three/ParticleField";
 
 const ConceptViewer = dynamic(() => import("@/frontend/components/three/ConceptViewer"), {
   ssr: false,
@@ -70,6 +72,7 @@ export default function DesignEnginePage() {
   const [view, setView] = useState<DrawingView>("perspective");
   const [exploded, setExploded] = useState(false);
   const [assembling, setAssembling] = useState(false);
+  const [revealKey, setRevealKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [pipelineStep, setPipelineStep] = useState(-1);
   const [error, setError] = useState<string | null>(null);
@@ -130,6 +133,7 @@ export default function DesignEnginePage() {
     setCadTool("select");
     setConcept(next);
     setAssembling(true);
+    setRevealKey((key) => key + 1);
     assembleTimer.current = setTimeout(() => setAssembling(false), 3400);
     const settings = loadSettings();
     if (settings.voiceEnabled && settings.voiceAuto) {
@@ -853,9 +857,11 @@ export default function DesignEnginePage() {
                 }
               }}
             />
+            <GenerationReveal trigger={revealKey} />
           </>
         ) : (
           <div className="relative flex h-full flex-col items-center justify-center overflow-y-auto px-5 py-8">
+            <ParticleField layer="absolute" density="subtle" />
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_35%,rgba(167,139,250,0.12),transparent_50%)]" />
             <motion.div
               initial={{ opacity: 0, y: 20 }}

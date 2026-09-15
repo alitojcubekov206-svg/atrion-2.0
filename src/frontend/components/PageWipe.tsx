@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useEffects } from "@/frontend/effects";
 
 type Phase = "idle" | "cover" | "reveal";
 type WipeContext = { navigate: (href: string) => void };
@@ -19,6 +20,7 @@ export default function PageWipeProvider({ children }: { children: ReactNode }) 
   const router = useRouter();
   const pathname = usePathname();
   const reduced = useReducedMotion();
+  const level = useEffects();
   const [phase, setPhase] = useState<Phase>("idle");
   const pending = useRef<string | null>(null);
   const fromPath = useRef(pathname);
@@ -26,12 +28,16 @@ export default function PageWipeProvider({ children }: { children: ReactNode }) 
   const navigate = useCallback(
     (href: string) => {
       if (href === pathname) return;
+      if (level === "off") {
+        router.push(href);
+        return;
+      }
       if (phase !== "idle") return;
       pending.current = href;
       fromPath.current = pathname;
       setPhase("cover");
     },
-    [pathname, phase]
+    [pathname, phase, level, router]
   );
 
   useEffect(() => {

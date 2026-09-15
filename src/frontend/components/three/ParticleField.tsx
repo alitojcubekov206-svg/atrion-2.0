@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import { motion } from "framer-motion";
 import * as THREE from "three";
 import AmbientCanvas from "@/frontend/components/three/AmbientCanvas";
+import { useEffects } from "@/frontend/effects";
 
 const VERTEX = /* glsl */ `
   uniform float uTime;
@@ -41,6 +43,7 @@ const FRAGMENT = /* glsl */ `
   uniform vec3 uColorB;
   uniform vec3 uColorC;
   uniform float uScroll;
+  uniform float uAlpha;
   varying float vGlow;
   varying float vSeed;
 
@@ -52,12 +55,20 @@ const FRAGMENT = /* glsl */ `
     vec3 base = mix(uColorA, uColorB, smoothstep(0.0, 0.5, uScroll));
     base = mix(base, uColorC, smoothstep(0.5, 1.0, uScroll));
     vec3 col = mix(base, vec3(1.0), vGlow * 0.7);
-    float alpha = soft * (0.2 + 0.22 * fract(vSeed * 3.7) + vGlow * 0.75);
+    float alpha = soft * (0.2 + 0.22 * fract(vSeed * 3.7) + vGlow * 0.75) * uAlpha;
     gl_FragColor = vec4(col, alpha);
   }
 `;
 
-function Field({ reduced, mobile }: { reduced: boolean; mobile: boolean }) {
+function Field({
+  count,
+  ripple,
+  alpha,
+}: {
+  count: number;
+  ripple: boolean;
+  alpha: number;
+}) {
   const viewport = useThree((s) => s.viewport);
   const dpr = useThree((s) => s.gl.getPixelRatio());
   const scrollTarget = useRef(0);
@@ -74,33 +85,31 @@ function Field({ reduced, mobile }: { reduced: boolean; mobile: boolean }) {
           uTime: { value: 0 },
           uRipple: { value: new THREE.Vector3(0, 0, -100) },
           uPixelRatio: { value: dpr },
-          uReduced: { value: reduced ? 1 : 0 },
+          uReduced: { value: 0 },
           uScroll: { value: 0 },
+          uAlpha: { value: alpha },
           uColorA: { value: new THREE.Color("#a78bfa") },
           uColorB: { value: new THREE.Color("#e879f9") },
           uColorC: { value: new THREE.Color("#c4b5fd") },
         },
       }),
-    [dpr, reduced]
+    [dpr, alpha]
   );
 
   const width = Math.ceil(viewport.width) + 4;
   const height = Math.ceil(viewport.height) + 4;
   const geometry = useMemo(() => {
-    const target = mobile ? 2400 : 7000;
-    const spacing = Math.sqrt((width * height) / target);
+    const spacing = Math.sqrt((width * height) / count);
     const cols = Math.ceil(width / spacing);
     const rows = Math.ceil(height / spacing);
-    const count = cols * rows;
-    const positions = new Float32Array(count * 3);
-    const seeds = new Float32Array(count);
+    const total = cols * rows;
+    const positions = new Float32Array(total * 3);
+    const seeds = new Float32Array(total);
     let i = 0;
     for (let r = 0; r < rows; r += 1) {
       for (let c = 0; c < cols; c += 1) {
-        const jx = (Math.random() - 0.5) * spacing * 0.8;
-        const jy = (Math.random() - 0.5) * spacing * 0.8;
-        positions[i * 3] = -width / 2 + c * spacing + jx;
-        positions[i * 3 + 1] = -height / 2 + r * spacing + jy;
+        positions[i * 3] = -width / 2 + c * spacing + (Math.random() - 0.5) * spacing * 0.8;
+        positions[i * 3 + 1] = -height / 2 + r * spacing + (Math.random() - 0.5) * spacing * 0.8;
         positions[i * 3 + 2] = (Math.random() - 0.5) * 0.6;
         seeds[i] = Math.random();
         i += 1;
@@ -110,33 +119,33 @@ function Field({ reduced, mobile }: { reduced: boolean; mobile: boolean }) {
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geo.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
     return geo;
-  }, [width, height, mobile]);
+  }, [width, height, count]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
   useEffect(() => () => material.dispose(), [material]);
 
   useEffect(() => {
-    const toWorld = (clientX: number, clientY: number) => {
-      const nx = (clientX / window.innerWidth) * 2 - 1;
-      const ny = -((clientY / window.innerHeight) * 2 - 1);
-      return [nx * (viewport.width / 2), ny * (viewport.height / 2)] as const;
-    };
-    const onClick = (e: PointerEvent) => {
-      const [x, y] = toWorld(e.clientX, e.clientY);
-      material.uniforms.uRipple.value.set(x, y, material.uniforms.uTime.value);
-    };
     const onScroll = () => {
       const max = document.documentElement.scrollHeight - window.innerHeight;
       scrollTarget.current = max > 0 ? window.scrollY / max : 0;
     };
-    window.addEventListener("pointerdown", onClick, { passive: true });
+    const onClick = (e: PointerEvent) => {
+      const nx = (e.clientX / window.innerWidth) * 2 - 1;
+      const ny = -((e.clientY / window.innerHeight) * 2 - 1);
+      material.uniforms.uRipple.value.set(
+        nx * (viewport.width / 2),
+        ny * (viewport.height / 2),
+        material.uniforms.uTime.value
+      );
+    };
     window.addEventListener("scroll", onScroll, { passive: true });
+    if (ripple) window.addEventListener("pointerdown", onClick, { passive: true });
     onScroll();
     return () => {
-      window.removeEventListener("pointerdown", onClick);
       window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pointerdown", onClick);
     };
-  }, [viewport.width, viewport.height, material]);
+  }, [viewport.width, viewport.height, material, ripple]);
 
   useFrame((state, delta) => {
     const u = material.uniforms;
@@ -147,21 +156,40 @@ function Field({ reduced, mobile }: { reduced: boolean; mobile: boolean }) {
   return <points geometry={geometry} material={material} frustumCulled={false} />;
 }
 
-export default function ParticleField() {
-  const flags = useMemo(() => {
-    if (typeof window === "undefined") return { reduced: false, mobile: false };
-    return {
-      reduced: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-      mobile: window.matchMedia("(max-width: 768px)").matches,
-    };
-  }, []);
+export default function ParticleField({
+  layer = "fixed",
+  density = "full",
+}: {
+  layer?: "fixed" | "absolute";
+  density?: "full" | "subtle";
+}) {
+  const level = useEffects();
+  const mobile = useMemo(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches,
+    []
+  );
+
+  if (!level || level === "off") return null;
+
+  const base = density === "subtle" ? 3200 : 7000;
+  const count = Math.round(level === "lite" ? base / 2.5 : mobile ? Math.min(base, 2400) : base);
+  const fps = level === "lite" ? 24 : 45;
 
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0">
-      <AmbientCanvas fps={flags.reduced ? 8 : 45} camera={{ position: [0, 0, 10], fov: 50 }}>
-        <Field reduced={flags.reduced} mobile={flags.mobile} />
+    <motion.div
+      aria-hidden="true"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.9 }}
+      className={`pointer-events-none inset-0 z-0 ${layer === "fixed" ? "fixed" : "absolute"}`}
+    >
+      <AmbientCanvas fps={fps} camera={{ position: [0, 0, 10], fov: 50 }}>
+        <Field count={count} ripple={level === "full"} alpha={density === "subtle" ? 0.7 : 1} />
       </AmbientCanvas>
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(5,5,7,0.55)_100%)]" />
-    </div>
+      {layer === "fixed" && (
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(5,5,7,0.55)_100%)]" />
+      )}
+    </motion.div>
   );
 }

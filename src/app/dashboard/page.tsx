@@ -8,6 +8,7 @@ import type { Blueprint } from "@/shared/types";
 import StarkHudFrame, { StarkPanel } from "@/frontend/components/StarkHudFrame";
 import CountUp from "@/frontend/components/CountUp";
 import DashboardTour from "@/frontend/components/DashboardTour";
+import ParticleField from "@/frontend/components/three/ParticleField";
 
 export const metadata: Metadata = { title: "Проекты" };
 
@@ -61,6 +62,7 @@ export default async function DashboardPage() {
   return (
     <StarkHudFrame>
       <DashboardTour show={projects.length === 0} />
+      <ParticleField density="subtle" />
       <StarkPanel>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
