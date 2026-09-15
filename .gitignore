@@ -25,3 +25,4 @@ finik_private_vercel.txt
 npm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
+.neon
