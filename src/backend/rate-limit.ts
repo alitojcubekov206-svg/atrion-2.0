@@ -17,6 +17,9 @@ export function rateLimit(
   limit: number,
   windowMs: number
 ): { ok: true } | { ok: false; retryAfterSec: number } {
+  // Off in `next dev`: locally every request shares the "unknown" IP bucket,
+  // so normal testing trips the limits. Production builds always enforce them.
+  if (process.env.NODE_ENV === "development") return { ok: true };
   const now = Date.now();
   let bucket = buckets.get(key);
   if (!bucket || bucket.resetAt <= now) {
