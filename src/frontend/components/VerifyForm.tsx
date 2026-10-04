@@ -3,28 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import VerifyCodeCells, { type CellsPhase } from "@/frontend/components/VerifyCodeCells";
 
 const CODE_LENGTH = 6;
+export const DEMO_CODE = "123456";
 
-const GRID_POS = [
-  { x: 18, y: 28 },
-  { x: 50, y: 28 },
-  { x: 82, y: 28 },
-  { x: 18, y: 72 },
-  { x: 50, y: 72 },
-  { x: 82, y: 72 },
-];
-const MESH_LINES: [number, number][] = [
-  [0, 1], [0, 2], [0, 3], [0, 4], [0, 5],
-  [1, 2], [1, 3], [1, 4], [1, 5],
-  [2, 3], [2, 4], [2, 5],
-  [3, 4], [3, 5],
-  [4, 5],
-];
-
-type Phase = "input" | "connecting" | "result";
-
-export default function VerifyForm({ email }: { email: string }) {
+export default function VerifyForm({
+  email,
+  demo = false,
+}: {
+  email: string;
+  /** Playground mode: no network, DEMO_CODE passes, success resets instead of redirecting. */
+  demo?: boolean;
+}) {
   const router = useRouter();
   const [code, setCode] = useState("");
   const [displayEmail, setDisplayEmail] = useState(email);
@@ -34,47 +25,58 @@ export default function VerifyForm({ email }: { email: string }) {
   const [changingEmail, setChangingEmail] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [savingEmail, setSavingEmail] = useState(false);
-  const [phase, setPhase] = useState<Phase>("input");
-  const [converge, setConverge] = useState(false);
-  const [resultOk, setResultOk] = useState(false);
+  const [phase, setPhase] = useState<CellsPhase>("input");
+  const [attempt, setAttempt] = useState(0);
   const submittedRef = useRef(false);
   const busy = phase !== "input";
+
+  async function check(value: string): Promise<{ ok: boolean; error?: string }> {
+    if (demo) return value === DEMO_CODE ? { ok: true } : { ok: false, error: "Неверный код" };
+    try {
+      const res = await fetch("/api/auth/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, error: data.error };
+    } catch {
+      return { ok: false, error: "Нет соединения. Попробуйте ещё раз." };
+    }
+  }
+
+  function backToInput() {
+    setCode("");
+    setPhase("input");
+    setAttempt((n) => n + 1);
+    submittedRef.current = false;
+  }
 
   async function submitCode(value: string) {
     setError(null);
     setInfo(null);
-    setPhase("connecting");
-    setConverge(false);
+    setPhase("checking");
 
-    const fetchPromise = fetch("/api/auth/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: value }),
-    }).then(async (res) => ({ res, data: await res.json().catch(() => ({})) }));
-
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setConverge(true);
-
-    const [{ res, data }] = await Promise.all([
-      fetchPromise,
-      new Promise((resolve) => setTimeout(resolve, 700)),
+    // Let the scan run at least one full sweep so a fast reply doesn't flicker.
+    const [result] = await Promise.all([
+      check(value),
+      new Promise((resolve) => setTimeout(resolve, 1100)),
     ]);
 
-    setResultOk(res.ok);
-    setPhase("result");
+    setPhase(result.ok ? "success" : "error");
 
     setTimeout(() => {
-      if (res.ok) {
+      if (result.ok && !demo) {
         router.push("/dashboard");
         router.refresh();
+      } else if (result.ok) {
+        backToInput();
+        setInfo("Подтверждено (демо). Можно попробовать ещё раз.");
       } else {
-        setError(data.error ?? "Что-то пошло не так");
-        setCode("");
-        setPhase("input");
-        setConverge(false);
-        submittedRef.current = false;
+        backToInput();
+        setError(result.error ?? "Что-то пошло не так");
       }
-    }, 1300);
+    }, result.ok ? 2000 : 1700);
   }
 
   useEffect(() => {
@@ -90,6 +92,13 @@ export default function VerifyForm({ email }: { email: string }) {
     setError(null);
     setInfo(null);
     setResending(true);
+    if (demo) {
+      if (emailOverride) setDisplayEmail(emailOverride);
+      setCode("");
+      setInfo(`Демо-код: ${DEMO_CODE}`);
+      setResending(false);
+      return true;
+    }
     const res = await fetch("/api/auth/resend-verification", {
       method: "POST",
       headers: emailOverride ? { "Content-Type": "application/json" } : undefined,
@@ -196,129 +205,7 @@ export default function VerifyForm({ email }: { email: string }) {
           Код подтверждения
         </label>
 
-        <div className="relative h-14">
-          {phase === "input" && (
-            <div className="flex h-14 justify-between gap-2" aria-hidden="true">
-              {digits.map((d, i) => (
-                <motion.div
-                  layoutId={`digit-${i}`}
-                  key={i}
-                  className={`flex h-14 flex-1 items-center justify-center rounded-xl border text-2xl font-semibold text-white transition-colors ${
-                    i === activeIndex
-                      ? "border-[#a78bfa]/70 bg-[#a78bfa]/[0.06] shadow-[0_0_0_3px_rgba(167,139,250,0.12)]"
-                      : d
-                        ? "border-white/20 bg-white/[0.03]"
-                        : "border-white/10 bg-white/[0.02]"
-                  }`}
-                >
-                  {d}
-                </motion.div>
-              ))}
-            </div>
-          )}
-
-          {phase !== "input" && (
-            <div className="relative mx-auto h-32 w-full max-w-[220px]" aria-hidden="true">
-              <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full overflow-visible">
-                {phase === "connecting" &&
-                  MESH_LINES.map(([a, b], i) => {
-                    const p1 = GRID_POS[a];
-                    const p2 = GRID_POS[b];
-                    return (
-                      <motion.line
-                        key={i}
-                        x1={p1.x}
-                        y1={p1.y}
-                        x2={p2.x}
-                        y2={p2.y}
-                        stroke="#a78bfa"
-                        strokeWidth="1"
-                        strokeLinecap="round"
-                        initial={{ pathLength: 0, opacity: 0 }}
-                        animate={
-                          converge
-                            ? { opacity: 0 }
-                            : { pathLength: 1, opacity: [0, 0.85, 0.45] }
-                        }
-                        transition={
-                          converge
-                            ? { duration: 0.5, ease: "easeOut" }
-                            : {
-                                pathLength: { duration: 0.6, delay: i * 0.045, ease: "easeOut" },
-                                opacity: { duration: 1.3, delay: i * 0.045, times: [0, 0.5, 1] },
-                              }
-                        }
-                      />
-                    );
-                  })}
-              </svg>
-
-              {phase === "connecting" &&
-                digits.map((d, i) => (
-                  <motion.div
-                    layoutId={`digit-${i}`}
-                    key={i}
-                    initial={false}
-                    animate={
-                      converge
-                        ? { left: "50%", top: "50%", scale: 0, opacity: 0 }
-                        : {
-                            left: `${GRID_POS[i].x}%`,
-                            top: `${GRID_POS[i].y}%`,
-                            opacity: 1,
-                            scale: 1,
-                          }
-                    }
-                    transition={
-                      converge
-                        ? { duration: 0.7, ease: "easeIn" }
-                        : { type: "spring", stiffness: 260, damping: 24 }
-                    }
-                    style={{ position: "absolute", x: "-50%", y: "-50%" }}
-                    className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#a78bfa]/60 bg-[#a78bfa]/10 text-base font-semibold text-white shadow-[0_0_18px_rgba(167,139,250,0.4)]"
-                  >
-                    {d}
-                  </motion.div>
-                ))}
-
-              {phase === "result" && (
-                <motion.div
-                  initial={{ scale: 0.2, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ type: "spring", stiffness: 320, damping: 22, delay: 0.05 }}
-                  style={{ position: "absolute", left: "50%", top: "50%", x: "-50%", y: "-50%" }}
-                  className={`flex h-16 w-16 items-center justify-center rounded-2xl border ${
-                    resultOk
-                      ? "border-[#a78bfa]/60 bg-[#a78bfa]/15 shadow-[0_0_26px_rgba(167,139,250,0.45)]"
-                      : "border-red-400/50 bg-red-400/10 shadow-[0_0_20px_rgba(248,113,113,0.3)]"
-                  }`}
-                >
-                  {resultOk ? (
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path
-                        d="M5 13l4 4L19 7"
-                        stroke="#c4b5fd"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  ) : (
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path
-                        d="M6 6l12 12M18 6L6 18"
-                        stroke="#f87171"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                </motion.div>
-              )}
-            </div>
-          )}
-        </div>
+        <VerifyCodeCells digits={digits} activeIndex={activeIndex} phase={phase} attempt={attempt} />
 
         <input
           id="verify-code"
@@ -333,8 +220,9 @@ export default function VerifyForm({ email }: { email: string }) {
         />
 
         <div aria-live="polite" className="sr-only">
-          {phase === "connecting" && "Проверяем код"}
-          {phase === "result" && (resultOk ? "Код верный" : "Код неверный")}
+          {phase === "checking" && "Проверяем код"}
+          {phase === "success" && "Код верный"}
+          {phase === "error" && "Код неверный"}
         </div>
 
         <AnimatePresence mode="wait">
@@ -362,15 +250,19 @@ export default function VerifyForm({ email }: { email: string }) {
           )}
         </AnimatePresence>
 
-        {phase === "input" && (
-          <button
-            type="submit"
-            disabled={code.length !== CODE_LENGTH}
-            className="btn-primary mt-6 w-full rounded-full py-3.5 text-sm disabled:opacity-60"
-          >
-            Подтвердить
-          </button>
-        )}
+        <button
+          type="submit"
+          disabled={busy || code.length !== CODE_LENGTH}
+          className="btn-primary mt-6 w-full rounded-full py-3.5 text-sm disabled:opacity-60"
+        >
+          {phase === "checking"
+            ? "Проверяем…"
+            : phase === "success"
+              ? "Готово"
+              : phase === "error"
+                ? "Неверный код"
+                : "Подтвердить"}
+        </button>
       </motion.form>
 
       <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-white/8 bg-white/[0.02] px-3.5 py-3 text-xs leading-relaxed text-muted">
