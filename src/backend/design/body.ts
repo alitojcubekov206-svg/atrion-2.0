@@ -29,4 +29,3 @@ export async function readDesignBody(req: Request): Promise<Record<string,unknow
     throw new DesignError("Некорректный JSON",400,"INVALID_REQUEST");
   } finally { reader.releaseLock(); }
 }
-
