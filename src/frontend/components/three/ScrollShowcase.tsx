@@ -319,10 +319,12 @@ function Caption({
 /** Below this width, scrubbing a 340vh section by touch is a poor experience —
  * the sequence autoplays on a loop instead once it scrolls into view. */
 const MOBILE_QUERY = "(max-width: 768px)";
-const AUTOPLAY_SECONDS = 21;
+/** One loop through all three steps — about 4 s each, ~3 s of it fully shown.
+ * 21 s felt too long to wait through on a phone. */
+const AUTOPLAY_SECONDS = 12;
 /** Pause after the section is reached before the first loop starts, so it
  * doesn't fire the instant a user's scroll flicks past the trigger point. */
-const AUTOPLAY_START_DELAY = 1.4;
+const AUTOPLAY_START_DELAY = 0.6;
 
 export default function ScrollShowcase() {
   const containerRef = useRef<HTMLDivElement>(null);
