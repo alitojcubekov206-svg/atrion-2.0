@@ -1043,6 +1043,7 @@ export default function DesignEnginePage() {
         <aside className="flex max-h-[52vh] w-full shrink-0 flex-col border-t border-[#a78bfa]/15 bg-[#0e0e10]/95 backdrop-blur-2xl md:max-h-none md:w-[360px] md:border-l md:border-t-0 lg:w-[400px]">
       <div className="flex flex-wrap gap-2 border-b border-white/10 px-3 py-2 text-xs">
         <Link href="/dashboard/rigging?mode=rig2d" className="rounded-lg px-3 py-2 hover:bg-violet-400/15">2D-риггинг ↗</Link>
+        <Link href="/dashboard/house" className="rounded-lg px-3 py-2 hover:bg-violet-400/15">Редактор дома ↗</Link>
         <button className="rounded-lg px-3 py-2 hover:bg-violet-400/15" onClick={()=>{
           try {if(concept)sessionStorage.setItem("atrion:rigging-transfer",JSON.stringify(concept));
             router.push(`/dashboard/rigging?mode=rig3d${concept?"&import=design-engine":""}`);

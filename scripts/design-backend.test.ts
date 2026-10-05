@@ -3,6 +3,34 @@ import assert from "node:assert/strict";
 import { parseRig2D, evaluateRig2D } from "../src/backend/design/rig2d";
 import { parseRig3D, evaluateRig3D } from "../src/backend/design/rig3d";
 import { parseHouse, buildHouse } from "../src/backend/design/house";
+import { createHouse, houseConcept, splitRoom } from "../src/shared/house/editor";
+
+test("house editor keeps room area, export geometry and round-trip consistent",()=>{
+  const doc=createHouse(),floor=doc.floors[0];
+  assert.equal(floor.rooms.reduce((area,r)=>area+r.width*r.depth,0),108);
+  assert.throws(()=>splitRoom(doc,floor.id,"room_1","x","split"),/проёмы/);
+  floor.openings=floor.openings.filter(o=>o.roomId!=="room_1");
+  const divided=splitRoom(doc,floor.id,"room_1","x","split");
+  assert.equal(divided.floors[0].rooms.reduce((area,r)=>area+r.width*r.depth,0),108);
+  assert.equal(divided.floors[0].rooms.length,4);
+  assert.equal(doc.floors[0].rooms.length,3);
+  assert.deepEqual(parseHouse(JSON.parse(JSON.stringify(divided))),divided);
+  const before=houseConcept(doc),after=houseConcept(divided);
+  assert.ok(after.parts.some(p=>p.role==="wall"&&Math.abs(p.position[0]+3)<1e-7));
+  assert.equal(after.dimensions.width,before.dimensions.width);
+  assert.ok(houseConcept(doc,undefined,true).parts.every(p=>p.group!=="roof"));
+  assert.ok(before.parts.some(p=>p.group==="roof"));
+});
+
+test("house floor visibility never removes floors from the exported source",()=>{
+  const doc=createHouse();doc.floors.push({...structuredClone(doc.floors[0]),id:"floor_2"});
+  const parsed=parseHouse(doc),visible=houseConcept(parsed,"floor_2",true),full=houseConcept(parsed);
+  assert.ok(visible.parts.every(p=>p.group==="floor_2"));
+  assert.ok(full.parts.some(p=>p.group==="floor_1"));
+  assert.ok(full.parts.some(p=>p.group==="roof"));
+  assert.ok(full.engineeringNotes.some(n=>n.includes("лестницы")));
+  assert.deepEqual(parsed,doc);
+});
 import { parseDesignDocument, evaluateDesign } from "../src/backend/design/documents";
 import { readDesignBody, MAX_DESIGN_BODY_BYTES } from "../src/backend/design/body";
 import { addBone2D, bindLayer, bindPart, blank2D, demo3D, parseRigDocument, posedConcept, removeBone, rigFromConcept } from "../src/shared/rigging/editor";
