@@ -7,7 +7,9 @@ import { parseDesignDocument, evaluateDesign } from "../src/backend/design/docum
 import { readDesignBody, MAX_DESIGN_BODY_BYTES } from "../src/backend/design/body";
 import { addBone2D, bindLayer, bindPart, blank2D, demo3D, parseRigDocument, posedConcept, removeBone, rigFromConcept } from "../src/shared/rigging/editor";
 import { is2DRiggingRequest } from "../src/shared/rigging/intent";
-import { createCharacterConcept, imageConfiguration, imageRequest, MAX_IMAGE_BYTES } from "../src/backend/characters/concept";
+import { createCharacterConcept, imageConfiguration, imageRequest, MAX_IMAGE_BYTES, validateImagePayload } from "../src/backend/characters/concept";
+import { characterImageConfiguration, characterImageStatus, cloudflareImageGenerator, cloudflareImageRequest, MAX_IMAGE_RESPONSE_BYTES } from "../src/backend/characters/providers";
+import { characterImageFormat } from "../src/shared/characters";
 import { DesignError } from "../src/backend/design/validation";
 import { createDesignStore } from "../src/backend/design/store";
 
@@ -338,7 +340,7 @@ test("Character concept request asks for one transparent image, never a complete
 
 test("Invalid prompts, missing provider and exhausted quota do not invoke paid generation",async()=>{
   let reserved=0,generated=0,refunded=0;
-  const deps={configured:true,reserve:async()=>{reserved++;return {ok:true as const};},refund:async()=>{refunded++;},generate:async()=>{generated++;return undefined;}};
+  const deps={configured:true,reserve:async()=>{reserved++;return {ok:true as const};},refund:async()=>{refunded++;},generate:async()=>{generated++;return {mime:"image/webp",base64:undefined};}};
   await assert.rejects(createCharacterConcept("short",deps));
   await assert.rejects(createCharacterConcept("девушка в синем платье",{...deps,configured:false}));
   assert.equal(reserved,0);
@@ -349,11 +351,11 @@ test("Invalid prompts, missing provider and exhausted quota do not invoke paid g
 test("Image success keeps quota; invalid image/provider failure refunds exactly once",async()=>{
   const webp=Buffer.concat([Buffer.from("RIFF"),Buffer.alloc(4),Buffer.from("WEBPVP8X"),Buffer.alloc(16)]).toString("base64");
   let reserved=0,refunded=0;
-  const deps={configured:true,reserve:async()=>{reserved++;return {ok:true as const};},refund:async()=>{refunded++;},generate:async()=>webp};
+  const deps={configured:true,reserve:async()=>{reserved++;return {ok:true as const};},refund:async()=>{refunded++;},generate:async()=>({mime:"image/webp",base64:webp})};
   const result=await createCharacterConcept("девушка в синем платье",deps);
   assert.equal(result.rigReady,false);assert.equal(result.stage,"concept");assert.equal(refunded,0);
   for(const bad of [undefined,"<svg>not image</svg>",Buffer.alloc(MAX_IMAGE_BYTES+1).toString("base64")]){
-    await assert.rejects(createCharacterConcept("девушка в синем платье",{...deps,generate:async()=>bad}));
+    await assert.rejects(createCharacterConcept("девушка в синем платье",{...deps,generate:async()=>({mime:"image/webp",base64:bad})}));
   }
   await assert.rejects(createCharacterConcept("девушка в синем платье",{...deps,generate:async()=>{throw new Error("PRIVATE_PROVIDER_DETAILS");}}),error=>error instanceof Error&&!error.message.includes("PRIVATE_PROVIDER_DETAILS"));
   assert.equal(reserved,5);assert.equal(refunded,4);
@@ -366,4 +368,103 @@ test("Cancelling character generation releases a reserved quota without returnin
   assert.equal(reserved,1);assert.equal(refunded,1);
   await assert.rejects(createCharacterConcept("девушка в синем платье",deps,controller.signal));
   assert.equal(reserved,1);assert.equal(refunded,1);
+});
+const cloudflareEnv={CLOUDFLARE_ACCOUNT_ID:"a".repeat(32),CLOUDFLARE_API_TOKEN:"synthetic-test-token"};
+function cloudflareConfig(){
+  const config=characterImageConfiguration(cloudflareEnv);
+  assert.equal(config.provider,"cloudflare");
+  if(config.provider!=="cloudflare")throw new Error("Unexpected test provider");
+  return config;
+}
+// These bytes exercise MIME/signature checks, not a real decoded artwork.
+const jpegHeaderFixture=Buffer.concat([Buffer.from([0xff,0xd8,0xff,0xe0]),Buffer.alloc(16),Buffer.from([0xff,0xd9])]).toString("base64");
+
+test("Cloudflare is explicit and never falls back to an available paid OpenAI key",()=>{
+  const config=characterImageConfiguration({OPENAI_IMAGE_API_KEY:"openai-test"});
+  assert.equal(config.provider,"cloudflare");
+  assert.equal(characterImageStatus(config).configured,false);
+  assert.equal(config.apiKey,undefined);
+  assert.equal(characterImageStatus(characterImageConfiguration({CLOUDFLARE_API_TOKEN:"test"})).configured,false);
+  const status=characterImageStatus(cloudflareConfig());
+  assert.equal(status.configured,true);assert.equal(status.imageMime,"image/jpeg");
+  assert(!JSON.stringify(status).includes(cloudflareEnv.CLOUDFLARE_API_TOKEN));
+  assert(!JSON.stringify(status).includes(cloudflareEnv.CLOUDFLARE_ACCOUNT_ID));
+  assert.throws(()=>characterImageConfiguration({CHARACTER_IMAGE_PROVIDER:"unsupported"}));
+  assert.throws(()=>characterImageConfiguration({...cloudflareEnv,CLOUDFLARE_ACCOUNT_ID:"../../other-account"}));
+  const openai=characterImageConfiguration({...cloudflareEnv,CHARACTER_IMAGE_PROVIDER:"openai",OPENAI_IMAGE_API_KEY:"openai-test"});
+  assert.equal(openai.provider,"openai");assert.equal(openai.apiKey,"openai-test");
+  assert.equal(characterImageStatus(openai).imageMime,"image/webp");
+});
+
+test("Cloudflare uses the official account endpoint once and keeps maximum prompt within model limits",async()=>{
+  let calls=0;
+  const prompt="я".repeat(1500);
+  const transport:typeof fetch=async(url,init)=>{
+    calls++;
+    assert.equal(String(url),`https://api.cloudflare.com/client/v4/accounts/${cloudflareEnv.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell`);
+    assert.equal(new Headers(init?.headers).get("Authorization"),"Bearer synthetic-test-token");
+    assert.equal(init?.redirect,"error");assert.equal(init?.method,"POST");
+    const body=JSON.parse(String(init?.body));
+    assert(body.prompt.length<=2048);assert(body.prompt.endsWith(prompt));assert.equal(body.steps,4);
+    assert(!("background" in body));assert(!("output_format" in body));
+    return Response.json({success:true,result:{image:jpegHeaderFixture}});
+  };
+  let refunds=0;
+  const result=await createCharacterConcept(prompt,{configured:true,reserve:async()=>({ok:true}),refund:async()=>{refunds++;},generate:cloudflareImageGenerator(cloudflareConfig(),transport)});
+  assert.equal(result.image.mime,"image/jpeg");assert.equal(result.rigReady,false);
+  assert.equal(calls,1);assert.equal(refunds,0);
+  assert.equal(cloudflareImageRequest(prompt).prompt.length<=2048,true);
+});
+
+test("Image MIME, signature and download extension agree for both providers",()=>{
+  assert.equal(validateImagePayload(jpegHeaderFixture,"image/jpeg"),jpegHeaderFixture);
+  assert.throws(()=>validateImagePayload(jpegHeaderFixture,"image/webp"));
+  assert.throws(()=>validateImagePayload(jpegHeaderFixture,"image/svg+xml"));
+  assert.throws(()=>validateImagePayload(Buffer.from([0xff,0xd8,0xff]).toString("base64"),"image/jpeg"));
+  assert.equal(characterImageFormat("image/jpeg")?.extension,"jpg");
+  assert.equal(characterImageFormat("image/webp")?.extension,"webp");
+  assert.equal(characterImageFormat("text/html"),undefined);
+});
+
+test("Cloudflare HTTP failures release quota once without exposing provider details or retrying",async()=>{
+  for(const [status,expectedCode] of [[401,"IMAGE_PROVIDER_AUTH_FAILED"],[403,"IMAGE_PROVIDER_AUTH_FAILED"],[429,"IMAGE_PROVIDER_LIMIT_REACHED"],[500,"IMAGE_GENERATION_FAILED"]] as const){
+    let calls=0,refunds=0;
+    const generate=cloudflareImageGenerator(cloudflareConfig(),async()=>{calls++;return Response.json({error:"PRIVATE_RESPONSE"},{status});});
+    await assert.rejects(createCharacterConcept("original character",{configured:true,reserve:async()=>({ok:true}),refund:async()=>{refunds++;},generate}),error=>error instanceof DesignError&&error.code===expectedCode&&!error.message.includes("PRIVATE_RESPONSE"));
+    assert.equal(calls,1);assert.equal(refunds,1);
+  }
+});
+
+test("Cloudflare refuses error envelopes, HTML and mismatched image bytes",async()=>{
+  const responses=[
+    ()=>Response.json({success:false,result:{image:jpegHeaderFixture},errors:[{message:"PRIVATE_RESPONSE"}]}),
+    ()=>new Response("<html>PRIVATE_RESPONSE</html>"),
+    ()=>Response.json({success:true,result:{image:"bm90LWFuLWltYWdl"}}),
+  ];
+  for(const response of responses){
+    let refunds=0;
+    await assert.rejects(createCharacterConcept("original character",{configured:true,reserve:async()=>({ok:true}),refund:async()=>{refunds++;},generate:cloudflareImageGenerator(cloudflareConfig(),async()=>response())}),error=>error instanceof DesignError&&!error.message.includes("PRIVATE_RESPONSE"));
+    assert.equal(refunds,1);
+  }
+});
+
+test("Cloudflare enforces a streamed response cap even without Content-Length",async()=>{
+  let cancelled=false,refunds=0;
+  const stream=new ReadableStream<Uint8Array>({start(controller){controller.enqueue(new Uint8Array(MAX_IMAGE_RESPONSE_BYTES+1));},cancel(){cancelled=true;}});
+  await assert.rejects(createCharacterConcept("original character",{configured:true,reserve:async()=>({ok:true}),refund:async()=>{refunds++;},generate:cloudflareImageGenerator(cloudflareConfig(),async()=>new Response(stream))}),error=>error instanceof DesignError&&error.code==="INVALID_IMAGE_RESPONSE");
+  assert.equal(cancelled,true);assert.equal(refunds,1);
+});
+
+test("Cloudflare timeout and user cancellation abort transport and release quota",async()=>{
+  for(const cancel of [false,true]){
+    let refunds=0,aborted=false;
+    const controller=new AbortController();
+    const transport:typeof fetch=async(_url,init)=>new Promise((_resolve,reject)=>{
+      const onAbort=()=>{aborted=true;reject(new Error("PRIVATE_ABORT"));};
+      init?.signal?.addEventListener("abort",onAbort,{once:true});
+      if(cancel)controller.abort();
+    });
+    await assert.rejects(createCharacterConcept("original character",{configured:true,reserve:async()=>({ok:true}),refund:async()=>{refunds++;},generate:cloudflareImageGenerator(cloudflareConfig(),transport,15)},controller.signal),error=>error instanceof DesignError&&error.code===(cancel?"IMAGE_GENERATION_CANCELLED":"IMAGE_GENERATION_TIMEOUT"));
+    assert.equal(aborted,true);assert.equal(refunds,1);
+  }
 });

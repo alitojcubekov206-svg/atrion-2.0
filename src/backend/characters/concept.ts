@@ -1,8 +1,9 @@
 import OpenAI from "openai";
 import { DesignError } from "../design/validation";
+import { characterImageFormat, MAX_CHARACTER_IMAGE_BYTES } from "../../shared/characters";
 
 export const IMAGE_TIMEOUT_MS = 150_000;
-export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = MAX_CHARACTER_IMAGE_BYTES;
 const MODELS = ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"] as const;
 
 export function imageConfiguration(env: Record<string, string | undefined> = process.env) {
@@ -46,15 +47,18 @@ Character brief:\n${prompt}`,
   };
 }
 
-export function validateImagePayload(value: unknown): string {
+export function validateImagePayload(value: unknown, mime: unknown = "image/webp"): string {
   if (typeof value !== "string" || value.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4 ||
       value.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
     throw new DesignError("Провайдер вернул некорректное или слишком большое изображение", 502, "INVALID_IMAGE_RESPONSE");
   }
   const bytes = Buffer.from(value, "base64");
-  if (bytes.length < 16 || bytes.length > MAX_IMAGE_BYTES ||
-      bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WEBP") {
-    throw new DesignError("Провайдер не вернул изображение WebP", 502, "INVALID_IMAGE_RESPONSE");
+  const validHeader = mime === "image/webp"
+    ? bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP"
+    : mime === "image/jpeg" && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff &&
+      bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9;
+  if (bytes.length < 16 || bytes.length > MAX_IMAGE_BYTES || !validHeader) {
+    throw new DesignError("Формат изображения не соответствует ответу провайдера", 502, "INVALID_IMAGE_RESPONSE");
   }
   return value;
 }
@@ -64,19 +68,23 @@ type ConceptDependencies = {
   configured: boolean;
   reserve: () => Promise<QuotaResult>;
   refund: () => Promise<void>;
-  generate: (prompt: string, signal?: AbortSignal) => Promise<unknown>;
+  generate: (prompt: string, signal?: AbortSignal) => Promise<{mime:unknown;base64:unknown}>;
 };
 
 export async function createCharacterConcept(input: unknown, deps: ConceptDependencies, signal?: AbortSignal) {
   const prompt = characterPrompt(input);
-  if (!deps.configured) throw new DesignError("OpenAI Image API ещё не подключён на сервере", 503, "IMAGE_PROVIDER_NOT_CONFIGURED");
+  if (!deps.configured) throw new DesignError("Сервис генерации рисунков ещё не настроен на сервере", 503, "IMAGE_PROVIDER_NOT_CONFIGURED");
   if(signal?.aborted)throw new DesignError("Генерация отменена",499,"IMAGE_GENERATION_CANCELLED");
   const quota = await deps.reserve();
   if (!quota.ok) throw new DesignError(quota.error, 429, quota.code);
   try {
-    const base64 = validateImagePayload(await deps.generate(prompt, signal));
     signal?.throwIfAborted();
-    return {stage:"concept" as const, rigReady:false as const, image:{mime:"image/webp" as const, base64}};
+    const generated = await deps.generate(prompt, signal);
+    const format = characterImageFormat(generated?.mime);
+    if (!format) throw new DesignError("Провайдер вернул неизвестный формат изображения", 502, "INVALID_IMAGE_RESPONSE");
+    const base64 = validateImagePayload(generated.base64, format.mime);
+    signal?.throwIfAborted();
+    return {stage:"concept" as const, rigReady:false as const, image:{mime:format.mime, base64}};
   } catch (error) {
     await deps.refund();
     if (error instanceof DesignError) throw error;
@@ -89,7 +97,7 @@ export async function createCharacterConcept(input: unknown, deps: ConceptDepend
       throw new DesignError("Генерация заняла слишком много времени. Квота возвращена.", 504, "IMAGE_GENERATION_TIMEOUT");
     }
     // Provider errors can contain credentials or the user's prompt. Return neither.
-    throw new DesignError("OpenAI не вернул рисунок. Квота возвращена; попробуйте позже.", 502, "IMAGE_GENERATION_FAILED");
+    throw new DesignError("Сервис не вернул рисунок. Квота возвращена; попробуйте позже.", 502, "IMAGE_GENERATION_FAILED");
   }
 }
 
@@ -102,6 +110,6 @@ export function openAIImageGenerator(config: ReturnType<typeof imageConfiguratio
       timeout: IMAGE_TIMEOUT_MS,
     });
     const result = await client.images.generate(imageRequest(prompt, config.model), {signal});
-    return result.data?.[0]?.b64_json;
+    return {mime:"image/webp" as const,base64:result.data?.[0]?.b64_json};
   };
 }

@@ -32,7 +32,9 @@ npm run db:push
 | --- | --- |
 | `DATABASE_URL`, `AUTH_SECRET` | База и подпись session/share JWT |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` | Основной OpenAI-compatible AI; отсутствие ключа включает demo |
-| `OPENAI_IMAGE_API_KEY`, `OPENAI_IMAGE_MODEL` | Отдельный официальный OpenAI Image API для рисунка персонажа; без ключа генерация недоступна |
+| `CHARACTER_IMAGE_PROVIDER` | cloudflare по умолчанию либо openai; автоматического fallback нет |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Аккаунт и токен Workers AI для Cloudflare + FLUX |
+| `OPENAI_IMAGE_API_KEY`, `OPENAI_IMAGE_MODEL` | OpenAI Image API при явном выборе openai |
 | `AI_FALLBACK_API_KEY`, `AI_FALLBACK_BASE_URL`, `AI_FALLBACK_MODEL` | Резервный провайдер; одного fallback-ключа недостаточно для primary |
 | `EMAIL_VERIFICATION_ENABLED` | Обязательная проверка email; по умолчанию false |
 | `BREVO_API_KEY`, `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME` | Доставка кодов; сброс пароля требует настроенного отправителя |
@@ -64,6 +66,12 @@ git diff --check
 
 CI описан в [.github/workflows/ci.yml](../.github/workflows/ci.yml). Автодеплой Vercel заявлен в прежней инструкции, но настройки GitHub/Vercel этим репозиторием не подтверждаются. Перед выпуском отдельно согласуй схему, резервную копию, переменные и способ отката. Не выполняй push или production-операции только ради проверки документации.
 
-## Рисунок персонажа через OpenAI
+## Рисунок персонажа через API
 
-Настройте `OPENAI_IMAGE_API_KEY` в локальном серверном окружении и development-базу для входа. Не меняйте для этого production-базу. Модель задаёт `OPENAI_IMAGE_MODEL`; примеры — в `.env.example`. Генерация расходует AI-квоту и обращается к платному API, поэтому тест без ключа проверяет только понятный отказ. В preview кнопка отключена; на авторизованной странице проверяйте рисунок, ошибку провайдера, отмену и скачивание. Перед Vercel-деплоем требуется проверка Fluid compute для маршрута на 180 секунд. Полный автоматический риг ещё не реализован.
+По умолчанию выбран Cloudflare Workers AI + FLUX. В локальном `.env.local` либо серверном окружении задайте `CHARACTER_IMAGE_PROVIDER="cloudflare"`, `CLOUDFLARE_ACCOUNT_ID` и `CLOUDFLARE_API_TOKEN`. Нужны также development-база и `AUTH_SECRET` для входа. Данные доступа не отправляйте в чат или Git. Инструкция получения токена: [Cloudflare REST API](https://developers.cloudflare.com/workers-ai/get-started/rest-api/); используйте шаблон Workers AI и нужный аккаунт. Значения из примера не являются рабочими ключами.
+
+На Workers Free действует бесплатный суточный лимит; после его исчерпания Cloudflare прекращает запросы. Workers Paid допускает оплату сверх бесплатного лимита. Приложение не определяет тариф Cloudflare и не изменяет его; не включайте Paid для бесплатной проверки. Актуальные условия — [Cloudflare pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/).
+
+OpenAI сохранён как отдельный вариант: явно задайте `CHARACTER_IMAGE_PROVIDER="openai"` и `OPENAI_IMAGE_API_KEY`. Между провайдерами нет автоматического переключения. Каждый успешный рисунок расходует одну внутреннюю AI-квоту Atrion; необработанная ошибка освобождает резерв. В preview вызов отключён. На авторизованной странице проверяйте реальный рисунок, отмену и скачивание: Cloudflare возвращает JPEG с фоном, OpenAI — WebP с запросом прозрачности. Без ключа проверки подтверждают только отказ и поведение тестового транспорта.
+
+Перед Vercel-деплоем требуется проверить Fluid compute для маршрута на 180 секунд. Полный автоматический риг ещё не реализован. Новые данные локальной базы и настройки хостинга автоматически не создаются.

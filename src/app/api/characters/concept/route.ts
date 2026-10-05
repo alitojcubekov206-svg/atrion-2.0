@@ -3,7 +3,8 @@ import { requireApiUser } from "@/backend/api-auth";
 import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
 import { readDesignBody } from "@/backend/design/body";
 import { DesignError } from "@/backend/design/validation";
-import { createCharacterConcept, imageConfiguration, openAIImageGenerator } from "@/backend/characters/concept";
+import { createCharacterConcept } from "@/backend/characters/concept";
+import { characterImageConfiguration, characterImageGenerator, characterImageStatus } from "@/backend/characters/providers";
 
 // Image generation can take two minutes. On Vercel this route requires Fluid
 // compute (or another environment allowing at least 180 seconds).
@@ -20,8 +21,7 @@ export async function GET() {
   const auth = await requireApiUser();
   if (auth.response) return auth.response;
   try {
-    const config = imageConfiguration();
-    return NextResponse.json({configured:Boolean(config.apiKey),stage:"concept",rigReady:false},{headers});
+    return NextResponse.json(characterImageStatus(characterImageConfiguration()),{headers});
   } catch(error) { return failure(error); }
 }
 
@@ -29,12 +29,12 @@ export async function POST(req: Request) {
   const auth = await requireApiUser();
   if (auth.response) return auth.response;
   try {
-    const body = await readDesignBody(req), config = imageConfiguration();
+    const body = await readDesignBody(req), config = characterImageConfiguration();
     const result = await createCharacterConcept(body.prompt, {
-      configured: Boolean(config.apiKey),
+      configured: characterImageStatus(config).configured,
       reserve: () => consumeAiQuota(auth.userId),
       refund: () => refundAiQuota(auth.userId),
-      generate: openAIImageGenerator(config),
+      generate: characterImageGenerator(config),
     }, req.signal);
     return NextResponse.json(result,{headers});
   } catch(error) { return failure(error); }
