@@ -10,6 +10,8 @@ import { demo2D } from "./demo";
 import RigCanvas from "./RigCanvas";
 import CharacterGenerator from "./CharacterGenerator";
 import PrepareCharacter from "./PrepareCharacter";
+import MeshEditor from "./MeshEditor";
+import { gridMesh } from "@/shared/rigging/mesh";
 import { requestJson } from "@/frontend/api";
 import { downloadBlob, exportConceptGlb } from "@/frontend/export-3d";
 
@@ -40,6 +42,7 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   const autoStarted=useRef(false);
   const [addingBone,setAddingBone]=useState(false);
   const [artSource,setArtSource]=useState<Blob|null>(null);
+  const [meshLayer,setMeshLayer]=useState(""),[meshDensity,setMeshDensity]=useState(8);
   const poseTransaction=useRef<Snapshot|null>(null);
   const [editBind,setEditBind]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
   const [saved,setSaved]=useState<Saved|null>(null),[documents,setDocuments]=useState<Saved[]>([]),[openId,setOpenId]=useState("");
@@ -56,6 +59,7 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   const dirty=ready&&digest!==baseline;
 
   function install(next:RigDocument,nextName:string,metadata:Saved|null=null) {
+    setMeshLayer("");
     setMotionPreview(false);
     const parsed=parseRigDocument(next);
     if(parsed.kind==="rig2d")evaluateRig2D(parsed);else evaluateRig3D(parsed);
@@ -112,8 +116,8 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[playing,clip,playRun]);
 
-  function startAnimation(id:string){setClipId(id);setTime(0);setEditBind(false);setAddingBone(false);setMotionPreview(true);setPlayRun((n)=>n+1);setPlaying(true);}
-  function toggleAnimation(){setEditBind(false);setMotionPreview(true);if(!playing&&clip&&time>=clip.duration)setTime(0);setPlaying(!playing);}
+  function startAnimation(id:string){setMeshLayer("");setClipId(id);setTime(0);setEditBind(false);setAddingBone(false);setMotionPreview(true);setPlayRun((n)=>n+1);setPlaying(true);}
+  function toggleAnimation(){setMeshLayer("");setEditBind(false);setMotionPreview(true);if(!playing&&clip&&time>=clip.duration)setTime(0);setPlaying(!playing);}
 
   function change(edit:(snapshot:Snapshot)=>void) {
     try {const next=clone(stateRef.current);if(motionPreview&&next.doc.kind==="rig2d")next.pose2D=effectivePose2D();edit(next);next.doc=parseRigDocument(next.doc);
@@ -135,6 +139,23 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   }
   function undo() {if(!past.length)return;setFuture([clone(state),...future]);setState(past[past.length-1]);setPast(past.slice(0,-1));setPlaying(false);setMotionPreview(false);setError("");}
   function redo() {if(!future.length)return;setPast([...past,clone(state)]);setState(future[0]);setFuture(future.slice(1));setPlaying(false);setMotionPreview(false);setError("");}
+  useEffect(()=>{
+    const handler=(event:KeyboardEvent)=>{
+      const target=event.target as HTMLElement|null;
+      if(target?.closest("input,textarea,select,[contenteditable=true]")||!(event.ctrlKey||event.metaKey)||event.altKey)return;
+      if(event.key.toLowerCase()==="z"){event.preventDefault();if(event.shiftKey)redo();else undo();}
+      else if(event.key.toLowerCase()==="y"){event.preventDefault();redo();}
+    };
+    window.addEventListener("keydown",handler);return()=>window.removeEventListener("keydown",handler);
+  });
+  function createLayerMesh(){change((next)=>{
+    if(next.doc.kind!=="rig2d")return;
+    const binding=next.doc.attachments.find((a)=>a.layerId===layerId),weightBone=binding?.boneId??bone.id;
+    // Convert rigid binding at rest; its bone delta continues to animate every vertex.
+    if(binding)next.doc=bindLayer(next.doc,layerId,null,{});
+    const layer=next.doc.layers.find((l)=>l.id===layerId)!,asset=next.doc.assets.find((a)=>a.id===layer.assetId)!;
+    layer.skin=gridMesh(asset.width,asset.height,meshDensity,meshDensity,weightBone);
+  });setMeshLayer(layerId);setEditBind(true);setPlaying(false);}
   function discardOkay(){return !dirty||window.confirm("Заменить текущий риг? Несохранённые изменения останутся только в скачанном JSON, если вы его экспортировали.");}
   function switchMode(next:"rig2d"|"rig3d") {
     if(next===mode)return;
@@ -222,6 +243,7 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   }
   const three=useMemo(()=>{if(doc.kind!=="rig3d")return null;const visible=editBind?{...doc,pose:{}}:doc;return {concept:posedConcept(visible),bones:evaluateRig3D(visible).bones};},[doc,editBind]);
   const selectedLayer=doc.kind==="rig2d"?doc.layers.find((l)=>l.id===layerId):undefined;
+  const meshTarget=doc.kind==="rig2d"?doc.layers.find((l)=>l.id===meshLayer):undefined;
   const attachment=doc.kind==="rig2d"?doc.attachments.find((a)=>a.layerId===layerId):undefined;
   const selectedTrack=clip?.tracks.find((t)=>t.boneId===bone.id);
 
@@ -267,7 +289,7 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
         <p className="text-xs leading-relaxed text-white/35">{editBind?"Изменения записываются в исходный скелет. Смена родителя сохраняет локальные координаты.":"Сейчас вы меняете позу; исходный скелет сохраняется."}</p>
       </aside>
       <div className="order-1 min-w-0 space-y-4 md:order-2">
-        {doc.kind==="rig2d"?<RigCanvas document={doc} pose={effectivePose2D()} time={time} selected={bone.id} onSelect={setSelected} showBones={showBones} addingBone={addingBone} onDrawBone={drawBone} canPose={!editBind} onPoseStart={startPoseDrag} onPose={dragPose} onPoseEnd={finishPoseDrag}/>:<div className="h-[560px] overflow-hidden rounded-2xl border border-white/10"><ConceptViewer fitModel concept={three!.concept} selectedId={null} onSelect={(id)=>{if(id){const partId=id.replace(/_\d+$/,"");setLayerId(partId);const binding=doc.bindings.find((b)=>b.partId===partId);if(binding)setSelected(binding.boneId);}}} rigBones={showBones?three!.bones:undefined} selectedBoneId={bone.id} onBoneSelect={setSelected}/></div>}
+        {doc.kind==="rig2d"?meshTarget?.skin?<MeshEditor key={meshTarget.id} asset={doc.assets.find((a)=>a.id===meshTarget.assetId)!} skin={meshTarget.skin} onClose={()=>setMeshLayer("")} onCommit={(skin)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.layers.find((l)=>l.id===meshTarget.id)!.skin=skin;})}/>:<RigCanvas document={doc} pose={effectivePose2D()} time={time} selected={bone.id} onSelect={setSelected} showBones={showBones} addingBone={addingBone} onDrawBone={drawBone} canPose={!editBind} onPoseStart={startPoseDrag} onPose={dragPose} onPoseEnd={finishPoseDrag}/>:<div className="h-[560px] overflow-hidden rounded-2xl border border-white/10"><ConceptViewer fitModel concept={three!.concept} selectedId={null} onSelect={(id)=>{if(id){const partId=id.replace(/_\d+$/,"");setLayerId(partId);const binding=doc.bindings.find((b)=>b.partId===partId);if(binding)setSelected(binding.boneId);}}} rigBones={showBones?three!.bones:undefined} selectedBoneId={bone.id} onBoneSelect={setSelected}/></div>}
         {doc.kind==="rig2d"&&<div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.025] p-4">
           <div className="flex flex-wrap items-center gap-2"><h2 className="mr-2 text-sm font-semibold">Анимация</h2><select aria-label="Клип" className={`${input} !w-40`} value={clip?.id??""} onChange={(e)=>{setClipId(e.target.value);setTime(0);setPlaying(false);setMotionPreview(true);}}><option value="">Исходная поза</option>{doc.clips.map((c)=><option key={c.id} value={c.id}>{clipName(c.id)}</option>)}</select>
             <button className={button} onClick={()=>{const id=newId("clip");change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.push({id,duration:2,loop:true,tracks:[]});});setClipId(id);setTime(0);}}>+ Клип</button>
@@ -300,6 +322,12 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
             else next.doc=bindPart(next.doc,layerId,e.target.value||null,editBind?{}:next.doc.pose);
           })}><option value="">Без привязки</option>{doc.bones.map((b)=><option key={b.id} value={b.id}>{boneName(b.id)}</option>)}</select></label>}
           {selectedLayer&&doc.kind==="rig2d"&&<>
+            <div className="space-y-2 rounded-lg border border-teal-300/20 p-2">
+              <label className={label}>Плотность сетки<input aria-label="Плотность сетки" className={input} type="number" min={1} max={32} value={meshDensity} onChange={(e)=>setMeshDensity(Number(e.target.value))}/></label>
+              <button className={button} onClick={createLayerMesh}>{selectedLayer.skin?"Пересоздать сетку":"Создать сетку слоя"}</button>
+              <p className="text-xs text-white/50">{selectedLayer.skin?"Пересоздание заменит геометрию и веса; доступна отмена. ":""}Новая сетка привязывается к {attachment?boneName(attachment.boneId):boneName(bone.id)}.</p>
+              {selectedLayer.skin&&<button className={button} onClick={()=>{setMeshLayer(layerId);setPlaying(false);setEditBind(true);}}>Редактировать вершины</button>}
+            </div>
             <div className="grid grid-cols-2 gap-2">{selectedLayer.pivot.map((value,index)=><NumberField key={index} name={`Pivot ${index?"Y":"X"}`} value={value} onChange={(n)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.layers.find((l)=>l.id===layerId)!.pivot[index]=n;})}/>)}</div>
             <div className="grid grid-cols-2 gap-2">{(attachment?.offset??selectedLayer.transform).position.map((value,index)=><NumberField key={index} name={`Слой ${index?"Y":"X"}`} value={value} onChange={(n)=>change((next)=>{if(next.doc.kind!=="rig2d")return;const target=next.doc.attachments.find((a)=>a.layerId===layerId)?.offset??next.doc.layers.find((l)=>l.id===layerId)!.transform;target.position[index]=n;})}/>)}</div>
             <NumberField name="Поворот слоя°" value={(attachment?.offset??selectedLayer.transform).rotation*180/Math.PI} onChange={(n)=>change((next)=>{if(next.doc.kind!=="rig2d")return;const target=next.doc.attachments.find((a)=>a.layerId===layerId)?.offset??next.doc.layers.find((l)=>l.id===layerId)!.transform;target.rotation=n*Math.PI/180;})}/>

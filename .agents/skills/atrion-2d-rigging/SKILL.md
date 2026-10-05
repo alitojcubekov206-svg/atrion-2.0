@@ -5,7 +5,7 @@ description: "Проектировать, реализовывать и пров
 
 # 2D-риггинг персонажей Atrion
 
-Найди корень Git-репозитория и проверь remote `alitojcubekov206-svg/atrion-2.0`. Читай корневой `AGENTS.md` и [целевую спецификацию](../../../docs/RIGGING_2D.md), а для общих границ — [ARCHITECTURE.md](../../../ARCHITECTURE.md). Shared FK и ручной редактор реализованы. Приоритет пользователя — генерация по тексту уровня Live2D; читай [требования](../../../docs/CHARACTER_GENERATION.md) и не выдавай учебный пример за генерацию. Текущий запрос разрешает backend, GitHub и интерфейс 2D/3D-риггинга. Контракты — [DESIGN_BACKEND.md](../../../docs/DESIGN_BACKEND.md).
+Найди корень Git-репозитория и проверь remote `alitojcubekov206-svg/atrion-2.0`. Читай корневой `AGENTS.md` и [целевую спецификацию](../../../docs/RIGGING_2D.md), а для общих границ — [ARCHITECTURE.md](../../../ARCHITECTURE.md). Shared FK и ручной редактор реализованы. Актуальный приоритет — ручной deformation pipeline по [новому ТЗ](../../../docs/RIGGING_ENGINE_SPEC.md), по одному этапу. Генерация по тексту из [предыдущих требований](../../../docs/CHARACTER_GENERATION.md) отложена до готовности движка; не выдавай учебный пример за генерацию. Текущий запрос разрешает backend, GitHub и интерфейс 2D/3D-риггинга. Контракты — [DESIGN_BACKEND.md](../../../docs/DESIGN_BACKEND.md).
 
 ## Выбор подхода
 

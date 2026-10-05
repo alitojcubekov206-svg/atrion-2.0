@@ -4,8 +4,10 @@ export type Transform2D = { position: [number, number]; rotation: number; scale:
 export type Matrix2D = [number, number, number, number, number, number];
 export type Bone2D = { id: string; parentId: string | null; length: number; bind: Transform2D };
 export type Skin2D = {
-  /** Texture coordinates in asset pixels, +y up; rest placement comes from the layer. */
+  /** Rest geometry in asset pixels, +y up; placement comes from the layer. */
   vertices: [number, number][];
+  /** Independent texture coordinates; absent in legacy documents (use vertices). */
+  uv?: [number, number][];
   triangles: [number, number, number][];
   weights: { boneId: string; weight: number }[][];
 };
@@ -82,7 +84,15 @@ export function parseRig2D(input: unknown): Rig2DDocument {
       check(weights.length===vertices.length,"Каждой вершине нужны веса");
       vertexCount+=vertices.length;triangleCount+=triangles.length;
       check(vertexCount<=8192&&triangleCount<=16384,"Превышен общий бюджет сеток");
-      skin={vertices,triangles,weights};
+      const uv=input.uv===undefined?undefined:list(input.uv,"skin.uv",4096,3).map((p)=>{
+        const point=vector2(p,"skin.uv");
+        check(point[0]>=0&&point[0]<=asset.width&&point[1]>=0&&point[1]<=asset.height,"UV выходит за границы ассета");return point;
+      });
+      if(uv){
+        check(uv.length===vertices.length,"Каждой вершине нужна UV-координата");
+        for(const [i,j,k] of triangles){const [a,b,c]=[uv[i],uv[j],uv[k]];check(Math.abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]))>1e-6,"Вырожденный UV-треугольник");}
+      }
+      skin={vertices,triangles,weights,...(uv?{uv}:{})};
     }
     return { id: id(layer.id, "layer.id"), assetId, visible: layer.visible, ...(skin?{skin}:{}),
       zIndex: integer(layer.zIndex, "zIndex", -10000, 10000), pivot: vector2(layer.pivot, "pivot"), transform: transform2D(layer.transform) };
@@ -219,7 +229,7 @@ export function evaluateRig2D(document: Rig2DDocument, options: { clipId?: strin
     const model = binding ? multiply2D(world.get(binding.boneId)!,matrix2D(binding.offset)) : matrix2D(layer.transform);
     const matrix = multiply2D(model,[1,0,0,1,-layer.pivot[0],-layer.pivot[1]]);
     const skin=layer.skin?{
-      uv:layer.skin.vertices,triangles:layer.skin.triangles,
+      uv:layer.skin.uv??layer.skin.vertices,triangles:layer.skin.triangles,
       vertices:layer.skin.vertices.map((p,index):[number,number]=>{
         const rest=point2D(matrix,p),point:[number,number]=[0,0];
         for(const influence of layer.skin!.weights[index]){

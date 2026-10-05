@@ -14,6 +14,49 @@ import { DesignError } from "../src/backend/design/validation";
 import { createDesignStore } from "../src/backend/design/store";
 import { defaultLandmarks, fullBodyRig } from "../src/shared/rigging/fullbody";
 import { removeWhiteBorder } from "../src/shared/rigging/cutout";
+import { gridMesh, insertMeshVertex, moveMeshVertex, removeMeshVertex } from "../src/shared/rigging/mesh";
+
+test("editable mesh keeps UV fixed, rejects folds and preserves project round-trip",()=>{
+  const doc=parseRig2D(rig2());doc.attachments=[];
+  const asset=doc.assets[0],mesh=gridMesh(asset.width,asset.height,2,2,"root");
+  const changed=moveMeshVertex(mesh,4,[asset.width*.6,asset.height*.45],asset.width,asset.height);
+  assert.deepEqual(changed.uv,mesh.vertices);assert.notDeepEqual(changed.vertices,mesh.vertices);
+  assert.deepEqual(mesh.vertices,mesh.uv);
+  assert.throws(()=>moveMeshVertex(mesh,4,[0,0],asset.width,asset.height));
+  doc.layers[0].skin=changed;
+  const restored=parseRig2D(JSON.parse(JSON.stringify(doc))),rendered=evaluateRig2D(restored,{pose:{}}).layers[0].skin!;
+  assert.deepEqual(rendered.uv,mesh.uv);assert.deepEqual(restored.layers[0].skin,changed);
+  const invalid=structuredClone(doc);invalid.layers[0].skin!.uv![0]=[-1,0];assert.throws(()=>parseRig2D(invalid));
+  invalid.layers[0].skin!.uv=changed.uv!.slice(1);assert.throws(()=>parseRig2D(invalid));
+  invalid.layers[0].skin!.uv=changed.vertices.map(()=>[0,0]);assert.throws(()=>parseRig2D(invalid));
+});
+
+test("mesh insertion and removal retain covered area and interpolate UV and weights",()=>{
+  const mesh=gridMesh(100,100,2,2,"root");mesh.weights[1]=[{boneId:"child",weight:1}];
+  const area=(m:typeof mesh)=>m.triangles.reduce((s,[i,j,k])=>{const [a,b,c]=[m.vertices[i],m.vertices[j],m.vertices[k]];return s+Math.abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]))/2;},0);
+  const inserted=insertMeshVertex(mesh,[35,10]);
+  near(area(inserted),10000);assert.equal(inserted.vertices.length,10);assert.deepEqual(inserted.uv![9],[35,10]);
+  near(inserted.weights[9].reduce((s,w)=>s+w.weight,0),1);assert(inserted.weights[9].some((w)=>w.boneId==="child"));
+  const removed=removeMeshVertex(inserted,9);near(area(removed),10000);assert.equal(removed.vertices.length,9);
+  const middle=removeMeshVertex(mesh,4);near(area(middle),10000);assert.equal(middle.vertices.length,8);
+  const corner=removeMeshVertex(mesh,0);near(area(corner),8750);assert.equal(corner.vertices.length,8);
+  assert.throws(()=>insertMeshVertex(mesh,[1000,1000]));assert.throws(()=>gridMesh(100,100,33,2,"root"));
+  assert(removed.triangles.every((t)=>t.every((i)=>i>=0&&i<removed.vertices.length)));
+  const deformed=moveMeshVertex(mesh,4,[55,45],100,100),split=insertMeshVertex(deformed,[35,10]);
+  assert.notDeepEqual(split.uv![9],split.vertices[9]);
+});
+
+test("rigid layer to editable mesh retains rest placement and animated bone attachment",()=>{
+  const original=parseRig2D(rig2()),binding=original.attachments[0],asset=original.assets[0];
+  const meshDoc=bindLayer(original,binding.layerId,null,{}),layer=meshDoc.layers.find((l)=>l.id===binding.layerId)!;
+  layer.skin=gridMesh(asset.width,asset.height,1,1,binding.boneId);
+  const doc=parseRig2D(meshDoc),bone=doc.bones.find((b)=>b.id===binding.boneId)!;
+  for(const pose of [{},{[bone.id]:{...bone.bind,rotation:bone.bind.rotation+.7}}]){
+    const matrix=evaluateRig2D(original,{pose}).layers.find((l)=>l.id===layer.id)!.matrix;
+    const result=evaluateRig2D(doc,{pose}).layers.find((l)=>l.id===layer.id)!.skin!;
+    layer.skin.vertices.forEach(([x,y],i)=>{near(result.vertices[i][0],matrix[0]*x+matrix[2]*y+matrix[4]);near(result.vertices[i][1],matrix[1]*x+matrix[3]*y+matrix[5]);});
+  }
+});
 
 test("weighted 2D skin preserves rest, blends two bones and round-trips",()=>{
   const doc=parseRig2D(rig2());doc.attachments=[];doc.layers[0].pivot=[0,0];
