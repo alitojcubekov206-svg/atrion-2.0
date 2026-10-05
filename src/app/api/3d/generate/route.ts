@@ -6,6 +6,7 @@ import { generate3DModel } from "@/backend/ai";
 import { planFor } from "@/backend/procedural-3d";
 import { db } from "@/backend/db";
 import { FREE_3D_LIMIT } from "@/backend/plans";
+import { is2DRiggingRequest, CHARACTER_GENERATION_UNAVAILABLE } from "@/shared/rigging/intent";
 
 // 60 is the Vercel Hobby ceiling; anything higher fails the deploy on that plan.
 export const maxDuration = 60;
@@ -34,6 +35,8 @@ export async function POST(req: Request) {
   if (prompt.length > 1500) {
     return NextResponse.json({ error: "Описание слишком длинное." }, { status: 400 });
   }
+
+  if (is2DRiggingRequest(prompt)) return NextResponse.json({error:CHARACTER_GENERATION_UNAVAILABLE,code:"CHARACTER_GENERATION_UNAVAILABLE"},{status:400});
 
   const plan = await getUserPlan(userId);
 

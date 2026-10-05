@@ -8,6 +8,7 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "db:push": "prisma db push",
+    "test:backend": "tsc -p tsconfig.backend-tests.json && node --test .backend-tests/scripts/design-backend.test.js",
     "postinstall": "prisma generate"
   },
   "dependencies": {

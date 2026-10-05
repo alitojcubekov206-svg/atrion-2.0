@@ -1,0 +1,4 @@
+interface:
+  display_name: "Atrion: 2D-риггинг"
+  short_description: "Скелет и анимация плоских персонажей Atrion"
+  default_prompt: "Используй $atrion-2d-rigging для текущей задачи со скелетом и анимацией плоского персонажа Atrion."

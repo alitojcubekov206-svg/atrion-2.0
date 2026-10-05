@@ -2,6 +2,8 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { is2DRiggingRequest, CHARACTER_GENERATION_UNAVAILABLE } from "@/shared/rigging/intent";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { DrawingView } from "@/frontend/components/three/ConceptViewer";
@@ -62,6 +64,7 @@ type Measurement = {
 };
 
 export default function DesignEnginePage() {
+  const router=useRouter();
   const [prompt, setPrompt] = useState("");
   const [panelOpen, setPanelOpen] = useState(true);
   const [treeOpen, setTreeOpen] = useState(true);
@@ -176,6 +179,13 @@ export default function DesignEnginePage() {
    */
   async function runGeneration(text: string, echoPrompt: boolean) {
     const cleaned = text.trim();
+    if (is2DRiggingRequest(cleaned)) {
+      try {
+        sessionStorage.setItem("atrion:character-prompt",cleaned);
+        router.push("/dashboard/rigging?mode=rig2d#character-generation");
+      } catch {setError(CHARACTER_GENERATION_UNAVAILABLE);}
+      return;
+    }
     if (cleaned.length < 10) {
       setError("Опиши объект подробнее — минимум 10 символов.");
       return;
@@ -1031,6 +1041,16 @@ export default function DesignEnginePage() {
 
       {panelOpen && (
         <aside className="flex max-h-[52vh] w-full shrink-0 flex-col border-t border-[#a78bfa]/15 bg-[#0e0e10]/95 backdrop-blur-2xl md:max-h-none md:w-[360px] md:border-l md:border-t-0 lg:w-[400px]">
+      <div className="flex flex-wrap gap-2 border-b border-white/10 px-3 py-2 text-xs">
+        <Link href="/dashboard/rigging?mode=rig2d" className="rounded-lg px-3 py-2 hover:bg-violet-400/15">2D-риггинг ↗</Link>
+        <Link href="/dashboard/house" className="rounded-lg px-3 py-2 hover:bg-violet-400/15">Редактор дома ↗</Link>
+        <button className="rounded-lg px-3 py-2 hover:bg-violet-400/15" onClick={()=>{
+          try {if(concept)sessionStorage.setItem("atrion:rigging-transfer",JSON.stringify(concept));
+            router.push(`/dashboard/rigging?mode=rig3d${concept?"&import=design-engine":""}`);
+          }catch{setError("Не удалось передать модель. Скачайте JSON и импортируйте его в 3D-риггинг.");}
+        }}>{concept?"Модель → 3D-риггинг":"3D-риггинг ↗"}</button>
+      </div>
+
           <div className="border-b border-white/[0.06] px-4 py-4">
             <div className="flex items-center justify-between gap-3">
               <div>

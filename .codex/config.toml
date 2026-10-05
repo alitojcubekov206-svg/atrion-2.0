@@ -1,0 +1,3 @@
+# Project-scoped, read-only OpenAI documentation. No API key required.
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"

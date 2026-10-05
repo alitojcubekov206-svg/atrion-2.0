@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": ".backend-tests",
+    "rootDir": ".",
+    "noEmit": false,
+    "incremental": false,
+    "plugins": []
+  },
+  "include": ["scripts/design-backend.test.ts"],
+  "exclude": ["node_modules", ".next", ".backend-tests"]
+}

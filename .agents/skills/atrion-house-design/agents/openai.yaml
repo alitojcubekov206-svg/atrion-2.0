@@ -1,0 +1,4 @@
+interface:
+  display_name: "Atrion: дизайн дома"
+  short_description: "Планировка, внешний вид и 3D-представление дома"
+  default_prompt: "Используй $atrion-house-design для текущей задачи по созданию, планировке и дизайну дома в Atrion."

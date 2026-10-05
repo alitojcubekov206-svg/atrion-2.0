@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/backend/api-auth";
 import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
 import { generate3DInterview } from "@/backend/ai";
+import { is2DRiggingRequest, CHARACTER_GENERATION_UNAVAILABLE } from "@/shared/rigging/intent";
 
 export const maxDuration = 60;
 
@@ -27,6 +28,8 @@ export async function POST(req: Request) {
   if (prompt.length > 1500) {
     return NextResponse.json({ error: "Описание слишком длинное." }, { status: 400 });
   }
+
+  if (is2DRiggingRequest(prompt)) return NextResponse.json({error:CHARACTER_GENERATION_UNAVAILABLE,code:"CHARACTER_GENERATION_UNAVAILABLE"},{status:400});
 
   const quota = await consumeAiQuota(userId);
   if (!quota.ok) return NextResponse.json({ error: quota.error, code: quota.code }, { status: 429 });
