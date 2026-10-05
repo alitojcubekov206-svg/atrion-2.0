@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { primaryTextProvider, fallbackTextProvider, requestTextJSON, type TextRequestOptions } from "./text-ai";
 import type {
   Blueprint,
   ExpertReply,
@@ -13,51 +14,7 @@ import { matchParts } from "@/backend/gen/match";
 import { dimensionsOf, primitiveCount, structureFromGroups } from "@/shared/geometry";
 import { sanitizeParts, scoreParts, validateAndRepair } from "@/backend/gen/validate";
 
-type AIProvider = {
-  apiKey: string;
-  baseURL?: string;
-  model: string;
-  name: "primary" | "fallback";
-};
-
-const hasKey = () =>
-  Boolean(
-    process.env.OPENAI_API_KEY?.trim() ||
-      process.env.GROQ_API_KEY?.trim() ||
-      process.env.AI_API_KEY?.trim()
-  );
-
-function primaryProvider(): AIProvider | null {
-  const apiKey =
-    process.env.OPENAI_API_KEY?.trim() ||
-    process.env.GROQ_API_KEY?.trim() ||
-    process.env.AI_API_KEY?.trim();
-  if (!apiKey) return null;
-
-  // Groq-compatible if only GROQ_API_KEY is set
-  const isGroqOnly = !process.env.OPENAI_API_KEY?.trim() && Boolean(process.env.GROQ_API_KEY?.trim());
-  return {
-    apiKey,
-    baseURL:
-      process.env.OPENAI_BASE_URL ||
-      (isGroqOnly ? "https://api.groq.com/openai/v1" : undefined),
-    model:
-      process.env.OPENAI_MODEL ||
-      (isGroqOnly ? "llama-3.3-70b-versatile" : "gpt-4o"),
-    name: "primary",
-  };
-}
-
-function fallbackProvider(): AIProvider | null {
-  const apiKey = process.env.AI_FALLBACK_API_KEY;
-  if (!apiKey) return null;
-  return {
-    apiKey,
-    baseURL: process.env.AI_FALLBACK_BASE_URL || undefined,
-    model: process.env.AI_FALLBACK_MODEL || "gpt-4o-mini",
-    name: "fallback",
-  };
-}
+const hasKey = () => Boolean(primaryTextProvider());
 
 function errorSummary(error: unknown) {
   return {
@@ -79,61 +36,25 @@ function isProviderFailure(error: unknown) {
   );
 }
 
-async function requestJSON<T>(
-  provider: AIProvider,
-  system: string,
-  user: string,
-  timeoutMs = 60_000
-): Promise<T> {
-  const client = new OpenAI({
-    apiKey: provider.apiKey,
-    baseURL: provider.baseURL,
-    maxRetries: 0,
-    timeout: Math.max(1_000, timeoutMs),
-  });
-  const res = await client.chat.completions.create({
-    model: provider.model,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-  });
-  let text = res.choices[0]?.message?.content ?? "{}";
-  // Some providers wrap JSON in markdown fences despite json mode
-  text = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
-  return JSON.parse(text) as T;
-}
-
-/** Below this, a fallback call cannot finish in time and is not started. */
-const MIN_FALLBACK_MS = 6_000;
-
-async function chatJSON<T>(
-  system: string,
-  user: string,
-  options: { timeoutMs?: number } = {}
-): Promise<T> {
-  const primary = primaryProvider();
+async function chatJSON<T>(system: string, user: string, options:TextRequestOptions={}): Promise<T> {
+  const primary = primaryTextProvider();
   if (!primary) throw new Error("Primary AI provider is not configured");
-  const budget = options.timeoutMs ?? 60_000;
-  const started = Date.now();
 
+  const started=Date.now();
   try {
-    return await requestJSON<T>(primary, system, user, budget);
+    return await requestTextJSON<T>(primary, system, user, options);
   } catch (error) {
-    const fallback = fallbackProvider();
+    const fallback = primary.kind==="cloudflare"?null:fallbackTextProvider();
     if (!fallback || !isProviderFailure(error)) throw error;
-    const left = budget - (Date.now() - started);
-    // A timed-out primary has used the whole budget; retrying elsewhere would
-    // only push the route past its limit.
-    if (left < MIN_FALLBACK_MS) throw error;
 
     console.warn(
       "Atrion AI Pro primary provider failed; trying fallback",
       errorSummary(error)
     );
     try {
-      return await requestJSON<T>(fallback, system, user, left);
+      const remaining=(options.timeoutMs??45_000)-(Date.now()-started);
+      if(remaining<1000)throw error;
+      return await requestTextJSON<T>(fallback, system, user, {...options,timeoutMs:remaining});
     } catch (fallbackError) {
       console.warn(
         "Atrion AI Pro fallback provider failed; using local fallback",
@@ -577,13 +498,13 @@ export type ConceptGeneration = {
   concept: ThreeDConcept;
   /** Where the geometry that actually shipped came from. */
   source: "ai" | "procedural";
-  /** 0–1 coherence/detail score of the shipped geometry. */
+  /** Legacy 0–1 connectivity/detail heuristic of the shipped geometry. */
   score: number;
-  /** 0–1 how well the shipped geometry matches the prompt (features + size). */
+  /** Diagnostics, 0–1: requested features found by name and size against the plan. */
   match: number;
-  /** 0–1 structure and match together — what the generator optimises. */
+  /** Diagnostics, 0–1: the heuristic and the match together. */
   quality: number;
-  /** Requested features the shipped model does not have. */
+  /** Requested features no part of the shipped model provides. */
   missing: string[];
   /** Rendered primitive count after repeat and mirror expansion. */
   primitives: number;
@@ -591,48 +512,48 @@ export type ConceptGeneration = {
   notes: string[];
 };
 
-/**
- * Total time the 3D route may spend on AI calls. The route itself is capped
- * at 60 s on Vercel Hobby; this leaves room for auth, quota and the response.
- */
-const GENERATION_BUDGET_MS = 50_000;
+/** Once the geometry is ready, metadata gets at most this much longer. */
+const METADATA_GRACE_MS = 6_000;
 
 /**
  * Text → geometry.
  *
- * Two independent attempts race for the result: a parametric generator seeded
- * from the prompt, and the model authoring primitives itself against the
- * geometry DSL. Both are validated, judged against what the prompt asked for,
- * and the better one ships. The metadata call runs alongside the geometry so
- * the whole thing fits the route's time limit, and a missing or failing AI
- * provider degrades to a real model instead of an error.
+ * Validated AI geometry ships; the parametric model is the labelled fallback
+ * when there is no provider or no usable AI output. The prompt-match report is
+ * diagnostics only — it feeds missing named parts into the AI repair pass and
+ * the studio notes, never the choice. Metadata runs alongside the geometry
+ * within the same 50-second budget.
  */
 export async function generate3DModel(
   prompt: string,
   answers: { question: string; answer: string }[] = []
 ): Promise<ConceptGeneration> {
-  const deadline = Date.now() + GENERATION_BUDGET_MS;
   const { blueprint: plan } = planFor(prompt);
   const baseline = withAnswers(buildFromPlan(plan), answers);
   const notes: string[] = [];
 
   if (!hasKey()) {
-    const match = matchParts(plan, baseline.parts);
+    const report = matchParts(plan, baseline.parts);
     return {
       concept: baseline,
       source: "procedural",
-      score: match.structure,
-      match: match.match,
-      quality: match.quality,
-      missing: match.missing,
+      score: scoreParts(baseline.parts),
+      match: report.match,
+      quality: report.quality,
+      missing: report.missing,
       primitives: primitiveCount(baseline.parts),
       notes: ["Демо-режим: ключ AI не задан — параметрическая модель"],
     };
   }
 
-  // Metadata is a separate, cheaper call — geometry never depends on it, so it
-  // starts now and runs in parallel instead of after the geometry.
-  const metadata = chatJSON<unknown>(
+  const deadline=Date.now()+50_000;
+  const request=async <T,>(system:string,user:string):Promise<T>=>{
+    const remaining=deadline-Date.now();if(remaining<1000)throw new Error("3D generation deadline reached");
+    return chatJSON<T>(system,user,{timeoutMs:Math.min(35_000,remaining),maxTokens:8192});
+  };
+
+  // Metadata never depends on the geometry, so it starts now instead of after it.
+  const metadata = request<unknown>(
     `You are Atrion, an engineering assistant. Return ONLY JSON metadata for a 3D concept.
 The geometry already exists — do NOT return parts, structure or dimensions.
 Answer in the user's language.
@@ -640,13 +561,10 @@ Fill: name, description, materials, equipment, requirements, assemblySteps,
 costEstimate (currency KGS), advantages, disadvantages, risks, engineeringNotes, disclaimer.
 Base the material quantities and costs on the stated dimensions.`,
     `Object: ${baseline.name}
-Kind: ${plan.kind}
 Request: ${prompt}
-Dimensions: ${baseline.dimensions.width} × ${baseline.dimensions.depth} × ${baseline.dimensions.height} м
-Sections: ${(baseline.structure ?? []).map((group) => `${group.label} (${group.partIds.length})`).join(", ")}
+Approximate dimensions: ${baseline.dimensions.width} × ${baseline.dimensions.depth} × ${baseline.dimensions.height} м
 Clarifications:
-${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- нет"}`,
-    { timeoutMs: GENERATION_BUDGET_MS - 2_000 }
+${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- нет"}`
   ).then(
     (value) => ({ ok: true as const, value }),
     (error: unknown) => ({ ok: false as const, error })
@@ -658,27 +576,41 @@ ${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- �
       prompt,
       answers,
       baseline,
+      category: plan.sizeClass,
       plan,
-      deadline,
-      request: chatJSON,
+      request,
     });
   } catch (error) {
     console.warn("AI geometry unavailable", errorSummary(error));
   }
 
   const picked = pickBetterGeometry(baseline, geometry, plan);
-  notes.push(picked.reason);
+  const report = picked.match ?? matchParts(plan, picked.concept.parts);
+  if(!geometry)notes.push("AI не вернул пригодную геометрию; показана процедурная модель, соответствие запросу не подтверждено.");
   if (geometry) {
-    notes.push(`Проходов AI: ${geometry.passes}`);
+    notes.push(
+      picked.source === "ai"
+        ? `Геометрия создана AI и прошла проверку формата; соответствие запросу требует осмотра. Проходов: ${geometry.passes}.`
+        : "Показана процедурная модель; соответствие запросу не подтверждено."
+    );
     notes.push(...geometry.issues);
-  }
-  if (picked.match.missing.length) {
-    notes.push(`Не хватает: ${picked.match.missing.join(", ")}`);
   }
 
   let concept = picked.concept;
 
-  const meta = await metadata;
+  // Metadata shares the HTTP deadline; it must not delay an already generated model.
+  const grace = Math.max(0, Math.min(METADATA_GRACE_MS, deadline - Date.now()));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const meta = await Promise.race([
+    metadata,
+    new Promise<{ ok: false; error: unknown }>((resolve) => {
+      timer = setTimeout(
+        () => resolve({ ok: false, error: new Error("Metadata skipped to meet generation deadline") }),
+        grace
+      );
+    }),
+  ]);
+  clearTimeout(timer);
   if (meta.ok) {
     const parsed = normalize3DConcept(meta.value);
     concept = {
@@ -706,10 +638,10 @@ ${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- �
   return {
     concept,
     source: picked.source,
-    score: picked.match.structure,
-    match: picked.match.match,
-    quality: picked.match.quality,
-    missing: picked.match.missing,
+    score: picked.source === "ai" ? picked.aiScore : picked.baseScore,
+    match: report.match,
+    quality: report.quality,
+    missing: report.missing,
     primitives: primitiveCount(concept.parts),
     notes,
   };

@@ -24,3 +24,5 @@ npm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 .neon
+
+/.backend-tests/

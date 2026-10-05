@@ -58,8 +58,8 @@ const FEATURES: Feature[] = [
   { key: "dome", label: "купол", en: "a dome", has: (b) => b.dome, named: /купол|dome/i, parts: /купол|dome/i },
   { key: "fence", label: "забор", en: "a fence", has: (b) => b.fence, named: /забор|оград|fence/i, parts: /забор|оград|fence|штакет/i },
   { key: "solar", label: "солнечные панели", en: "solar panels", has: (b) => b.solar > 0, named: /солнечн|solar/i, parts: /солнечн|solar|панел/i },
-  { key: "tabletop", label: "столешница", en: "a table top", has: (b) => b.tabletop, named: /стол|table|desk/i, parts: /столешн|tabletop|table ?top|\btop\b|плита/i, core: ["furniture"] },
-  { key: "seat", label: "сиденье", en: "a seat", has: (b) => b.seat, named: /сиден|seat|стул|кресл|диван|chair|sofa/i, parts: /сиден|\bseat|подушк|cushion/i, core: ["furniture"] },
+  { key: "tabletop", label: "столешница", en: "a table top", has: (b) => b.tabletop, named: /стол|table|desk/i, parts: /столешн|tabletop|table ?top|\btop\b|плита|стол|\btable|\bdesk/i, core: ["furniture"] },
+  { key: "seat", label: "сиденье", en: "a seat", has: (b) => b.seat, named: /сиден|seat|стул|кресл|диван|chair|sofa/i, parts: /сиден|\bseat|подушк|cushion|стул|кресл|диван|chair|sofa/i, core: ["furniture"] },
   { key: "backrest", label: "спинка", en: "a backrest", has: (b) => b.backrest && !b.mattress, named: /спинк|backrest/i, parts: /спинк|\bback|изголов/i, core: ["furniture"] },
   { key: "mattress", label: "матрас", en: "a mattress", has: (b) => b.mattress, named: /кроват|матрас|\bbed\b|mattress/i, parts: /матрас|mattress|одеял|blanket|кроват/i, core: ["furniture"] },
   { key: "shelves", label: "полки", en: "shelves", has: (b) => b.shelves > 0, named: /полк|shelf|shelves/i, parts: /полк|shelf|shelves/i },
@@ -131,6 +131,13 @@ function satisfied(expectation: Expectation, parts: ModelPart[]): boolean {
       (feature.roles?.includes(item.role ?? "") ?? false) ||
       (feature.emissive === true && (item.emissive ?? 0) >= 0.4)
   );
+}
+
+/** Labels of the components the user named outright that no part provides. */
+export function missingNamed(bp: Blueprint, parts: ModelPart[]): string[] {
+  return expectationsFor(bp)
+    .filter((item) => item.named && !satisfied(item, parts))
+    .map((item) => item.label);
 }
 
 /** 1 inside ±tolerance, falling to 0 at a factor of `zeroAt` off. */

@@ -54,7 +54,7 @@ export const MAX_PARTS = 160;
 export type RepairReport = {
   parts: ModelPart[];
   issues: string[];
-  /** 0–1 — how much this reads as one coherent object. */
+  /** Legacy complexity/connectivity heuristic, not semantic or visual quality. */
   score: number;
   primitives: number;
 };
@@ -82,6 +82,11 @@ function vector(
     clamp(num(value[1], fallback[1]), -limit, limit),
     clamp(num(value[2], fallback[2]), -limit, limit),
   ];
+}
+
+export function isSupportedPrimitive(value: unknown): boolean {
+  return typeof value === "string" && (SHAPES.includes(value.trim().toLowerCase() as PartShape) ||
+    Object.hasOwn(SHAPE_ALIASES, value.trim().toLowerCase()));
 }
 
 function normalizeShape(value: unknown): PartShape {
@@ -380,11 +385,14 @@ function dropInvisible(parts: ModelPart[]): { parts: ModelPart[]; removed: numbe
 }
 
 /** Remove exact duplicates — same shape at the same place is wasted geometry. */
-function dedupe(parts: ModelPart[]): { parts: ModelPart[]; removed: number } {
+function dedupe(parts: ModelPart[], exact = false): { parts: ModelPart[]; removed: number } {
   const seen = new Set<string>();
   const kept: ModelPart[] = [];
   for (const item of parts) {
-    const key = [
+    const key = exact ? JSON.stringify({shape:item.shape, position:item.position, size:item.size,
+      rotation:item.rotation, color:item.color, material:item.material, opacity:item.opacity,
+      metalness:item.metalness, roughness:item.roughness, emissive:item.emissive,
+      repeat:item.repeat, mirror:item.mirror, sides:item.sides, hole:item.hole, mesh:item.mesh}) : [
       item.shape,
       item.position.map((n) => Math.round(n * 50)).join(","),
       item.size.map((n) => Math.round(n * 50)).join(","),
@@ -398,12 +406,10 @@ function dedupe(parts: ModelPart[]): { parts: ModelPart[]; removed: number } {
 }
 
 /**
- * Quality score for a parts list. Used to decide whether AI-authored geometry
- * beats the parametric baseline — never ship the worse of the two.
- */
-/**
- * 0–1 structure score. `clusters` is how many separate objects the prompt asked
- * for ("три стула"): that many disconnected groups are intended, not broken.
+ * Legacy complexity/connectivity heuristic for diagnostics. More parts or
+ * touching boxes do not prove that the requested object was modelled correctly.
+ * `clusters` is how many separate objects the prompt asked for ("три стула"):
+ * that many disconnected groups are intended, not broken.
  */
 export function scoreParts(parts: ModelPart[], options: { clusters?: number } = {}): number {
   if (parts.length < 3) return 0;
@@ -444,7 +450,7 @@ export function scoreParts(parts: ModelPart[], options: { clusters?: number } = 
  */
 export function validateAndRepair(
   value: unknown,
-  options: { targetMaxSize?: number; clusters?: number } = {}
+  options: { targetMaxSize?: number; preserveLayout?: boolean; clusters?: number } = {}
 ): RepairReport {
   const issues: string[] = [];
   let parts = sanitizeParts(value);
@@ -453,18 +459,20 @@ export function validateAndRepair(
     return { parts: [], issues: ["Модель не вернула ни одной детали"], score: 0, primitives: 0 };
   }
 
-  const deduped = dedupe(parts);
+  const deduped = dedupe(parts, options.preserveLayout);
   if (deduped.removed > 0) issues.push(`Удалено дубликатов: ${deduped.removed}`);
   parts = deduped.parts;
 
-  const trimmed = dropInvisible(parts);
+  const trimmed = options.preserveLayout ? { parts, removed: 0 } : dropInvisible(parts);
   if (trimmed.removed > 0) issues.push(`Удалено невидимых деталей: ${trimmed.removed}`);
   parts = trimmed.parts;
 
   const { min, max } = partsBounds(parts);
   const span = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
 
-  const reattached = reattachFloaters(parts, Math.max(0.02, span * 0.02), options.clusters ?? 1);
+  const reattached = options.preserveLayout
+    ? { parts, moved: 0 }
+    : reattachFloaters(parts, Math.max(0.02, span * 0.02), options.clusters ?? 1);
   if (reattached.moved > 0) issues.push(`Присоединено отвалившихся деталей: ${reattached.moved}`);
   parts = reattached.parts;
 

@@ -6,14 +6,7 @@
  */
 import { buildFromPlan, planFor } from "@/backend/procedural-3d";
 import { matchParts } from "@/backend/gen/match";
-import {
-  generateAIGeometry,
-  pickBetterGeometry,
-  type AIGeometryResult,
-  type JsonRequester,
-} from "@/backend/gen/ai-geometry";
-import { dimensionsOf, part, scaleParts } from "@/shared/geometry";
-import type { ModelPart } from "@/shared/types";
+import { generateAIGeometry, pickBetterGeometry, type JsonRequester } from "@/backend/gen/ai-geometry";
 import type { Blueprint } from "@/backend/gen/blueprint";
 
 let failures = 0;
@@ -87,108 +80,68 @@ for (const item of CASES) {
   check(`${item.prompt}: quality`, report.quality >= 0.85, String(report.quality));
 }
 
-/* ---------------- AI vs parametric choice ---------------- */
+/* ---------------- AI geometry: ships when valid, missing named parts get repaired ---------------- */
 
-function fakeAI(parts: ModelPart[], plan: Blueprint, score = 0.9): AIGeometryResult {
-  return {
-    name: "AI",
-    description: "",
-    parts,
-    score,
-    primitives: parts.length,
-    issues: [],
-    passes: 1,
-    match: matchParts(plan, parts),
-  };
-}
+type RawPart = { id: string; name: string; shape: string; position: number[]; size: number[]; color: string; material: string };
+const raw = (id: string, name: string, position: number[], size: number[], shape = "box"): RawPart => ({
+  id,
+  name,
+  shape,
+  position,
+  size,
+  color: "#c1462f",
+  material: "x",
+});
 
-const box = (id: string, name: string, position: [number, number, number], size: [number, number, number], role = "volume") =>
-  part(id, name, { shape: "box", role, group: name, position, size, color: "#888888", material: "x" });
+const carBody = [
+  raw("body", "Кузов", [0, 0.5, 0], [1.8, 0.6, 4.4]),
+  raw("cabin", "Кабина", [0, 1.05, -0.2], [1.5, 0.5, 2]),
+  raw("glass", "Лобовое стекло", [0, 1.05, 0.81], [1.4, 0.4, 0.02]),
+];
+const wheel = (id: string, x: number, z: number) => raw(id, "Колесо", [x, 0.33, z], [0.25, 0.66, 0.66], "cylinder");
+const carWithWheels = [...carBody, wheel("w1", 0.8, 1.4), wheel("w2", -0.8, 1.4), wheel("w3", 0.8, -1.4), wheel("w4", -0.8, -1.4)];
 
-{
-  // A car the AI forgot the wheels on must not beat the baseline.
-  const { blueprint } = planFor("Красный спорткар");
-  const baseline = buildFromPlan(planFor("Красный спорткар").blueprint);
-  const wheelless = [
-    box("a", "Кузов", [0, 0.5, 0], [1.8, 0.6, 4.4]),
-    box("b", "Кабина", [0, 1.1, 0], [1.5, 0.5, 2]),
-    box("c", "Лобовое стекло", [0, 1.1, 1.02], [1.4, 0.4, 0.02], "window"),
-  ];
-  const choice = pickBetterGeometry(baseline, fakeAI(wheelless, blueprint), blueprint);
-  check("AI car without wheels loses", choice.source === "procedural", choice.reason);
-}
-
-{
-  // A character the AI built with every named feature wins even when the
-  // baseline is tidier — the baseline is a stack of capsules.
-  const prompt = "Аниме девушка с длинными волосами";
+async function aiChecks() {
+  const prompt = "Красный спорткар с колёсами";
   const { blueprint } = planFor(prompt);
   const baseline = buildFromPlan(planFor(prompt).blueprint);
-  const figure = [
-    box("t", "Торс", [0, 1.15, 0], [0.34, 0.5, 0.2]),
-    box("p", "Таз", [0, 0.85, 0], [0.32, 0.18, 0.2]),
-    box("h", "Голова", [0, 1.52, 0], [0.22, 0.24, 0.22], "head"),
-    box("hr", "Волосы", [0, 1.45, -0.06], [0.26, 0.5, 0.18]),
-    box("al", "Рука левая", [-0.23, 1.1, 0], [0.08, 0.55, 0.08], "limb"),
-    box("ar", "Рука правая", [0.23, 1.1, 0], [0.08, 0.55, 0.08], "limb"),
-    box("ll", "Нога левая", [-0.09, 0.4, 0], [0.11, 0.8, 0.11], "limb"),
-    box("lr", "Нога правая", [0.09, 0.4, 0], [0.11, 0.8, 0.11], "limb"),
-  ];
-  const choice = pickBetterGeometry(baseline, fakeAI(figure, blueprint, 0.82), blueprint);
-  check("AI character with all features wins", choice.source === "ai", choice.reason);
-}
 
-{
-  // An AI model fifty times too big is rejected on size.
-  const { blueprint } = planFor("Настольная лампа");
-  const baseline = buildFromPlan(planFor("Настольная лампа").blueprint);
-  const giant = scaleParts(
-    [
-      box("b", "Основание", [0, 0.02, 0], [0.16, 0.04, 0.16], "foundation"),
-      box("s", "Стойка", [0, 0.25, 0], [0.02, 0.42, 0.02], "structure"),
-      box("l", "Плафон", [0, 0.48, 0], [0.16, 0.1, 0.16], "light"),
-    ],
-    50
-  );
-  const choice = pickBetterGeometry(baseline, fakeAI(giant, blueprint), blueprint);
-  check("AI model at the wrong scale loses", choice.source === "procedural", choice.reason);
-  check("scaled fake is really huge", dimensionsOf(giant).height > 10);
-}
-
-/* ---------------- AI pass budgeting ---------------- */
-
-async function budgetChecks() {
-  const prompt = "Красный спорткар";
-  const { blueprint } = planFor(prompt);
-  const baseline = buildFromPlan(planFor(prompt).blueprint);
-  const timeouts: number[] = [];
-  const weakModel = {
-    name: "Машина",
-    parts: [
-      { id: "a", name: "Кузов", shape: "box", position: [0, 0.5, 0], size: [1.8, 0.6, 4.4], color: "#c1462f", material: "x" },
-      { id: "b", name: "Кабина", shape: "box", position: [0, 1.1, 0], size: [1.5, 0.5, 2], color: "#c1462f", material: "x" },
-      { id: "c", name: "Фара", shape: "sphere", position: [0.6, 0.6, 2.2], size: [0.2, 0.15, 0.1], color: "#fff", material: "x" },
-      { id: "d", name: "Бампер", shape: "box", position: [0, 0.3, 2.25], size: [1.8, 0.2, 0.1], color: "#222", material: "x" },
-    ],
+  // The brief lists what the user named, outside the size budget.
+  let brief = "";
+  const capture: JsonRequester = async <T>(system: string, user: string) => {
+    brief = system + "\n" + user;
+    return { parts: carWithWheels } as T;
   };
-  const request: JsonRequester = async <T>(_system: string, _user: string, options?: { timeoutMs?: number }) => {
-    timeouts.push(options?.timeoutMs ?? -1);
-    return weakModel as T;
+  await generateAIGeometry({ prompt, baseline, plan: blueprint, category: blueprint.sizeClass, request: capture, singlePass: true });
+  check("brief lists the named wheels", /Components the user named[\s\S]*wheels/.test(brief), brief.slice(-400));
+  const budget = brief.split("DETAIL BUDGET")[1]?.split("Hard limit:")[0] ?? "";
+  check("size budget names no components", !/wheels|roof|window/i.test(budget), budget);
+
+  // Wheels forgotten: the defect is named, a repair pass runs and its fix is kept.
+  const calls: string[] = [];
+  const repairing: JsonRequester = async <T>(_system: string, user: string) => {
+    calls.push(user);
+    return { parts: calls.length === 1 ? carBody : carWithWheels } as T;
   };
+  const repaired = await generateAIGeometry({ prompt, baseline, plan: blueprint, category: blueprint.sizeClass, request: repairing });
+  check("missing wheels trigger one repair pass", calls.length === 2, `calls=${calls.length}`);
+  check("repair request names the missing wheels", /Нет запрошенного элемента: колёса/.test(calls[1] ?? ""), calls[1]?.slice(0, 300));
+  check("repaired model keeps its wheels", (repaired?.match?.missing.length ?? 1) === 0, repaired?.match?.missing.join(","));
 
-  // Plenty of time: a model missing its wheels gets a repair pass.
-  timeouts.length = 0;
-  await generateAIGeometry({ prompt, baseline, plan: blueprint, request, deadline: Date.now() + 50_000 });
-  check("repair pass runs when time allows", timeouts.length === 2, `calls=${timeouts.length}`);
-  check("every call carries a timeout", timeouts.every((ms) => ms > 0 && ms <= 50_000), timeouts.join(","));
+  // Still missing after the repair: the AI model ships anyway, with the gap reported.
+  const stubborn: JsonRequester = async <T>() => ({ parts: carBody }) as T;
+  const unrepaired = await generateAIGeometry({ prompt, baseline, plan: blueprint, category: blueprint.sizeClass, request: stubborn });
+  const choice = pickBetterGeometry(baseline, unrepaired, blueprint);
+  check("valid AI geometry ships even when incomplete", choice.source === "ai", choice.source);
+  check("the gap is reported", choice.match?.missing.includes("колёса") ?? false, choice.match?.missing.join(","));
 
-  // Ten seconds left: no second pass that would blow the route limit.
-  timeouts.length = 0;
-  await generateAIGeometry({ prompt, baseline, plan: blueprint, request, deadline: Date.now() + 10_000 });
-  check("repair pass skipped near the deadline", timeouts.length === 1, `calls=${timeouts.length}`);
+  // No AI result: the parametric model is the labelled fallback.
+  const fallback = pickBetterGeometry(baseline, null, blueprint);
+  check("no AI result falls back to the parametric model", fallback.source === "procedural");
+  check("fallback has the named wheels", fallback.match?.missing.length === 0, fallback.match?.missing.join(","));
 }
 
-budgetChecks().then(() => {
+aiChecks().then(() => {
   console.log(`\n${passed} passed, ${failures} failed`);
   if (failures) process.exit(1);
 });
