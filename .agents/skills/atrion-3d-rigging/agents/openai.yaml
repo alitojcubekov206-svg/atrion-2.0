@@ -1,0 +1,4 @@
+interface:
+  display_name: "Atrion: 3D-риггинг"
+  short_description: "Кости, привязки и позирование 3D-моделей Atrion"
+  default_prompt: "Используй $atrion-3d-rigging для текущей задачи с костями, привязками и позой 3D-модели Atrion."
