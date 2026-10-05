@@ -53,6 +53,7 @@ npm run test:backend
 npx tsc --noEmit
 npm run build
 npx tsx scripts/gen-report.ts
+npx tsx --test scripts/ai-geometry-prompts.test.ts
 npx tsx scripts/csg-smoke.ts
 npx tsx scripts/voice-test.ts
 git diff --check

@@ -47,9 +47,10 @@ MATERIAL FIELDS (all optional, 0-1): opacity (glass ~0.4), metalness, roughness,
 HOW TO BUILD SOMETHING THAT LOOKS RIGHT
 1. Start from the main volume and its real proportions, then add sub-volumes, then details.
 2. Every part must touch or overlap another part. Nothing floats in the air.
-3. Details are what makes it read as a finished model: frames around glass, sills under windows,
-   an overhang on a roof, a ridge beam, handles on doors, trim lines, feet under furniture,
-   joints between limbs. Put a frame and a sill on every window; never a bare blue rectangle.
+3. Choose details from the requested object and its function. Preserve its defining silhouette,
+   proportions, orientation and named components before adding detail. Architectural parts belong
+   only on objects that need them; vehicle classes do not imply wheels or a road-car chassis.
+   Do not add unrelated parts merely to reach a part-count target.
 4. Push detail parts slightly proud of the surface they sit on (2-5 cm) so they are visible.
 5. Vary colour between materials. Use shading for trim rather than one flat colour everywhere.
 6. Respect every measurement the user gave. Invent sensible ones for anything they did not say.
@@ -64,8 +65,8 @@ OUTPUT — strict JSON, no prose, no markdown fence:
 - role: one of foundation, volume, roof, wall, window, door, detail, structure, furniture, limb, head, wheel, light.
 - group: the section of the structure tree this part belongs to.`;
 
-const EXAMPLE = `Worked example — a desk lamp, 0.45 m tall. Note the frame-plus-glass window pattern
-applied to the shade, the repeat used for the vents, and every part touching its neighbour:
+const EXAMPLE = `Schema example only — a desk lamp, 0.45 m tall. Its parts and proportions are specific to
+a lamp; do not transfer them to another requested object. Note the repeat and connected joints:
 {"name":"Настольная лампа","description":"Лампа на круглом основании с гибкой стойкой","category":"product",
 "parts":[
 {"id":"base","name":"Основание","shape":"cylinder","position":[0,0.015,0],"size":[0.18,0.03,0.18],"rotation":[0,0,0],"color":"#2e3238","material":"Металл","role":"foundation","group":"База","metalness":0.7,"roughness":0.35},
@@ -84,46 +85,19 @@ applied to the shade, the repeat used for the vents, and every part touching its
  * this never pushes the model toward a stock shape.
  */
 function detailTarget(category: string): { parts: string; note: string } {
-  switch (category) {
-    case "landmark":
-      return {
-        parts: "50-85",
-        note: "Foundation and bearing structure, stacked volumes, roof or crown with overhang and ridge, window units (frame + glass + sill) laid out with repeat and mirror, entrance with steps and canopy, gutters, downpipes, trim bands, railings.",
-      };
-    case "structure":
-      return {
-        parts: "45-75",
-        note: "Plinth, storey volumes with floor bands, roof with overhang and ridge, window units of frame + glass + sill via repeat and mirror, entrance with steps and canopy, downpipes, corner trim.",
-      };
-    case "vehicle":
-      return {
-        parts: "40-70",
-        note: "Chassis, cabin, front and rear volumes, wheels as torus tyre + cylinder rim + spokes with mirror, translucent glazing, lights with emissive, bumpers, mirrors, handles, shut lines.",
-      };
-    case "furniture":
-      return {
-        parts: "35-60",
-        note: "Main mass, joints and limbs or legs with feet, cushions or panels, edge trim, fasteners, and whatever the wording adds — every named feature gets its own parts.",
-      };
-    case "handheld":
-    case "micro":
-      return {
-        parts: "30-55",
-        note: "Main body, functional sub-volumes, seams and panel lines, controls, ports, feet or stand, screens or lenses with emissive, fasteners.",
-      };
-    default:
-      return {
-        parts: "35-60",
-        note: "Main volume, sub-volumes, then a layer of fine detail: seams, trim, joints, fasteners, and a distinct part for every feature the prompt names.",
-      };
-  }
+  // Scale controls capacity, never the object's anatomy or required components.
+  const budgets:Record<string,string>={landmark:"50-85",structure:"45-75",vehicle:"40-70",furniture:"35-60",handheld:"30-55",micro:"30-55"};
+  return {
+    parts:Object.hasOwn(budgets,category)?budgets[category]:"35-60",
+    note:"This is a suggested complexity budget, not a component list or an object type. Identify the requested object from the user's description and clarifications. Build its defining main forms and functional components first; add only relevant details. Use fewer parts when appropriate instead of inventing unrelated decoration.",
+  };
 }
 
 function describeBaseline(baseline: ThreeDConcept): string {
   const groups = (baseline.structure ?? structureFromGroups(baseline.parts))
     .map((group) => `${group.label} (${group.partIds.length})`)
     .join(", ");
-  return `A parametric baseline already exists for reference — beat it, do not copy it.
+  return `A parametric baseline exists as an unverified estimate, not as the definition of the object. The request and explicit measurements take priority; correct inappropriate proportions or sections instead of copying them.
 Baseline: ${baseline.dimensions.width} x ${baseline.dimensions.depth} x ${baseline.dimensions.height} m, sections: ${groups}.`;
 }
 
@@ -154,7 +128,7 @@ export async function generateAIGeometry(options: {
 
   const system = `${GEOMETRY_RULES}
 
-DETAIL BUDGET for a "${category}": author ${target.parts} parts. ${target.note}
+DETAIL BUDGET for scale class "${category}": approximately ${target.parts} parts. ${target.note}
 Repeat and mirror multiply those into more rendered instances — use them.
 Hard limit: ${MAX_PARTS} entries in "parts".
 
