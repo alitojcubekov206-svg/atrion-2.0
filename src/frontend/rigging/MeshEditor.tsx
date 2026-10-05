@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Rig2DDocument, Skin2D } from "@/shared/rigging/rig2d";
 import { insertMeshVertex, moveMeshVertex, removeMeshVertex } from "@/shared/rigging/mesh";
-import { drawSkin } from "./skin-renderer";
+import { drawSkin, releaseSkinRenderer } from "./skin-renderer";
 
 type Asset=Rig2DDocument["assets"][number];
 const button="rounded-lg border border-white/20 px-3 py-2 text-xs disabled:opacity-40";
@@ -15,6 +15,7 @@ export default function MeshEditor({asset,skin,onCommit,onClose}:{asset:Asset;sk
   const live=useRef(draft);live.current=draft;
   useEffect(()=>{drag.current=null;setDraft(skin);setSelected((i)=>Math.min(i,skin.vertices.length-1));},[skin]);
   useEffect(()=>{let active=true;setImage(null);const img=new Image();img.onload=()=>{if(active)setImage(img);};img.onerror=()=>{if(active)setError("Не удалось загрузить текстуру слоя");};img.src=asset.uri;return()=>{active=false;};},[asset.uri]);
+  useEffect(()=>{const element=canvas.current;return()=>{if(element)releaseSkinRenderer(element);};},[]);
   const ratio=Math.min(1,900/Math.max(asset.width,asset.height));
   useEffect(()=>{
     const ctx=canvas.current?.getContext("2d");if(!ctx)return;

@@ -58,7 +58,13 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   const draftKey=(kind:string)=>`atrion:rigging-draft:${preview?"preview":"editor"}:${kind}${draftScope?`:${draftScope}`:""}`;
   const epoch=useRef(0),stateRef=useRef(state);stateRef.current=state;
   const doc=state.doc,mode=doc.kind;
-  const clipName=(id:string)=>Object.hasOwn(clipNames,id)?clipNames[id]:id.startsWith("parameter_motion_")?`Параметр: ${doc.kind==="rig2d"?doc.parameters?.find(p=>`parameter_motion_${p.id}`===id)?.name??"движение":"движение"}`:id;
+  const clipName=(id:string)=>{
+    const clips=doc.kind==="rig2d"?doc.clips:[],item=clips.find(c=>c.id===id);
+    if(item?.name)return item.name;
+    if(Object.hasOwn(clipNames,id))return clipNames[id];
+    if(id.startsWith("parameter_motion_"))return `Параметр: ${doc.kind==="rig2d"?doc.parameters?.find(p=>`parameter_motion_${p.id}`===id)?.name??"движение":"движение"}`;
+    return `Анимация ${clips.findIndex(c=>c.id===id)+1}`;
+  };
   const clip=doc.kind==="rig2d"?doc.clips.find((item)=>item.id===clipId):undefined;
   const bone=doc.bones.find((item)=>item.id===selected)??doc.bones[0];
   const digest=useMemo(()=>JSON.stringify({state,name}),[state,name]);
@@ -304,10 +310,10 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
         {doc.kind==="rig2d"&&<DeformerPanel document={doc} layerId={layerId} authorTarget={doc.parameters?.find(p=>p.id===parameterAuthoring)?.deformerId} onPreview={setDeformerPreview} onChange={edit=>change(next=>{if(next.doc.kind==="rig2d")edit(next.doc);})}/>}
         {doc.kind==="rig2d"&&<div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.025] p-4">
           <div className="flex flex-wrap items-center gap-2"><h2 className="mr-2 text-sm font-semibold">Анимация</h2><select aria-label="Клип" className={`${input} !w-40`} value={clip?.id??""} onChange={(e)=>{setClipId(e.target.value);setTime(0);setPlaying(false);setMotionPreview(true);setParameterAuthoring("");setDeformerPreview(null);}}><option value="">Исходная поза</option>{doc.clips.map((c)=><option key={c.id} value={c.id}>{clipName(c.id)}</option>)}</select>
-            <button className={button} onClick={()=>{const id=newId("clip");change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.push({id,duration:2,loop:true,tracks:[]});});setClipId(id);setTime(0);}}>+ Клип</button>
+            <button className={button} onClick={()=>{const id=newId("clip");change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.push({id,name:`Анимация ${next.doc.clips.length+1}`,duration:2,loop:true,tracks:[]});});setClipId(id);setTime(0);}}>+ Клип</button>
             <button className={button} disabled={!clip||editBind} onClick={toggleAnimation}>{playing?"Пауза":"Воспроизвести"}</button><button className={button} disabled={!clip||editBind} onClick={keyframe}>+ Ключ</button>
           </div>
-          {clip&&<><div className="flex items-center gap-3"><input aria-label="Время анимации" className="min-w-0 flex-1 accent-violet-400" type="range" min={0} max={clip.duration} step={0.01} value={time} onChange={(e)=>{setPlaying(false);setTime(Number(e.target.value));setMotionPreview(true);setParameterAuthoring("");setDeformerPreview(null);}}/><span className="w-24 text-right font-mono text-xs">{time.toFixed(2)} / {clip.duration}s</span></div>
+          {clip&&<><label className="block text-xs">Название анимации<input key={`${clip.id}:${clip.name??""}`} aria-label="Название анимации" className={`${input} mt-1`} maxLength={80} defaultValue={clipName(clip.id)} onBlur={e=>{const value=e.target.value.trim();if(value&&value!==clipName(clip.id))change(next=>{if(next.doc.kind==="rig2d")next.doc.clips.find(c=>c.id===clip.id)!.name=value;});else e.target.value=clipName(clip.id);}} onKeyDown={e=>{if(e.key==="Enter")e.currentTarget.blur();}}/></label><div className="flex items-center gap-3"><input aria-label="Время анимации" className="min-w-0 flex-1 accent-violet-400" type="range" min={0} max={clip.duration} step={0.01} value={time} onChange={(e)=>{setPlaying(false);setTime(Number(e.target.value));setMotionPreview(true);setParameterAuthoring("");setDeformerPreview(null);}}/><span className="w-24 text-right font-mono text-xs">{time.toFixed(2)} / {clip.duration}s</span></div>
             <div className="flex flex-wrap items-end gap-3"><div className="w-28"><NumberField name="Длительность, с" value={clip.duration} min={0.1} max={3600} step={0.1} onChange={(value)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.find((c)=>c.id===clip.id)!.duration=value;})}/></div>
               <label className="flex gap-2 pb-2 text-xs"><input type="checkbox" checked={clip.loop} onChange={(e)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.find((c)=>c.id===clip.id)!.loop=e.target.checked;})}/>Зациклить</label>
               <label className={label}>Интерполяция<select className={`${input} mt-1`} value={interpolation} onChange={(e)=>setInterpolation(e.target.value as "linear"|"step")}><option value="linear">Плавная</option><option value="step">Ступенчатая</option></select></label>

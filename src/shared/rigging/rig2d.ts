@@ -21,7 +21,7 @@ export type Rig2DDocument = {
   parameters?:Parameter2D[];
   bones: Bone2D[];
   attachments: { layerId: string; boneId: string; offset: Transform2D }[];
-  clips: { id: string; duration: number; loop: boolean; parameterTracks?:ParameterTrack2D[]; tracks: {
+  clips: { id: string; name?:string; duration: number; loop: boolean; parameterTracks?:ParameterTrack2D[]; tracks: {
     boneId: string; rotationMode: "shortest" | "unwrapped";
     keys: { time: number; transform: Transform2D; interpolation: "linear" | "step" }[];
   }[] }[];
@@ -149,7 +149,7 @@ export function parseRig2D(input: unknown): Rig2DDocument {
     });
     const parameterTracks=clip.parameterTracks===undefined?undefined:parseParameterTracks(clip.parameterTracks,parameters??[],duration);
     keyCount+=parameterTracks?.reduce((n,t)=>n+t.keys.length,0)??0;check(keyCount<=8192,"Слишком много ключевых кадров");
-    return { id: id(clip.id, "clip.id"), duration, loop: clip.loop, tracks,...(parameterTracks?{parameterTracks}:{}) };
+    return { id: id(clip.id, "clip.id"), ...(clip.name===undefined?{}:{name:text(clip.name,"clip.name")}), duration, loop: clip.loop, tracks,...(parameterTracks?{parameterTracks}:{}) };
   });
   unique(clips, "clips");
   const pose:Record<string,Transform2D>={};

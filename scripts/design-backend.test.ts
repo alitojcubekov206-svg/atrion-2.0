@@ -7,6 +7,14 @@ import { createHouse, houseConcept, splitRoom } from "../src/shared/house/editor
 import { neutralDeformer, deformPoint, parseDeformers, deformerChain } from "../src/shared/rigging/deformers";
 import { captureKeyform, parseParameters, sampleKeyforms } from "../src/shared/rigging/parameters";
 
+test("clip display names survive export without changing animation identity",()=>{
+  const source=rig2();const named={...source,clips:source.clips.map(c=>({...c,name:"Мой жест"}))};
+  const parsed=parseRig2D(JSON.parse(JSON.stringify(named)));
+  assert.equal(parsed.clips[0].name,"Мой жест");assert.equal(parsed.clips[0].id,source.clips[0].id);
+  assert.deepEqual(evaluateRig2D(parsed,{clipId:parsed.clips[0].id,time:.5}),evaluateRig2D(parseRig2D(source),{clipId:source.clips[0].id,time:.5}));
+  assert.throws(()=>parseRig2D({...named,clips:named.clips.map(c=>({...c,name:" ".repeat(81)}))}));
+});
+
 function parameterRig(){
   const doc=parseRig2D(rig2());doc.attachments=[];doc.layers[0].skin=gridMesh(20,40,2,2,"root");
   const d=neutralDeformer("turn","rotation",[-10,-20],[20,40]);doc.deformers=[d];doc.layers[0].deformerId=d.id;

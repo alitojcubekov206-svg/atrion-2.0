@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { evaluateRig2D, inverseMatrix2D, point2D, type Matrix2D, type Rig2DDocument, type Transform2D } from "@/shared/rigging/rig2d";
-import { drawSkin } from "./skin-renderer";
+import { drawSkin, releaseSkinRenderer } from "./skin-renderer";
 
 export default function RigCanvas({document,pose,time,clipId,selected,onSelect,showBones,addingBone,onDrawBone,canPose,onPoseStart,onPose,onPoseEnd}: {
   document:Rig2DDocument;pose:Record<string,Transform2D>;time:number;clipId?:string;selected:string;
@@ -15,8 +15,10 @@ export default function RigCanvas({document,pose,time,clipId,selected,onSelect,s
   const [start,setStart]=useState<[number,number]|null>(null),[cursor,setCursor]=useState<[number,number]|null>(null);
   const [view,setView]=useState({x:0,y:0,zoom:1});
   const [showMesh,setShowMesh]=useState(false);
+  const [compatibility,setCompatibility]=useState(false);
   const drag=useRef<{id:string;inverse:Matrix2D;transform:Transform2D;angle:number}|null>(null);
   useEffect(()=>{setStart(null);setCursor(null);},[addingBone]);
+  useEffect(()=>{const element=canvas.current;return()=>{if(element)releaseSkinRenderer(element);};},[]);
   const assetsKey=document.assets.map((asset)=>`${asset.id}:${asset.uri}`).join("\n");
   useEffect(()=>{
     let active=true;const loaded=new Map<string,HTMLImageElement>(),failed:string[]=[];
@@ -39,11 +41,12 @@ export default function RigCanvas({document,pose,time,clipId,selected,onSelect,s
     const spacing=40*Math.max(1,Math.pow(2,Math.ceil(Math.log2(1/view.zoom))));
     for(let x=Math.floor(left/spacing)*spacing;x<right;x+=spacing){ctx.beginPath();ctx.moveTo(x,bottom);ctx.lineTo(x,top);ctx.stroke();}
     for(let y=Math.floor(bottom/spacing)*spacing;y<top;y+=spacing){ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();}
+    let usedCompatibility=false;
     for(const layer of result.layers) {
       if(!layer.visible)continue;const img=images.get(layer.assetId);if(!img)continue;
       const asset=document.assets.find((item)=>item.id===layer.assetId)!;
       if(layer.skin){
-        drawSkin(ctx,img,asset.width,asset.height,layer.skin,view.zoom*ratio);
+        usedCompatibility=drawSkin(ctx,img,asset.width,asset.height,layer.skin,view.zoom*ratio)==="canvas"||usedCompatibility;
         if(showMesh){ctx.strokeStyle="#76dfde66";ctx.lineWidth=.6/view.zoom;ctx.beginPath();for(const [a,b,c] of layer.skin.triangles){ctx.moveTo(...layer.skin.vertices[a]);ctx.lineTo(...layer.skin.vertices[b]);ctx.lineTo(...layer.skin.vertices[c]);ctx.closePath();}ctx.stroke();}
       }else{ctx.save();ctx.transform(...layer.matrix);ctx.scale(1,-1);ctx.drawImage(img,0,-asset.height,asset.width,asset.height);ctx.restore();}
     }
@@ -54,7 +57,7 @@ export default function RigCanvas({document,pose,time,clipId,selected,onSelect,s
       ctx.beginPath();ctx.arc(bone.tail[0],bone.tail[1],3/view.zoom,0,Math.PI*2);ctx.fill();
     }
     if(start&&addingBone){ctx.strokeStyle="#f7cf72";ctx.fillStyle="#f7cf72";ctx.lineWidth=3/view.zoom;ctx.beginPath();ctx.arc(start[0],start[1],6/view.zoom,0,Math.PI*2);ctx.fill();if(cursor){ctx.beginPath();ctx.moveTo(...start);ctx.lineTo(...cursor);ctx.stroke();}}
-    ctx.restore();
+    ctx.restore();setCompatibility(usedCompatibility);
   },[document,images,pose,time,clipId,selected,showBones,result,view,start,cursor,addingBone,showMesh]);
   const point=(event:React.PointerEvent<HTMLCanvasElement>):[number,number]=>{
     const rect=event.currentTarget.getBoundingClientRect();return [(event.clientX-rect.left)/rect.width*document.canvas.width/view.zoom-document.canvas.width/2/view.zoom+view.x,
@@ -71,6 +74,7 @@ export default function RigCanvas({document,pose,time,clipId,selected,onSelect,s
   }
   return <div className="flex min-h-[400px] flex-col items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#211f2c] p-4">
     <div className="mb-2 flex w-full flex-wrap items-center justify-between gap-2 text-xs"><span className="text-white/55">{addingBone?(start?"Нажмите в точке конца кости":"Нажмите в точке начала кости"):canPose?"Тяните кость, чтобы повернуть сустав":"Исходный скелет: настройте кость в свойствах"}</span><button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10" onClick={fit}>Вместить риг</button>{document.layers.some((l)=>l.skin)&&<label className="flex gap-2"><input type="checkbox" checked={showMesh} onChange={(e)=>setShowMesh(e.target.checked)}/>Сетка деформации</label>}<label>Масштаб<input aria-label="Масштаб холста" type="range" min={.3} max={3} step={.05} value={view.zoom} onChange={(e)=>setView({...view,zoom:Number(e.target.value)})} className="ml-2 w-20 align-middle"/></label></div>
+    {compatibility&&<p className="mb-2 text-xs text-amber-200" role="status">Упрощённая отрисовка: ускорение недоступно для этого слоя, возможны швы сетки.</p>}
     <canvas ref={canvas} width={Math.round(document.canvas.width*Math.min(1,1024/Math.max(document.canvas.width,document.canvas.height)))} height={Math.round(document.canvas.height*Math.min(1,1024/Math.max(document.canvas.width,document.canvas.height)))} aria-label="2D-персонаж и скелет" className="h-auto max-w-[640px] touch-none" style={{width:`min(100%, ${70*document.canvas.width/document.canvas.height}vh)`}} onPointerDown={(event)=>{
       const [x,y]=point(event);
       if(addingBone){if(!start)setStart([x,y]);else {onDrawBone(start,[x,y]);setStart(null);}return;}
