@@ -8,7 +8,8 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "db:push": "prisma db push",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:backend": "tsc -p tsconfig.backend-tests.json && node --test .backend-tests/scripts/backend-generation.test.js"
   },
   "dependencies": {
     "@neon/config": "^1.5.0",

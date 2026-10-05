@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { primaryTextProvider, fallbackTextProvider, requestTextJSON, type TextRequestOptions } from "./text-ai";
 import type {
   Blueprint,
   ExpertReply,
@@ -12,51 +13,7 @@ import { generateAIGeometry, pickBetterGeometry } from "@/backend/gen/ai-geometr
 import { dimensionsOf, primitiveCount, structureFromGroups } from "@/shared/geometry";
 import { sanitizeParts, scoreParts, validateAndRepair } from "@/backend/gen/validate";
 
-type AIProvider = {
-  apiKey: string;
-  baseURL?: string;
-  model: string;
-  name: "primary" | "fallback";
-};
-
-const hasKey = () =>
-  Boolean(
-    process.env.OPENAI_API_KEY?.trim() ||
-      process.env.GROQ_API_KEY?.trim() ||
-      process.env.AI_API_KEY?.trim()
-  );
-
-function primaryProvider(): AIProvider | null {
-  const apiKey =
-    process.env.OPENAI_API_KEY?.trim() ||
-    process.env.GROQ_API_KEY?.trim() ||
-    process.env.AI_API_KEY?.trim();
-  if (!apiKey) return null;
-
-  // Groq-compatible if only GROQ_API_KEY is set
-  const isGroqOnly = !process.env.OPENAI_API_KEY?.trim() && Boolean(process.env.GROQ_API_KEY?.trim());
-  return {
-    apiKey,
-    baseURL:
-      process.env.OPENAI_BASE_URL ||
-      (isGroqOnly ? "https://api.groq.com/openai/v1" : undefined),
-    model:
-      process.env.OPENAI_MODEL ||
-      (isGroqOnly ? "llama-3.3-70b-versatile" : "gpt-4o"),
-    name: "primary",
-  };
-}
-
-function fallbackProvider(): AIProvider | null {
-  const apiKey = process.env.AI_FALLBACK_API_KEY;
-  if (!apiKey) return null;
-  return {
-    apiKey,
-    baseURL: process.env.AI_FALLBACK_BASE_URL || undefined,
-    model: process.env.AI_FALLBACK_MODEL || "gpt-4o-mini",
-    name: "fallback",
-  };
-}
+const hasKey = () => Boolean(primaryTextProvider());
 
 function errorSummary(error: unknown) {
   return {
@@ -78,39 +35,15 @@ function isProviderFailure(error: unknown) {
   );
 }
 
-async function requestJSON<T>(
-  provider: AIProvider,
-  system: string,
-  user: string
-): Promise<T> {
-  const client = new OpenAI({
-    apiKey: provider.apiKey,
-    baseURL: provider.baseURL,
-    maxRetries: 0,
-    timeout: 60_000,
-  });
-  const res = await client.chat.completions.create({
-    model: provider.model,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-  });
-  let text = res.choices[0]?.message?.content ?? "{}";
-  // Some providers wrap JSON in markdown fences despite json mode
-  text = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
-  return JSON.parse(text) as T;
-}
-
-async function chatJSON<T>(system: string, user: string): Promise<T> {
-  const primary = primaryProvider();
+async function chatJSON<T>(system: string, user: string, options:TextRequestOptions={}): Promise<T> {
+  const primary = primaryTextProvider();
   if (!primary) throw new Error("Primary AI provider is not configured");
 
+  const started=Date.now();
   try {
-    return await requestJSON<T>(primary, system, user);
+    return await requestTextJSON<T>(primary, system, user, options);
   } catch (error) {
-    const fallback = fallbackProvider();
+    const fallback = primary.kind==="cloudflare"?null:fallbackTextProvider();
     if (!fallback || !isProviderFailure(error)) throw error;
 
     console.warn(
@@ -118,7 +51,9 @@ async function chatJSON<T>(system: string, user: string): Promise<T> {
       errorSummary(error)
     );
     try {
-      return await requestJSON<T>(fallback, system, user);
+      const remaining=(options.timeoutMs??45_000)-(Date.now()-started);
+      if(remaining<1000)throw error;
+      return await requestTextJSON<T>(fallback, system, user, {...options,timeoutMs:remaining});
     } catch (fallbackError) {
       console.warn(
         "Atrion AI Pro fallback provider failed; using local fallback",
@@ -555,10 +490,8 @@ export type ConceptGeneration = {
 /**
  * Text → geometry.
  *
- * Two independent attempts race for the result: a parametric generator seeded
- * from the prompt, and the model authoring primitives itself against the
- * geometry DSL. Both are validated and repaired, and the better one ships —
- * so a missing or failing AI provider degrades to a real model instead of an error.
+ * The configured model authors geometry. The procedural generator is an
+ * explicitly labelled fallback; its complexity does not overrule the AI result.
  */
 export async function generate3DModel(
   prompt: string,
@@ -578,6 +511,11 @@ export async function generate3DModel(
     };
   }
 
+  const deadline=Date.now()+50_000;
+  const request=async <T,>(system:string,user:string):Promise<T>=>{
+    const remaining=deadline-Date.now();if(remaining<1000)throw new Error("3D generation deadline reached");
+    return chatJSON<T>(system,user,{timeoutMs:Math.min(35_000,remaining),maxTokens:8192});
+  };
   let geometry: Awaited<ReturnType<typeof generateAIGeometry>> = null;
   try {
     geometry = await generateAIGeometry({
@@ -585,28 +523,30 @@ export async function generate3DModel(
       answers,
       baseline,
       category,
-      request: chatJSON,
+      request,
     });
   } catch (error) {
     console.warn("AI geometry unavailable", errorSummary(error));
   }
 
   const picked = pickBetterGeometry(baseline, geometry);
+  if(!geometry)notes.push("AI не вернул пригодную геометрию; показана процедурная модель, соответствие запросу не подтверждено.");
   if (geometry) {
     notes.push(
       picked.source === "ai"
-        ? `AI-геометрия принята (оценка ${geometry.score} против ${picked.baseScore} у шаблона, проходов: ${geometry.passes})`
-        : `AI-геометрия отклонена (оценка ${geometry.score} против ${picked.baseScore}) — оставлена параметрическая модель`
+        ? `Геометрия создана AI и прошла проверку формата; соответствие запросу требует осмотра. Проходов: ${geometry.passes}.`
+        : "Показана процедурная модель; соответствие запросу не подтверждено."
     );
     notes.push(...geometry.issues);
   }
 
   let concept = picked.concept;
 
-  // Metadata is a separate, cheaper call — geometry never depends on it.
+  // Metadata shares the HTTP deadline; it must not delay an already generated model.
   try {
+    if(deadline-Date.now()<6000)throw new Error("Metadata skipped to meet generation deadline");
     const meta = normalize3DConcept(
-      await chatJSON<unknown>(
+      await request<unknown>(
         `You are Atrion, an engineering assistant. Return ONLY JSON metadata for a 3D concept.
 The geometry already exists — do NOT return parts, structure or dimensions.
 Answer in the user's language.
