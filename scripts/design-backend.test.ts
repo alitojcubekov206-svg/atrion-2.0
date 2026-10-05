@@ -5,6 +5,50 @@ import { parseRig3D, evaluateRig3D } from "../src/backend/design/rig3d";
 import { parseHouse, buildHouse } from "../src/backend/design/house";
 import { createHouse, houseConcept, splitRoom } from "../src/shared/house/editor";
 import { neutralDeformer, deformPoint, parseDeformers, deformerChain } from "../src/shared/rigging/deformers";
+import { captureKeyform, parseParameters, sampleKeyforms } from "../src/shared/rigging/parameters";
+
+function parameterRig(){
+  const doc=parseRig2D(rig2());doc.attachments=[];doc.layers[0].skin=gridMesh(20,40,2,2,"root");
+  const d=neutralDeformer("turn","rotation",[-10,-20],[20,40]);doc.deformers=[d];doc.layers[0].deformerId=d.id;
+  const zero=captureKeyform(d,0),end={...captureKeyform(d,30),rotation:Math.PI/2};
+  doc.parameters=[{id:"angle",name:"Наклон",min:0,max:30,default:0,value:0,deformerId:d.id,keyforms:[zero,end]}];
+  doc.clips=[{id:"param_motion",duration:2,loop:true,tracks:[],parameterTracks:[{parameterId:"angle",keys:[{time:0,value:0,interpolation:"linear"},{time:1,value:30,interpolation:"linear"},{time:2,value:0,interpolation:"linear"}]}]}];
+  return parseRig2D(doc);
+}
+
+test("parameter keyforms interpolate geometry analytically without changing rest or UV",()=>{
+  const doc=parameterRig(),before=JSON.stringify(doc),rest=evaluateRig2D(doc),middle=evaluateRig2D(doc,{parameterValues:{angle:15}});
+  const p=rest.layers[0].skin!.vertices[0],q=middle.layers[0].skin!.vertices[0],c=Math.SQRT1_2;
+  near(q[0],(p[0]-p[1])*c);near(q[1],(p[0]+p[1])*c);
+  assert.deepEqual(rest.layers[0].skin!.uv,middle.layers[0].skin!.uv);assert.equal(JSON.stringify(doc),before);
+  assert.deepEqual(evaluateDesign(doc,{parameterValues:{angle:15}}),middle);
+  assert.throws(()=>evaluateRig2D(doc,{parameterValues:{angle:31}}));assert.throws(()=>evaluateRig2D(doc,{parameterValues:{missing:0}}));
+});
+
+test("parameter clips loop, clamp, step and round-trip at the same time independent of sampling FPS",()=>{
+  const doc=parameterRig(),restored=parseRig2D(JSON.parse(JSON.stringify(doc)));
+  assert.deepEqual(evaluateRig2D(doc,{clipId:"param_motion",time:0}),evaluateRig2D(doc,{clipId:"param_motion",time:2}));
+  const expected=evaluateRig2D(doc,{clipId:"param_motion",time:.5});
+  for(const fps of [30,60,120]){for(let frame=0;frame<fps/2;frame++)evaluateRig2D(doc,{clipId:"param_motion",time:frame/fps});assert.deepEqual(evaluateRig2D(doc,{clipId:"param_motion",time:.5}),expected);}
+  assert.deepEqual(evaluateRig2D(restored,{clipId:"param_motion",time:.5}),expected);
+  assert.equal(expected.parameterValues!.angle,15);
+  doc.clips[0].parameterTracks![0].keys[0].interpolation="step";
+  assert.equal(evaluateRig2D(doc,{clipId:"param_motion",time:.5}).parameterValues!.angle,0);
+  doc.clips[0].loop=false;assert.equal(evaluateRig2D(doc,{clipId:"param_motion",time:8}).parameterValues!.angle,0);
+  assert.equal(evaluateRig2D(doc,{clipId:"param_motion",time:.5,parameterValues:{angle:20}}).parameterValues!.angle,20);
+});
+
+test("parameter parser rejects conflicting targets, invalid time and folded intermediate warp",()=>{
+  const doc=parameterRig();
+  for(const edit of [(d:typeof doc)=>{d.parameters![0].max=0;},(d:typeof doc)=>{d.parameters![0].deformerId="missing";},(d:typeof doc)=>{d.parameters!.push({...d.parameters![0],id:"second"});},(d:typeof doc)=>{d.parameters![0].default=12;},(d:typeof doc)=>{d.clips[0].parameterTracks![0].keys[1].time=0;}]){const broken=structuredClone(doc);edit(broken);assert.throws(()=>parseRig2D(broken));}
+  const warp=neutralDeformer("warp","warp",[-50,-50],[100,100]);if(warp.kind!=="warp")return;
+  const a=captureKeyform(warp,0),b={...captureKeyform(warp,1),points:warp.points.map(([x,y]):[number,number]=>[-x,-y])};
+  parseDeformers([{...warp,points:b.points}]);
+  assert.throws(()=>parseParameters([{id:"warp_param",name:"Warp",min:0,max:1,default:0,value:0,deformerId:"warp",keyforms:[a,b]}],[warp]),/Между/);
+  const moved={...captureKeyform(warp,1),points:warp.points.map(([x,y]):[number,number]=>[x+10,y])};
+  const [valid]=parseParameters([{id:"warp_param",name:"Warp",min:0,max:1,default:0,value:0,deformerId:"warp",keyforms:[a,moved]}],[warp]);
+  near(sampleKeyforms(valid,.5).points![4][0],5);
+});
 
 test("warp has identity rest, analytic bilinear displacement and continuous outside boundary",()=>{
   const warp=neutralDeformer("warp","warp",[0,0],[100,100]);

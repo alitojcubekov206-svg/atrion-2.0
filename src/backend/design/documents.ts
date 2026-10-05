@@ -23,6 +23,7 @@ export function evaluateDesign(document: DesignDocument, optionsInput: unknown =
     ...(options.clipId === undefined ? {} : {clipId:id(options.clipId,"clipId")}),
     time:number(options.time ?? 0,"time",0,1e6),
     ...(options.pose === undefined ? {} : {pose:options.pose}),
+    ...(options.parameterValues === undefined ? {} : {parameterValues:options.parameterValues}),
   });
   if (document.kind === "rig3d") return evaluateRig3D(document,options.pose);
   return buildHouse(document);

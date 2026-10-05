@@ -1,5 +1,6 @@
 import { DesignError, check, choice, finiteMatrix, hierarchy, id, integer, list, number, parent, record, text, unique, vector2, version } from "./validation";
 import { deformerChain, deformPoint, parseDeformers, type Deformer2D } from "./deformers";
+import { applyParameters, parameterValues, parseParameters, parseParameterTracks, type Parameter2D, type ParameterTrack2D } from "./parameters";
 
 export type Transform2D = { position: [number, number]; rotation: number; scale: [number, number] };
 export type Matrix2D = [number, number, number, number, number, number];
@@ -17,9 +18,10 @@ export type Rig2DDocument = {
   assets: { id: string; uri: string; mime: "image/png" | "image/webp"; width: number; height: number }[];
   layers: { id: string; assetId: string; zIndex: number; visible: boolean; pivot: [number, number]; transform: Transform2D; skin?: Skin2D; deformerId?:string }[];
   deformers?:Deformer2D[];
+  parameters?:Parameter2D[];
   bones: Bone2D[];
   attachments: { layerId: string; boneId: string; offset: Transform2D }[];
-  clips: { id: string; duration: number; loop: boolean; tracks: {
+  clips: { id: string; duration: number; loop: boolean; parameterTracks?:ParameterTrack2D[]; tracks: {
     boneId: string; rotationMode: "shortest" | "unwrapped";
     keys: { time: number; transform: Transform2D; interpolation: "linear" | "step" }[];
   }[] }[];
@@ -58,6 +60,7 @@ export function parseRig2D(input: unknown): Rig2DDocument {
   const assetMap = unique(assets, "assets");
   const deformers=value.deformers===undefined?undefined:parseDeformers(value.deformers);
   const deformerIds=new Set(deformers?.map(d=>d.id));
+  const parameters=value.parameters===undefined?undefined:parseParameters(value.parameters,deformers??[]);
   let vertexCount=0,triangleCount=0;
   const layers = list(value.layers, "layers", 256).map((item) => {
     const layer = record(item, "layer");
@@ -144,7 +147,9 @@ export function parseRig2D(input: unknown): Rig2DDocument {
       });
       return { boneId, rotationMode: choice(track.rotationMode, ["shortest", "unwrapped"] as const, "rotationMode"), keys };
     });
-    return { id: id(clip.id, "clip.id"), duration, loop: clip.loop, tracks };
+    const parameterTracks=clip.parameterTracks===undefined?undefined:parseParameterTracks(clip.parameterTracks,parameters??[],duration);
+    keyCount+=parameterTracks?.reduce((n,t)=>n+t.keys.length,0)??0;check(keyCount<=8192,"Слишком много ключевых кадров");
+    return { id: id(clip.id, "clip.id"), duration, loop: clip.loop, tracks,...(parameterTracks?{parameterTracks}:{}) };
   });
   unique(clips, "clips");
   const pose:Record<string,Transform2D>={};
@@ -154,7 +159,7 @@ export function parseRig2D(input: unknown): Rig2DDocument {
   }
   return { kind: "rig2d", schemaVersion: 1, canvas: {
     width: integer(canvas.width, "canvas.width", 1, 16384), height: integer(canvas.height, "canvas.height", 1, 16384)
-  }, assets, layers, bones, attachments, clips, ...(deformers?{deformers}:{}), ...(value.pose===undefined?{}:{pose}) };
+  }, assets, layers, bones, attachments, clips, ...(deformers?{deformers}:{}), ...(parameters?{parameters}:{}), ...(value.pose===undefined?{}:{pose}) };
 }
 
 export function matrix2D(transform: Transform2D): Matrix2D {
@@ -199,13 +204,15 @@ export function sample2DTrack(track: Rig2DDocument["clips"][number]["tracks"][nu
 }
 
 /** Exact affine matrices preserve shear from non-uniform ancestor scale. */
-export function evaluateRig2D(document: Rig2DDocument, options: { clipId?: string; time?: number; pose?: unknown } = {}) {
+export function evaluateRig2D(document: Rig2DDocument, options: { clipId?: string; time?: number; pose?: unknown;parameterValues?:unknown } = {}) {
   const pose = new Map<string, Transform2D>();
   const time = number(options.time ?? 0, "time", 0, 1e6);
+  let parameterTracks:ParameterTrack2D[]=[],parameterTime=time;
   if (options.clipId !== undefined) {
     const clip = document.clips.find((item) => item.id === options.clipId);
     check(clip, "Неизвестный clipId");
     const clipTime = clip.loop ? time % clip.duration : Math.min(time,clip.duration);
+    parameterTracks=clip.parameterTracks??[];parameterTime=clipTime;
     for (const track of clip.tracks) pose.set(track.boneId,sample2DTrack(track,clipTime));
   }
   const bonesById = new Set(document.bones.map((bone) => bone.id));
@@ -225,6 +232,8 @@ export function evaluateRig2D(document: Rig2DDocument, options: { clipId?: strin
     return { id: bone.id, matrix, head: [matrix[4],matrix[5]], tail: [matrix[4]+matrix[0]*bone.length,matrix[5]+matrix[1]*bone.length] };
   });
   const bindings = new Map(document.attachments.map((item) => [item.layerId,item]));
+  const values=parameterValues(document.parameters??[],parameterTracks,parameterTime,options.parameterValues??{});
+  const deformers=applyParameters(document.deformers??[],document.parameters??[],values);
   const deltas=new Map<string,Matrix2D>(),bindWorld=new Map<string,Matrix2D>();
   if(document.layers.some((layer)=>layer.skin))for(const bone of hierarchy(document.bones)){
     const local=matrix2D(bone.bind),bind=bone.parentId?multiply2D(bindWorld.get(bone.parentId)!,local):local;
@@ -234,7 +243,7 @@ export function evaluateRig2D(document: Rig2DDocument, options: { clipId?: strin
     const binding = bindings.get(layer.id);
     const model = binding ? multiply2D(world.get(binding.boneId)!,matrix2D(binding.offset)) : matrix2D(layer.transform);
     const matrix = multiply2D(model,[1,0,0,1,-layer.pivot[0],-layer.pivot[1]]);
-    const chain=layer.deformerId?deformerChain(document.deformers??[],layer.deformerId):[];
+    const chain=layer.deformerId?deformerChain(deformers,layer.deformerId):[];
     const skin=layer.skin?{
       uv:layer.skin.uv??layer.skin.vertices,triangles:layer.skin.triangles,
       vertices:layer.skin.vertices.map((p,index):[number,number]=>{
@@ -247,5 +256,5 @@ export function evaluateRig2D(document: Rig2DDocument, options: { clipId?: strin
     }:undefined;
     return { id: layer.id, assetId: layer.assetId, visible: layer.visible, zIndex: layer.zIndex, matrix, ...(skin?{skin}:{}) };
   }).sort((a,b) => a.zIndex-b.zIndex);
-  return { units: "px", coordinates: "x-right-y-up", bones, layers };
+  return { units: "px", coordinates: "x-right-y-up", bones, layers,...(document.parameters?{parameterValues:values}:{}) };
 }

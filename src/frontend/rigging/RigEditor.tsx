@@ -12,6 +12,8 @@ import CharacterGenerator from "./CharacterGenerator";
 import PrepareCharacter from "./PrepareCharacter";
 import MeshEditor from "./MeshEditor";
 import DeformerPanel from "./DeformerPanel";
+import ParameterPanel from "./ParameterPanel";
+import { parameterValues } from "@/shared/rigging/parameters";
 import type { Rig2DDocument } from "@/shared/rigging/rig2d";
 import { gridMesh } from "@/shared/rigging/mesh";
 import { requestJson } from "@/frontend/api";
@@ -28,7 +30,7 @@ const boneName=(id:string)=>Object.hasOwn(boneLabels,id)?boneLabels[id]:id.repla
 const clone=<T,>(value:T):T=>structuredClone(value);
 const label="text-xs text-violet-200/70";
 const clipNames:Record<string,string>={idle:"Дыхание",greeting:"Приветствие",sway:"Покачивание"};
-const clipName=(id:string)=>Object.hasOwn(clipNames,id)?clipNames[id]:id;
+
 const packed=(snapshot:Snapshot):RigDocument=>snapshot.doc.kind==="rig2d"?{...snapshot.doc,pose:snapshot.pose2D}:snapshot.doc;
 
 function NumberField({name,value,onChange,step=1,min,max}:{name:string;value:number;onChange:(n:number)=>void;step?:number;min?:number;max?:number}) {
@@ -46,6 +48,7 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   const [artSource,setArtSource]=useState<Blob|null>(null);
   const [meshLayer,setMeshLayer]=useState(""),[meshDensity,setMeshDensity]=useState(8);
   const [deformerPreview,setDeformerPreview]=useState<Rig2DDocument|null>(null);
+  const [parameterAuthoring,setParameterAuthoring]=useState("");
   const poseTransaction=useRef<Snapshot|null>(null);
   const [editBind,setEditBind]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
   const [saved,setSaved]=useState<Saved|null>(null),[documents,setDocuments]=useState<Saved[]>([]),[openId,setOpenId]=useState("");
@@ -55,6 +58,7 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   const draftKey=(kind:string)=>`atrion:rigging-draft:${preview?"preview":"editor"}:${kind}${draftScope?`:${draftScope}`:""}`;
   const epoch=useRef(0),stateRef=useRef(state);stateRef.current=state;
   const doc=state.doc,mode=doc.kind;
+  const clipName=(id:string)=>Object.hasOwn(clipNames,id)?clipNames[id]:id.startsWith("parameter_motion_")?`Параметр: ${doc.kind==="rig2d"?doc.parameters?.find(p=>`parameter_motion_${p.id}`===id)?.name??"движение":"движение"}`:id;
   const clip=doc.kind==="rig2d"?doc.clips.find((item)=>item.id===clipId):undefined;
   const bone=doc.bones.find((item)=>item.id===selected)??doc.bones[0];
   const digest=useMemo(()=>JSON.stringify({state,name}),[state,name]);
@@ -62,6 +66,7 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   const dirty=ready&&digest!==baseline;
 
   function install(next:RigDocument,nextName:string,metadata:Saved|null=null) {
+    setParameterAuthoring("");
     setDeformerPreview(null);
     setMeshLayer("");
     setMotionPreview(false);
@@ -120,12 +125,12 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[playing,clip,playRun]);
 
-  function startAnimation(id:string){setMeshLayer("");setClipId(id);setTime(0);setEditBind(false);setAddingBone(false);setMotionPreview(true);setPlayRun((n)=>n+1);setPlaying(true);}
-  function toggleAnimation(){setMeshLayer("");setEditBind(false);setMotionPreview(true);if(!playing&&clip&&time>=clip.duration)setTime(0);setPlaying(!playing);}
+  function startAnimation(id:string){setParameterAuthoring("");setDeformerPreview(null);setMeshLayer("");setClipId(id);setTime(0);setEditBind(false);setAddingBone(false);setMotionPreview(true);setPlayRun((n)=>n+1);setPlaying(true);}
+  function toggleAnimation(){setParameterAuthoring("");setDeformerPreview(null);setMeshLayer("");setEditBind(false);setMotionPreview(true);if(!playing&&clip&&time>=clip.duration)setTime(0);setPlaying(!playing);}
 
   function change(edit:(snapshot:Snapshot)=>void) {
     setDeformerPreview(null);
-    try {const next=clone(stateRef.current);if(motionPreview&&next.doc.kind==="rig2d")next.pose2D=effectivePose2D();edit(next);next.doc=parseRigDocument(next.doc);
+    try {const next=clone(stateRef.current);if(motionPreview&&next.doc.kind==="rig2d"){next.pose2D=effectivePose2D();const values=parameterValues(next.doc.parameters??[],clip?.parameterTracks,clip?.loop?time%clip.duration:time);for(const p of next.doc.parameters??[])p.value=values[p.id];}edit(next);next.doc=parseRigDocument(next.doc);
       if(new TextEncoder().encode(JSON.stringify(packed(next))).length>1048000)throw new Error("Общий размер рига превышает 1 MiB. Уменьшите изображения перед загрузкой.");
       if(next.doc.kind==="rig2d")evaluateRig2D(next.doc,{pose:next.pose2D});else evaluateRig3D(next.doc);
       setPast((items)=>[...items.slice(-29),clone(stateRef.current)]);setFuture([]);setState(next);setError("");setNotice("");setPlaying(false);setMotionPreview(false);return true;
@@ -142,8 +147,8 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
     if(JSON.stringify(before.pose2D)===JSON.stringify(stateRef.current.pose2D))return;
     setPast((items)=>[...items.slice(-29),before]);setFuture([]);setError("");
   }
-  function undo() {if(!past.length)return;setFuture([clone(state),...future]);setState(past[past.length-1]);setPast(past.slice(0,-1));setPlaying(false);setMotionPreview(false);setError("");}
-  function redo() {if(!future.length)return;setPast([...past,clone(state)]);setState(future[0]);setFuture(future.slice(1));setPlaying(false);setMotionPreview(false);setError("");}
+  function undo() {if(!past.length)return;setParameterAuthoring("");setDeformerPreview(null);setFuture([clone(state),...future]);setState(past[past.length-1]);setPast(past.slice(0,-1));setPlaying(false);setMotionPreview(false);setError("");}
+  function redo() {if(!future.length)return;setParameterAuthoring("");setDeformerPreview(null);setPast([...past,clone(state)]);setState(future[0]);setFuture(future.slice(1));setPlaying(false);setMotionPreview(false);setError("");}
   useEffect(()=>{
     const handler=(event:KeyboardEvent)=>{
       const target=event.target as HTMLElement|null;
@@ -294,14 +299,15 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
         <p className="text-xs leading-relaxed text-white/35">{editBind?"Изменения записываются в исходный скелет. Смена родителя сохраняет локальные координаты.":"Сейчас вы меняете позу; исходный скелет сохраняется."}</p>
       </aside>
       <div className="order-1 min-w-0 space-y-4 md:order-2">
-        {doc.kind==="rig2d"?meshTarget?.skin?<MeshEditor key={meshTarget.id} asset={doc.assets.find((a)=>a.id===meshTarget.assetId)!} skin={meshTarget.skin} onClose={()=>setMeshLayer("")} onCommit={(skin)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.layers.find((l)=>l.id===meshTarget.id)!.skin=skin;})}/>:<RigCanvas document={deformerPreview??doc} pose={effectivePose2D()} time={time} selected={bone.id} onSelect={setSelected} showBones={showBones} addingBone={addingBone} onDrawBone={drawBone} canPose={!editBind} onPoseStart={startPoseDrag} onPose={dragPose} onPoseEnd={finishPoseDrag}/>:<div className="h-[560px] overflow-hidden rounded-2xl border border-white/10"><ConceptViewer fitModel concept={three!.concept} selectedId={null} onSelect={(id)=>{if(id){const partId=id.replace(/_\d+$/,"");setLayerId(partId);const binding=doc.bindings.find((b)=>b.partId===partId);if(binding)setSelected(binding.boneId);}}} rigBones={showBones?three!.bones:undefined} selectedBoneId={bone.id} onBoneSelect={setSelected}/></div>}
-        {doc.kind==="rig2d"&&<DeformerPanel document={doc} layerId={layerId} onPreview={setDeformerPreview} onChange={edit=>change(next=>{if(next.doc.kind==="rig2d")edit(next.doc);})}/>}
+        {doc.kind==="rig2d"?meshTarget?.skin?<MeshEditor key={meshTarget.id} asset={doc.assets.find((a)=>a.id===meshTarget.assetId)!} skin={meshTarget.skin} onClose={()=>setMeshLayer("")} onCommit={(skin)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.layers.find((l)=>l.id===meshTarget.id)!.skin=skin;})}/>:<RigCanvas document={parameterAuthoring?{...(deformerPreview??doc),parameters:doc.parameters?.filter(p=>p.id!==parameterAuthoring)}:deformerPreview??doc} pose={effectivePose2D()} time={time} clipId={!editBind&&!parameterAuthoring&&!deformerPreview&&motionPreview?clip?.id:undefined} selected={bone.id} onSelect={setSelected} showBones={showBones} addingBone={addingBone} onDrawBone={drawBone} canPose={!editBind} onPoseStart={startPoseDrag} onPose={dragPose} onPoseEnd={finishPoseDrag}/>:<div className="h-[560px] overflow-hidden rounded-2xl border border-white/10"><ConceptViewer fitModel concept={three!.concept} selectedId={null} onSelect={(id)=>{if(id){const partId=id.replace(/_\d+$/,"");setLayerId(partId);const binding=doc.bindings.find((b)=>b.partId===partId);if(binding)setSelected(binding.boneId);}}} rigBones={showBones?three!.bones:undefined} selectedBoneId={bone.id} onBoneSelect={setSelected}/></div>}
+        {doc.kind==="rig2d"&&<ParameterPanel document={doc} clipId={clip?.id} time={time} onTime={t=>{setTime(t);setPlaying(false);setMotionPreview(true);setParameterAuthoring("");}} authoring={parameterAuthoring} values={motionPreview&&clip&&!deformerPreview?parameterValues(doc.parameters??[],clip.parameterTracks,clip.loop?time%clip.duration:Math.min(time,clip.duration)):undefined} onAuthor={id=>{setParameterAuthoring(id);setPlaying(false);setMotionPreview(false);setDeformerPreview(null);}} onChange={edit=>change(next=>{if(next.doc.kind==="rig2d")edit(next.doc);})} onPreview={preview=>{setPlaying(false);setDeformerPreview(preview);}} onPlay={startAnimation}/>}
+        {doc.kind==="rig2d"&&<DeformerPanel document={doc} layerId={layerId} authorTarget={doc.parameters?.find(p=>p.id===parameterAuthoring)?.deformerId} onPreview={setDeformerPreview} onChange={edit=>change(next=>{if(next.doc.kind==="rig2d")edit(next.doc);})}/>}
         {doc.kind==="rig2d"&&<div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.025] p-4">
-          <div className="flex flex-wrap items-center gap-2"><h2 className="mr-2 text-sm font-semibold">Анимация</h2><select aria-label="Клип" className={`${input} !w-40`} value={clip?.id??""} onChange={(e)=>{setClipId(e.target.value);setTime(0);setPlaying(false);setMotionPreview(true);}}><option value="">Исходная поза</option>{doc.clips.map((c)=><option key={c.id} value={c.id}>{clipName(c.id)}</option>)}</select>
+          <div className="flex flex-wrap items-center gap-2"><h2 className="mr-2 text-sm font-semibold">Анимация</h2><select aria-label="Клип" className={`${input} !w-40`} value={clip?.id??""} onChange={(e)=>{setClipId(e.target.value);setTime(0);setPlaying(false);setMotionPreview(true);setParameterAuthoring("");setDeformerPreview(null);}}><option value="">Исходная поза</option>{doc.clips.map((c)=><option key={c.id} value={c.id}>{clipName(c.id)}</option>)}</select>
             <button className={button} onClick={()=>{const id=newId("clip");change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.push({id,duration:2,loop:true,tracks:[]});});setClipId(id);setTime(0);}}>+ Клип</button>
             <button className={button} disabled={!clip||editBind} onClick={toggleAnimation}>{playing?"Пауза":"Воспроизвести"}</button><button className={button} disabled={!clip||editBind} onClick={keyframe}>+ Ключ</button>
           </div>
-          {clip&&<><div className="flex items-center gap-3"><input aria-label="Время анимации" className="min-w-0 flex-1 accent-violet-400" type="range" min={0} max={clip.duration} step={0.01} value={time} onChange={(e)=>{setPlaying(false);setTime(Number(e.target.value));setMotionPreview(true);}}/><span className="w-24 text-right font-mono text-xs">{time.toFixed(2)} / {clip.duration}s</span></div>
+          {clip&&<><div className="flex items-center gap-3"><input aria-label="Время анимации" className="min-w-0 flex-1 accent-violet-400" type="range" min={0} max={clip.duration} step={0.01} value={time} onChange={(e)=>{setPlaying(false);setTime(Number(e.target.value));setMotionPreview(true);setParameterAuthoring("");setDeformerPreview(null);}}/><span className="w-24 text-right font-mono text-xs">{time.toFixed(2)} / {clip.duration}s</span></div>
             <div className="flex flex-wrap items-end gap-3"><div className="w-28"><NumberField name="Длительность, с" value={clip.duration} min={0.1} max={3600} step={0.1} onChange={(value)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.find((c)=>c.id===clip.id)!.duration=value;})}/></div>
               <label className="flex gap-2 pb-2 text-xs"><input type="checkbox" checked={clip.loop} onChange={(e)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.find((c)=>c.id===clip.id)!.loop=e.target.checked;})}/>Зациклить</label>
               <label className={label}>Интерполяция<select className={`${input} mt-1`} value={interpolation} onChange={(e)=>setInterpolation(e.target.value as "linear"|"step")}><option value="linear">Плавная</option><option value="step">Ступенчатая</option></select></label>
