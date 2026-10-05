@@ -23,17 +23,21 @@ const boneLabels:Record<string,string>={body:"Корпус",head:"Голова",
 const boneName=(id:string)=>Object.hasOwn(boneLabels,id)?boneLabels[id]:id.replace(/^bone_/,"Кость ");
 const clone=<T,>(value:T):T=>structuredClone(value);
 const label="text-xs text-violet-200/70";
+const clipNames:Record<string,string>={idle:"Дыхание",greeting:"Приветствие",sway:"Покачивание"};
+const clipName=(id:string)=>Object.hasOwn(clipNames,id)?clipNames[id]:id;
 const packed=(snapshot:Snapshot):RigDocument=>snapshot.doc.kind==="rig2d"?{...snapshot.doc,pose:snapshot.pose2D}:snapshot.doc;
 
 function NumberField({name,value,onChange,step=1,min,max}:{name:string;value:number;onChange:(n:number)=>void;step?:number;min?:number;max?:number}) {
   return <label className={label}>{name}<input aria-label={name} className={`${input} mt-1`} type="number" step={step} min={min} max={max} value={Math.round(value*10000)/10000} onChange={(event)=>{if(event.target.value!==""){const n=Number(event.target.value);if(Number.isFinite(n))onChange(n);}}}/></label>;
 }
 
-export default function RigEditor({initialMode="rig2d",preview=false,initialDocument,draftScope}:{initialMode?:"rig2d"|"rig3d";preview?:boolean;initialDocument?:RigDocument;draftScope?:string}) {
+export default function RigEditor({initialMode="rig2d",preview=false,initialDocument,draftScope,autoPlayMotion=false}:{initialMode?:"rig2d"|"rig3d";preview?:boolean;initialDocument?:RigDocument;draftScope?:string;autoPlayMotion?:boolean}) {
   const [state,setState]=useState<Snapshot>(()=>({doc:initialDocument??(initialMode==="rig3d"?demo3D():blank2D()),pose2D:initialDocument?.kind==="rig2d"?clone(initialDocument.pose??{}):{}}));
   const [past,setPast]=useState<Snapshot[]>([]),[future,setFuture]=useState<Snapshot[]>([]);
   const [name,setName]=useState(initialDocument?"Персонаж · полный рост":"Учебный персонаж"),[selected,setSelected]=useState("body"),[layerId,setLayerId]=useState("");
   const [clipId,setClipId]=useState("wave"),[time,setTime]=useState(0),[playing,setPlaying]=useState(false),[showBones,setShowBones]=useState(true);
+  const [motionPreview,setMotionPreview]=useState(false),[playRun,setPlayRun]=useState(0);
+  const autoStarted=useRef(false);
   const [addingBone,setAddingBone]=useState(false);
   const [artSource,setArtSource]=useState<Blob|null>(null);
   const poseTransaction=useRef<Snapshot|null>(null);
@@ -52,6 +56,7 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   const dirty=ready&&digest!==baseline;
 
   function install(next:RigDocument,nextName:string,metadata:Saved|null=null) {
+    setMotionPreview(false);
     const parsed=parseRigDocument(next);
     if(parsed.kind==="rig2d")evaluateRig2D(parsed);else evaluateRig3D(parsed);
     const snapshot:Snapshot={doc:parsed,pose2D:parsed.kind==="rig2d"?clone(parsed.pose??{}):{}};
@@ -88,6 +93,14 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
     window.addEventListener("beforeunload",handler);return()=>window.removeEventListener("beforeunload",handler);
   },[dirty]);
   useEffect(()=>{
+    if(!ready||!autoPlayMotion||autoStarted.current)return;
+    autoStarted.current=true;
+    const loaded=stateRef.current.doc;
+    if(loaded.kind==="rig2d"&&loaded.clips.length){startAnimation(loaded.clips.find((c)=>c.id==="greeting")?.id??loaded.clips[0].id);setShowBones(false);}
+    // Autoplay is requested only by the local finished-character preview.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[ready,autoPlayMotion]);
+  useEffect(()=>{
     if(!playing||!clip)return;
     let frame=0,start:number|undefined;const from=time,duration=clip.duration;
     function tick(now:number) {start??=now;const t=from+Math.max(0,(now-start)/1000);
@@ -97,16 +110,19 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
     frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);
     // The playback clock starts on play, not on each rendered frame.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[playing,clip]);
+  },[playing,clip,playRun]);
+
+  function startAnimation(id:string){setClipId(id);setTime(0);setEditBind(false);setAddingBone(false);setMotionPreview(true);setPlayRun((n)=>n+1);setPlaying(true);}
+  function toggleAnimation(){setEditBind(false);setMotionPreview(true);if(!playing&&clip&&time>=clip.duration)setTime(0);setPlaying(!playing);}
 
   function change(edit:(snapshot:Snapshot)=>void) {
-    try {const next=clone(stateRef.current);edit(next);next.doc=parseRigDocument(next.doc);
+    try {const next=clone(stateRef.current);if(motionPreview&&next.doc.kind==="rig2d")next.pose2D=effectivePose2D();edit(next);next.doc=parseRigDocument(next.doc);
       if(new TextEncoder().encode(JSON.stringify(packed(next))).length>1048000)throw new Error("Общий размер рига превышает 1 MiB. Уменьшите изображения перед загрузкой.");
       if(next.doc.kind==="rig2d")evaluateRig2D(next.doc,{pose:next.pose2D});else evaluateRig3D(next.doc);
-      setPast((items)=>[...items.slice(-29),clone(stateRef.current)]);setFuture([]);setState(next);setError("");setNotice("");setPlaying(false);return true;
+      setPast((items)=>[...items.slice(-29),clone(stateRef.current)]);setFuture([]);setState(next);setError("");setNotice("");setPlaying(false);setMotionPreview(false);return true;
     } catch(e){setError(e instanceof Error?e.message:"Не удалось применить изменение");return false;}
   }
-  function startPoseDrag(){poseTransaction.current=clone(stateRef.current);setPlaying(false);}
+  function startPoseDrag(){poseTransaction.current=clone(stateRef.current);const frozen={...stateRef.current,pose2D:effectivePose2D()};stateRef.current=frozen;setState(frozen);setMotionPreview(false);setPlaying(false);}
   function dragPose(id:string,transform:Transform2D){
     const next={...stateRef.current,pose2D:{...effectivePose2D(),[id]:transform}};
     stateRef.current=next;setState(next);
@@ -117,8 +133,8 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
     if(JSON.stringify(before.pose2D)===JSON.stringify(stateRef.current.pose2D))return;
     setPast((items)=>[...items.slice(-29),before]);setFuture([]);setError("");
   }
-  function undo() {if(!past.length)return;setFuture([clone(state),...future]);setState(past[past.length-1]);setPast(past.slice(0,-1));setPlaying(false);setError("");}
-  function redo() {if(!future.length)return;setPast([...past,clone(state)]);setState(future[0]);setFuture(future.slice(1));setPlaying(false);setError("");}
+  function undo() {if(!past.length)return;setFuture([clone(state),...future]);setState(past[past.length-1]);setPast(past.slice(0,-1));setPlaying(false);setMotionPreview(false);setError("");}
+  function redo() {if(!future.length)return;setPast([...past,clone(state)]);setState(future[0]);setFuture(future.slice(1));setPlaying(false);setMotionPreview(false);setError("");}
   function discardOkay(){return !dirty||window.confirm("Заменить текущий риг? Несохранённые изменения останутся только в скачанном JSON, если вы его экспортировали.");}
   function switchMode(next:"rig2d"|"rig3d") {
     if(next===mode)return;
@@ -133,13 +149,13 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
     if(doc.kind!=="rig2d"||editBind)return {};
     const result:Record<string,Transform2D>={};
     if(clip)for(const track of clip.tracks)result[track.boneId]=sample2DTrack(track,clip.loop?time%clip.duration:Math.min(time,clip.duration));
-    return {...result,...state.pose2D};
+    return motionPreview?result:{...result,...state.pose2D};
   }
   function active2DTransform():Transform2D {
     if(doc.kind!=="rig2d")throw new Error("Требуется 2D");
     const selectedBone=doc.bones.find((item)=>item.id===bone.id)!;
     if(editBind)return selectedBone.bind;
-    if(Object.hasOwn(state.pose2D,bone.id))return state.pose2D[bone.id];
+    if(!motionPreview&&Object.hasOwn(state.pose2D,bone.id))return state.pose2D[bone.id];
     const track=clip?.tracks.find((item)=>item.boneId===bone.id);
     return track?sample2DTrack(track,clip!.loop?time%clip!.duration:Math.min(time,clip!.duration)):selectedBone.bind;
   }
@@ -219,7 +235,8 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
     {mode==="rig2d"&&artSource&&<PrepareCharacter key={`${artSource.size}-${artSource instanceof File?artSource.name:"generated"}`} source={artSource} onClose={()=>setArtSource(null)} onCreate={(rig)=>{
       if(!change((next)=>{next.doc=rig;next.pose2D={};}))return;
       epoch.current++;setSaved(null);setName("Персонаж · полный рост");setSelected("body");setLayerId("character");setClipId("idle");setTime(0);setEditBind(false);setAddingBone(false);setArtSource(null);
-      setNotice("Риг собран. Выберите «Приветствие» или тяните кости на холсте. Предыдущий риг можно вернуть кнопкой «Отменить». Скачайте JSON, чтобы сохранить рисунок и анимацию.");
+      startAnimation("greeting");setShowBones(false);
+      setNotice("Риг собран, проигрывается «Приветствие». Движения переключаются над холстом. Предыдущий риг можно вернуть кнопкой «Отменить». Скачайте JSON, чтобы сохранить рисунок и анимацию.");
     }}/>}
     {preview&&<p className="rounded-lg border border-amber-300/20 bg-amber-300/5 p-3 text-sm text-amber-200">Локальная проверка редактора. Вход и серверное хранение здесь не используются.</p>}
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
@@ -235,6 +252,11 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
     </div>
     {error&&<p role="alert" className="rounded-lg border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p>}
     {notice&&<p role="status" className="text-sm text-violet-200">{notice}</p>}
+    {doc.kind==="rig2d"&&doc.clips.length>0&&<div className="flex flex-wrap items-center gap-3 rounded-2xl border border-teal-300/30 bg-teal-300/[0.05] p-4" aria-label="Движения персонажа">
+      <div className="mr-2"><h2 className="font-semibold">Анимации персонажа</h2><p className="text-xs text-white/55">{playing?`Играет: ${clip?clipName(clip.id):""}`:motionPreview&&clip?`На паузе: ${clipName(clip.id)}`:"Выберите движение — персонаж начнёт двигаться"}</p></div>
+      {doc.clips.map((item)=><button key={item.id} aria-pressed={clip?.id===item.id&&motionPreview} className={`${button} ${clip?.id===item.id&&motionPreview?"border-teal-300 bg-teal-300/15 text-teal-100":""}`} onClick={()=>startAnimation(item.id)}>▶ {clipName(item.id)}</button>)}
+      <button className={`${button} bg-white/10`} disabled={!clip} onClick={toggleAnimation}>{playing?"⏸ Пауза анимации":"▶ Продолжить анимацию"}</button>
+    </div>}
     <div className="grid gap-4 md:grid-cols-[170px_minmax(0,1fr)] xl:grid-cols-[210px_minmax(0,1fr)_270px]">
       <aside className="order-2 space-y-4 rounded-2xl border border-white/10 bg-white/[0.025] p-4 md:order-1">
         <h2 className="text-sm font-semibold">Скелет</h2>
@@ -247,15 +269,15 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
       <div className="order-1 min-w-0 space-y-4 md:order-2">
         {doc.kind==="rig2d"?<RigCanvas document={doc} pose={effectivePose2D()} time={time} selected={bone.id} onSelect={setSelected} showBones={showBones} addingBone={addingBone} onDrawBone={drawBone} canPose={!editBind} onPoseStart={startPoseDrag} onPose={dragPose} onPoseEnd={finishPoseDrag}/>:<div className="h-[560px] overflow-hidden rounded-2xl border border-white/10"><ConceptViewer fitModel concept={three!.concept} selectedId={null} onSelect={(id)=>{if(id){const partId=id.replace(/_\d+$/,"");setLayerId(partId);const binding=doc.bindings.find((b)=>b.partId===partId);if(binding)setSelected(binding.boneId);}}} rigBones={showBones?three!.bones:undefined} selectedBoneId={bone.id} onBoneSelect={setSelected}/></div>}
         {doc.kind==="rig2d"&&<div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.025] p-4">
-          <div className="flex flex-wrap items-center gap-2"><h2 className="mr-2 text-sm font-semibold">Анимация</h2><select aria-label="Клип" className={`${input} !w-40`} value={clip?.id??""} onChange={(e)=>{setClipId(e.target.value);setTime(0);setPlaying(false);setState({...state,pose2D:{}});}}><option value="">Исходная поза</option>{doc.clips.map((c)=><option key={c.id} value={c.id}>{c.id==="idle"?"Дыхание":c.id==="greeting"?"Приветствие":c.id}</option>)}</select>
+          <div className="flex flex-wrap items-center gap-2"><h2 className="mr-2 text-sm font-semibold">Анимация</h2><select aria-label="Клип" className={`${input} !w-40`} value={clip?.id??""} onChange={(e)=>{setClipId(e.target.value);setTime(0);setPlaying(false);setMotionPreview(true);}}><option value="">Исходная поза</option>{doc.clips.map((c)=><option key={c.id} value={c.id}>{clipName(c.id)}</option>)}</select>
             <button className={button} onClick={()=>{const id=newId("clip");change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.push({id,duration:2,loop:true,tracks:[]});});setClipId(id);setTime(0);}}>+ Клип</button>
-            <button className={button} disabled={!clip||editBind} onClick={()=>{setState({...state,pose2D:{}});if(time>=clip!.duration)setTime(0);setPlaying(!playing);}}>{playing?"Пауза":"Воспроизвести"}</button><button className={button} disabled={!clip||editBind} onClick={keyframe}>+ Ключ</button>
+            <button className={button} disabled={!clip||editBind} onClick={toggleAnimation}>{playing?"Пауза":"Воспроизвести"}</button><button className={button} disabled={!clip||editBind} onClick={keyframe}>+ Ключ</button>
           </div>
-          {clip&&<><div className="flex items-center gap-3"><input aria-label="Время анимации" className="min-w-0 flex-1 accent-violet-400" type="range" min={0} max={clip.duration} step={0.01} value={time} onChange={(e)=>{setPlaying(false);setTime(Number(e.target.value));setState({...state,pose2D:{}});}}/><span className="w-24 text-right font-mono text-xs">{time.toFixed(2)} / {clip.duration}s</span></div>
+          {clip&&<><div className="flex items-center gap-3"><input aria-label="Время анимации" className="min-w-0 flex-1 accent-violet-400" type="range" min={0} max={clip.duration} step={0.01} value={time} onChange={(e)=>{setPlaying(false);setTime(Number(e.target.value));setMotionPreview(true);}}/><span className="w-24 text-right font-mono text-xs">{time.toFixed(2)} / {clip.duration}s</span></div>
             <div className="flex flex-wrap items-end gap-3"><div className="w-28"><NumberField name="Длительность, с" value={clip.duration} min={0.1} max={3600} step={0.1} onChange={(value)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.find((c)=>c.id===clip.id)!.duration=value;})}/></div>
               <label className="flex gap-2 pb-2 text-xs"><input type="checkbox" checked={clip.loop} onChange={(e)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.find((c)=>c.id===clip.id)!.loop=e.target.checked;})}/>Зациклить</label>
               <label className={label}>Интерполяция<select className={`${input} mt-1`} value={interpolation} onChange={(e)=>setInterpolation(e.target.value as "linear"|"step")}><option value="linear">Плавная</option><option value="step">Ступенчатая</option></select></label>
-            </div><div className="flex flex-wrap gap-2">{selectedTrack?.keys.map((key)=><button className={button} key={key.time} onClick={()=>{setTime(key.time);setPlaying(false);setState({...state,pose2D:{}});}}>{key.time.toFixed(2)}s</button>)}</div>
+            </div><div className="flex flex-wrap gap-2">{selectedTrack?.keys.map((key)=><button className={button} key={key.time} onClick={()=>{setTime(key.time);setPlaying(false);setMotionPreview(true);}}>{key.time.toFixed(2)}s</button>)}</div>
             <button className={button} disabled={!selectedTrack?.keys.some((k)=>Math.abs(k.time-time)<1e-6)} onClick={()=>change((next)=>{if(next.doc.kind!=="rig2d")return;const target=next.doc.clips.find((c)=>c.id===clip.id)!;const track=target.tracks.find((t)=>t.boneId===bone.id)!;track.keys=track.keys.filter((k)=>Math.abs(k.time-time)>1e-6);target.tracks=target.tracks.filter((t)=>t.keys.length);})}>Удалить ключ в этом времени</button>
           </>}
         </div>}

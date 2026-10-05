@@ -79,6 +79,7 @@ export function fullBodyRig(asset:Rig2DDocument["assets"][number],joints:Landmar
     return {boneId,rotationMode:"unwrapped",keys:angles.map((angle,i)=>({time:i/(angles.length-1)*duration,interpolation:"linear",transform:{position:[...bind.position],rotation:bind.rotation+angle,scale:[breathing?1+(i%2)*.008:1,1]}}))};
   }
   rig.clips=[{id:"idle",duration:4,loop:true,tracks:[track("body",[0,0,0],4,true),track("head",[0,.015,0],4)]},
-    {id:"greeting",duration:3,loop:true,tracks:[track("forearm_r",[0,.75,.55,.85,0],3),track("hand_r",[0,.1,-.1,.1,0],3)]}];
+    {id:"greeting",duration:4,loop:true,tracks:[track("upper_arm_r",[0,.18,.18,.18,.18,.18,0],4),track("forearm_r",[0,1.1,.95,1.15,.95,1.1,0],4),track("hand_r",[0,.2,-.2,.2,-.2,.2,0],4),track("head",[0,-.025,-.025,-.025,-.025,-.025,0],4)]},
+    {id:"sway",duration:4,loop:true,tracks:[track("body",[0,.035,0,-.035,0],4),track("head",[0,-.055,0,.055,0],4),track("forearm_l",[0,.12,0,-.08,0],4),track("forearm_r",[0,-.12,0,.08,0],4)]}];
   return parseRig2D(rig);
 }

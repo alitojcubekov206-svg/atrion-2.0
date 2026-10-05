@@ -47,7 +47,13 @@ test("fullbody rig uses valid weights, bounds and deterministic clips after JSON
   rest.vertices.forEach((p,i)=>{near(p[0],doc.layers[0].skin!.vertices[i][0]-150);near(p[1],doc.layers[0].skin!.vertices[i][1]-250);});
   assert(moved.vertices.some((p,i)=>Math.hypot(p[0]-rest.vertices[i][0],p[1]-rest.vertices[i][1])>10));
   assert.deepEqual(evaluateRig2D(restored,{clipId:"greeting",time:.75}),evaluateRig2D(doc,{clipId:"greeting",time:.75}));
-  assert.deepEqual(evaluateRig2D(doc,{clipId:"greeting",time:3}),evaluateRig2D(doc,{clipId:"greeting",time:0}));
+  assert.deepEqual(doc.clips.map((clip)=>clip.id),["idle","greeting","sway"]);
+  for(const clip of doc.clips){
+    const start=evaluateRig2D(doc,{clipId:clip.id,time:0});
+    assert.deepEqual(evaluateRig2D(doc,{clipId:clip.id,time:clip.duration}),start);
+    assert.notDeepEqual(evaluateRig2D(doc,{clipId:clip.id,time:clip.duration/4}).layers[0].skin!.vertices,start.layers[0].skin!.vertices);
+    assert.deepEqual(evaluateRig2D(restored,{clipId:clip.id,time:1}),evaluateRig2D(doc,{clipId:clip.id,time:1}));
+  }
   const shin=doc.bones.find((b)=>b.id==="shin_l")!;
   const leg=evaluateRig2D(doc,{pose:{shin_l:{...shin.bind,rotation:shin.bind.rotation-.3}}}).layers[0].skin!;
   doc.layers[0].skin!.vertices.forEach((p,i)=>{if(p[0]>150&&p[1]<200){near(leg.vertices[i][0],rest.vertices[i][0]);near(leg.vertices[i][1],rest.vertices[i][1]);}});
