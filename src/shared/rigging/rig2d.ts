@@ -1,4 +1,5 @@
 import { DesignError, check, choice, finiteMatrix, hierarchy, id, integer, list, number, parent, record, text, unique, vector2, version } from "./validation";
+import { deformerChain, deformPoint, parseDeformers, type Deformer2D } from "./deformers";
 
 export type Transform2D = { position: [number, number]; rotation: number; scale: [number, number] };
 export type Matrix2D = [number, number, number, number, number, number];
@@ -14,7 +15,8 @@ export type Skin2D = {
 export type Rig2DDocument = {
   kind: "rig2d"; schemaVersion: 1; canvas: { width: number; height: number };
   assets: { id: string; uri: string; mime: "image/png" | "image/webp"; width: number; height: number }[];
-  layers: { id: string; assetId: string; zIndex: number; visible: boolean; pivot: [number, number]; transform: Transform2D; skin?: Skin2D }[];
+  layers: { id: string; assetId: string; zIndex: number; visible: boolean; pivot: [number, number]; transform: Transform2D; skin?: Skin2D; deformerId?:string }[];
+  deformers?:Deformer2D[];
   bones: Bone2D[];
   attachments: { layerId: string; boneId: string; offset: Transform2D }[];
   clips: { id: string; duration: number; loop: boolean; tracks: {
@@ -54,6 +56,8 @@ export function parseRig2D(input: unknown): Rig2DDocument {
       width: integer(asset.width, "asset.width", 1, 8192), height: integer(asset.height, "asset.height", 1, 8192) };
   });
   const assetMap = unique(assets, "assets");
+  const deformers=value.deformers===undefined?undefined:parseDeformers(value.deformers);
+  const deformerIds=new Set(deformers?.map(d=>d.id));
   let vertexCount=0,triangleCount=0;
   const layers = list(value.layers, "layers", 256).map((item) => {
     const layer = record(item, "layer");
@@ -94,7 +98,9 @@ export function parseRig2D(input: unknown): Rig2DDocument {
       }
       skin={vertices,triangles,weights,...(uv?{uv}:{})};
     }
-    return { id: id(layer.id, "layer.id"), assetId, visible: layer.visible, ...(skin?{skin}:{}),
+    const deformerId=layer.deformerId===undefined?undefined:id(layer.deformerId,"layer.deformerId");
+    if(deformerId){check(deformerIds.has(deformerId),"Неизвестный деформер слоя");check(skin,"Для деформера сначала создайте сетку слоя");}
+    return { id: id(layer.id, "layer.id"), assetId, visible: layer.visible, ...(skin?{skin}:{}),...(deformerId?{deformerId}:{}),
       zIndex: integer(layer.zIndex, "zIndex", -10000, 10000), pivot: vector2(layer.pivot, "pivot"), transform: transform2D(layer.transform) };
   });
   const layerMap = unique(layers, "layers");
@@ -148,7 +154,7 @@ export function parseRig2D(input: unknown): Rig2DDocument {
   }
   return { kind: "rig2d", schemaVersion: 1, canvas: {
     width: integer(canvas.width, "canvas.width", 1, 16384), height: integer(canvas.height, "canvas.height", 1, 16384)
-  }, assets, layers, bones, attachments, clips, ...(value.pose===undefined?{}:{pose}) };
+  }, assets, layers, bones, attachments, clips, ...(deformers?{deformers}:{}), ...(value.pose===undefined?{}:{pose}) };
 }
 
 export function matrix2D(transform: Transform2D): Matrix2D {
@@ -228,10 +234,11 @@ export function evaluateRig2D(document: Rig2DDocument, options: { clipId?: strin
     const binding = bindings.get(layer.id);
     const model = binding ? multiply2D(world.get(binding.boneId)!,matrix2D(binding.offset)) : matrix2D(layer.transform);
     const matrix = multiply2D(model,[1,0,0,1,-layer.pivot[0],-layer.pivot[1]]);
+    const chain=layer.deformerId?deformerChain(document.deformers??[],layer.deformerId):[];
     const skin=layer.skin?{
       uv:layer.skin.uv??layer.skin.vertices,triangles:layer.skin.triangles,
       vertices:layer.skin.vertices.map((p,index):[number,number]=>{
-        const rest=point2D(matrix,p),point:[number,number]=[0,0];
+        const rest=chain.reduce((point,d)=>deformPoint(d,point),point2D(matrix,p)),point:[number,number]=[0,0];
         for(const influence of layer.skin!.weights[index]){
           const moved=point2D(deltas.get(influence.boneId)!,rest);point[0]+=moved[0]*influence.weight;point[1]+=moved[1]*influence.weight;
         }

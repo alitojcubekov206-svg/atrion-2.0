@@ -4,6 +4,45 @@ import { parseRig2D, evaluateRig2D } from "../src/backend/design/rig2d";
 import { parseRig3D, evaluateRig3D } from "../src/backend/design/rig3d";
 import { parseHouse, buildHouse } from "../src/backend/design/house";
 import { createHouse, houseConcept, splitRoom } from "../src/shared/house/editor";
+import { neutralDeformer, deformPoint, parseDeformers, deformerChain } from "../src/shared/rigging/deformers";
+
+test("warp has identity rest, analytic bilinear displacement and continuous outside boundary",()=>{
+  const warp=neutralDeformer("warp","warp",[0,0],[100,100]);
+  assert.equal(warp.kind,"warp");if(warp.kind!=="warp")return;
+  for(const p of [[0,0],[25,25],[50,50],[100,100],[120,-20]] as [number,number][])assert.deepEqual(deformPoint(warp,p),p);
+  warp.points[4][0]+=10;
+  parseDeformers([warp]);
+  assert.deepEqual(deformPoint(warp,[50,50]),[60,50]);
+  assert.deepEqual(deformPoint(warp,[25,25]),[27.5,25]);
+  assert.deepEqual(deformPoint(warp,[120,50]),[120,50]);
+  warp.points=warp.points.map(([x,y])=>[x+5,y-3]);
+  assert.deepEqual(deformPoint(warp,[120,50]),[125,47]);
+});
+
+test("nested rotation transforms child once; invalid cages, cycles and references are rejected",()=>{
+  const root=neutralDeformer("parent","rotation",[-1,-1],[2,2]);root.rotation=Math.PI/2;
+  const child=neutralDeformer("child","rotation",[-1,-1],[2,2],"parent");child.position=[10,0];
+  const p=deformerChain(parseDeformers([child,root]),"child").reduce((p,d)=>deformPoint(d,p),[2,0] as [number,number]);
+  near(p[0],0);near(p[1],12);
+  assert.throws(()=>parseDeformers([{...root,parentId:"child"},child]),DesignError);
+  assert.throws(()=>parseDeformers([child]),DesignError);
+  assert.throws(()=>parseDeformers([root,root]),DesignError);
+  const folded=neutralDeformer("folded","warp",[0,0],[100,100]);if(folded.kind!=="warp")return;
+  folded.points[4]=[-50,50];assert.throws(()=>parseDeformers([folded]),DesignError);
+});
+
+test("deformer groups keep UV and survive animated rig JSON round-trip",()=>{
+  const doc=parseRig2D(rig2());doc.attachments=[];
+  const asset=doc.assets[0];doc.layers[0].skin=gridMesh(asset.width,asset.height,2,2,"root");
+  const second=structuredClone(doc.layers[0]);second.id="second";doc.layers.push(second);
+  const before=evaluateRig2D(doc,{pose:{}});
+  const d=neutralDeformer("group","rotation",[0,0],[100,100]);d.position=[10,20];doc.deformers=[d];doc.layers.forEach(l=>l.deformerId=d.id);
+  const parsed=parseRig2D(JSON.parse(JSON.stringify(doc))),after=evaluateRig2D(parsed,{pose:{}});
+  after.layers.forEach((layer,i)=>{assert.deepEqual(layer.skin!.uv,before.layers[i].skin!.uv);layer.skin!.vertices.forEach((p,j)=>{near(p[0],before.layers[i].skin!.vertices[j][0]+10);near(p[1],before.layers[i].skin!.vertices[j][1]+20);});});
+  assert.deepEqual(evaluateRig2D(doc,{clipId:doc.clips[0].id,time:.5}),evaluateRig2D(parsed,{clipId:doc.clips[0].id,time:.5}));
+  const invalid=structuredClone(doc);invalid.layers[0].deformerId="missing";assert.throws(()=>parseRig2D(invalid));
+  delete invalid.layers[0].deformerId;delete invalid.layers[1].skin;assert.throws(()=>parseRig2D(invalid));
+});
 
 test("house editor keeps room area, export geometry and round-trip consistent",()=>{
   const doc=createHouse(),floor=doc.floors[0];

@@ -11,6 +11,8 @@ import RigCanvas from "./RigCanvas";
 import CharacterGenerator from "./CharacterGenerator";
 import PrepareCharacter from "./PrepareCharacter";
 import MeshEditor from "./MeshEditor";
+import DeformerPanel from "./DeformerPanel";
+import type { Rig2DDocument } from "@/shared/rigging/rig2d";
 import { gridMesh } from "@/shared/rigging/mesh";
 import { requestJson } from "@/frontend/api";
 import { downloadBlob, exportConceptGlb } from "@/frontend/export-3d";
@@ -43,6 +45,7 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   const [addingBone,setAddingBone]=useState(false);
   const [artSource,setArtSource]=useState<Blob|null>(null);
   const [meshLayer,setMeshLayer]=useState(""),[meshDensity,setMeshDensity]=useState(8);
+  const [deformerPreview,setDeformerPreview]=useState<Rig2DDocument|null>(null);
   const poseTransaction=useRef<Snapshot|null>(null);
   const [editBind,setEditBind]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
   const [saved,setSaved]=useState<Saved|null>(null),[documents,setDocuments]=useState<Saved[]>([]),[openId,setOpenId]=useState("");
@@ -59,6 +62,7 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   const dirty=ready&&digest!==baseline;
 
   function install(next:RigDocument,nextName:string,metadata:Saved|null=null) {
+    setDeformerPreview(null);
     setMeshLayer("");
     setMotionPreview(false);
     const parsed=parseRigDocument(next);
@@ -120,6 +124,7 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
   function toggleAnimation(){setMeshLayer("");setEditBind(false);setMotionPreview(true);if(!playing&&clip&&time>=clip.duration)setTime(0);setPlaying(!playing);}
 
   function change(edit:(snapshot:Snapshot)=>void) {
+    setDeformerPreview(null);
     try {const next=clone(stateRef.current);if(motionPreview&&next.doc.kind==="rig2d")next.pose2D=effectivePose2D();edit(next);next.doc=parseRigDocument(next.doc);
       if(new TextEncoder().encode(JSON.stringify(packed(next))).length>1048000)throw new Error("Общий размер рига превышает 1 MiB. Уменьшите изображения перед загрузкой.");
       if(next.doc.kind==="rig2d")evaluateRig2D(next.doc,{pose:next.pose2D});else evaluateRig3D(next.doc);
@@ -289,7 +294,8 @@ export default function RigEditor({initialMode="rig2d",preview=false,initialDocu
         <p className="text-xs leading-relaxed text-white/35">{editBind?"Изменения записываются в исходный скелет. Смена родителя сохраняет локальные координаты.":"Сейчас вы меняете позу; исходный скелет сохраняется."}</p>
       </aside>
       <div className="order-1 min-w-0 space-y-4 md:order-2">
-        {doc.kind==="rig2d"?meshTarget?.skin?<MeshEditor key={meshTarget.id} asset={doc.assets.find((a)=>a.id===meshTarget.assetId)!} skin={meshTarget.skin} onClose={()=>setMeshLayer("")} onCommit={(skin)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.layers.find((l)=>l.id===meshTarget.id)!.skin=skin;})}/>:<RigCanvas document={doc} pose={effectivePose2D()} time={time} selected={bone.id} onSelect={setSelected} showBones={showBones} addingBone={addingBone} onDrawBone={drawBone} canPose={!editBind} onPoseStart={startPoseDrag} onPose={dragPose} onPoseEnd={finishPoseDrag}/>:<div className="h-[560px] overflow-hidden rounded-2xl border border-white/10"><ConceptViewer fitModel concept={three!.concept} selectedId={null} onSelect={(id)=>{if(id){const partId=id.replace(/_\d+$/,"");setLayerId(partId);const binding=doc.bindings.find((b)=>b.partId===partId);if(binding)setSelected(binding.boneId);}}} rigBones={showBones?three!.bones:undefined} selectedBoneId={bone.id} onBoneSelect={setSelected}/></div>}
+        {doc.kind==="rig2d"?meshTarget?.skin?<MeshEditor key={meshTarget.id} asset={doc.assets.find((a)=>a.id===meshTarget.assetId)!} skin={meshTarget.skin} onClose={()=>setMeshLayer("")} onCommit={(skin)=>change((next)=>{if(next.doc.kind==="rig2d")next.doc.layers.find((l)=>l.id===meshTarget.id)!.skin=skin;})}/>:<RigCanvas document={deformerPreview??doc} pose={effectivePose2D()} time={time} selected={bone.id} onSelect={setSelected} showBones={showBones} addingBone={addingBone} onDrawBone={drawBone} canPose={!editBind} onPoseStart={startPoseDrag} onPose={dragPose} onPoseEnd={finishPoseDrag}/>:<div className="h-[560px] overflow-hidden rounded-2xl border border-white/10"><ConceptViewer fitModel concept={three!.concept} selectedId={null} onSelect={(id)=>{if(id){const partId=id.replace(/_\d+$/,"");setLayerId(partId);const binding=doc.bindings.find((b)=>b.partId===partId);if(binding)setSelected(binding.boneId);}}} rigBones={showBones?three!.bones:undefined} selectedBoneId={bone.id} onBoneSelect={setSelected}/></div>}
+        {doc.kind==="rig2d"&&<DeformerPanel document={doc} layerId={layerId} onPreview={setDeformerPreview} onChange={edit=>change(next=>{if(next.doc.kind==="rig2d")edit(next.doc);})}/>}
         {doc.kind==="rig2d"&&<div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.025] p-4">
           <div className="flex flex-wrap items-center gap-2"><h2 className="mr-2 text-sm font-semibold">Анимация</h2><select aria-label="Клип" className={`${input} !w-40`} value={clip?.id??""} onChange={(e)=>{setClipId(e.target.value);setTime(0);setPlaying(false);setMotionPreview(true);}}><option value="">Исходная поза</option>{doc.clips.map((c)=><option key={c.id} value={c.id}>{clipName(c.id)}</option>)}</select>
             <button className={button} onClick={()=>{const id=newId("clip");change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.push({id,duration:2,loop:true,tracks:[]});});setClipId(id);setTime(0);}}>+ Клип</button>
