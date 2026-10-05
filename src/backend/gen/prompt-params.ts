@@ -201,21 +201,8 @@ export function parsePromptParams(prompt: string): PromptParams {
   );
   if (countMatch) count = Math.max(1, Math.min(40, Math.round(normalizeNumber(countMatch[1]))));
 
-  let color: string | undefined;
-  for (const [pattern, hex] of COLORS) {
-    if (pattern.test(text)) {
-      color = hex;
-      break;
-    }
-  }
-
-  let material: MaterialKind | undefined;
-  for (const [pattern, kind] of MATERIALS) {
-    if (pattern.test(text)) {
-      material = kind;
-      break;
-    }
-  }
+  const color = colorIn(text);
+  const material = materialIn(text);
 
   let style: StyleKind = "modern";
   for (const [pattern, kind] of STYLES) {
@@ -233,13 +220,7 @@ export function parsePromptParams(prompt: string): PromptParams {
     }
   }
 
-  let scale: ScaleKind = "medium";
-  for (const [pattern, kind] of SCALES) {
-    if (pattern.test(text)) {
-      scale = kind;
-      break;
-    }
-  }
+  const scale = scaleOf(text);
 
   return {
     raw,
@@ -259,6 +240,34 @@ export function parsePromptParams(prompt: string): PromptParams {
     features,
     hasExplicitSize: Boolean(width || depth || height),
   };
+}
+
+/**
+ * The colour named first in the text. "Белый дом с красной крышей" is white —
+ * matching the palette in list order would have made it red.
+ */
+export function colorIn(text: string): string | undefined {
+  let best: { index: number; hex: string } | undefined;
+  for (const [pattern, hex] of COLORS) {
+    const match = pattern.exec(text);
+    if (match && (!best || match.index < best.index)) best = { index: match.index, hex };
+  }
+  return best?.hex;
+}
+
+export function materialIn(text: string): MaterialKind | undefined {
+  for (const [pattern, kind] of MATERIALS) {
+    if (pattern.test(text)) return kind;
+  }
+  return undefined;
+}
+
+/** Size adjective in a phrase — "маленький", "огромный", "домик". */
+export function scaleOf(text: string): ScaleKind {
+  for (const [pattern, kind] of SCALES) {
+    if (pattern.test(text)) return kind;
+  }
+  return "medium";
 }
 
 /** Multiplier applied to default sizes when the prompt only used adjectives. */

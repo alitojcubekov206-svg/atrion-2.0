@@ -50,6 +50,10 @@ type Diagnostics = {
   matched?: string[];
   source?: "procedural" | "ai";
   score?: number;
+  /** 0–1 how well the model has what the prompt asked for. */
+  match?: number;
+  missing?: string[];
+  kind?: string;
   primitives?: number;
   parts?: number;
   notes?: string[];
@@ -1249,7 +1253,16 @@ export default function DesignEnginePage() {
                     <p className="mt-1.5 text-[#b8b2a8]">
                       {diagnostics.parts ?? 0} деталей · {diagnostics.primitives ?? 0} примитивов ·
                       цельность {Math.round((diagnostics.score ?? 0) * 100)}%
+                      {diagnostics.match !== undefined && (
+                        <> · по запросу {Math.round(diagnostics.match * 100)}%</>
+                      )}
                     </p>
+                    {diagnostics.missing?.length ? (
+                      <p className="mt-1 text-amber-300/80">
+                        Не получилось: {diagnostics.missing.join(", ")} — уточните в чате или
+                        переформулируйте.
+                      </p>
+                    ) : null}
                     {showDiagnostics && (
                       <div className="mt-2 space-y-1.5 border-t border-white/[0.06] pt-2 text-[11px] text-[#8f8a82]">
                         {diagnostics.matched?.length ? (

@@ -1,19 +1,28 @@
 import type { ModelPart, ThreeDConcept } from "@/shared/types";
-import { dimensionsOf, primitiveCount, structureFromGroups } from "@/shared/geometry";
-import { MAX_PARTS, scoreParts, validateAndRepair } from "@/backend/gen/validate";
+import { dimensionsOf, primitiveCount, round3, structureFromGroups } from "@/shared/geometry";
+import { MAX_PARTS, validateAndRepair } from "@/backend/gen/validate";
 import { parsePromptParams } from "@/backend/gen/prompt-params";
+import type { Blueprint, ObjectKind } from "@/backend/gen/blueprint";
+import { expectationsFor, matchParts, type MatchReport } from "@/backend/gen/match";
 
 /** Supplied by the AI layer so this module stays provider-agnostic. */
-export type JsonRequester = <T>(system: string, user: string) => Promise<T>;
+export type JsonRequester = <T>(
+  system: string,
+  user: string,
+  options?: { timeoutMs?: number }
+) => Promise<T>;
 
 export type AIGeometryResult = {
   name: string;
   description: string;
   parts: ModelPart[];
+  /** Structure score — connected, varied, detailed. */
   score: number;
   primitives: number;
   issues: string[];
   passes: number;
+  /** How well the parts match what the prompt asked for. */
+  match: MatchReport;
 };
 
 const GEOMETRY_RULES = `You are Atrion's geometry engine. You design a real 3D object out of primitives.
@@ -79,34 +88,79 @@ applied to the shade, the repeat used for the vents, and every part touching its
 ]}`;
 
 /**
- * How much geometry to ask for. The scale class is the only thing that changes
- * the budget — what the object actually *is* comes from the prompt itself, so
- * this never pushes the model toward a stock shape.
+ * How much geometry to ask for, and what a finished model of this kind of
+ * thing is made of. The kind comes from the head noun of the prompt; every
+ * feature the prompt names is listed separately as a hard requirement.
  */
-function detailTarget(category: string): { parts: string; note: string } {
-  switch (category) {
+function detailTarget(kind: ObjectKind): { parts: string; note: string } {
+  switch (kind) {
     case "landmark":
       return {
         parts: "50-85",
         note: "Foundation and bearing structure, stacked volumes, roof or crown with overhang and ridge, window units (frame + glass + sill) laid out with repeat and mirror, entrance with steps and canopy, gutters, downpipes, trim bands, railings.",
       };
-    case "structure":
+    case "building":
       return {
         parts: "45-75",
         note: "Plinth, storey volumes with floor bands, roof with overhang and ridge, window units of frame + glass + sill via repeat and mirror, entrance with steps and canopy, downpipes, corner trim.",
       };
+    case "room":
+      return {
+        parts: "45-75",
+        note: "Floor slab, two or three walls (leave the front open so the inside is visible), skirting and cornice, a window with frame and sill on a wall, a door on a side wall, and every piece of furniture as its own group at real size standing on the floor.",
+      };
     case "vehicle":
       return {
         parts: "40-70",
-        note: "Chassis, cabin, front and rear volumes, wheels as torus tyre + cylinder rim + spokes with mirror, translucent glazing, lights with emissive, bumpers, mirrors, handles, shut lines.",
+        note: "Lower body, cabin with translucent windscreen and side glass, hood and trunk, wheels as torus tyre + cylinder rim + spokes with mirror, wheel arches, lights with emissive (white front, red rear), bumpers, side mirrors, door seams and handles. Total height must stay within the requested height.",
+      };
+    case "aircraft":
+      return {
+        parts: "40-70",
+        note: "Fuselage (capsule), wings with ailerons, tailplane and fin, engines or rotors, cockpit glazing, landing gear, navigation lights.",
+      };
+    case "watercraft":
+      return {
+        parts: "40-65",
+        note: "V-bottom hull, deck, superstructure with windows, railing posts with repeat, mast and sail or funnel, portholes, bow detail.",
+      };
+    case "character":
+      return {
+        parts: "40-70",
+        note: "Human proportions — the head is about 1/7 of the height. Pelvis, torso, neck, head with eyes, nose, mouth and ears; hair as several overlapping volumes; upper arms, forearms, hands with fingers; thighs, shins, feet; clothing as separate shells slightly larger than the body; joints at shoulders, elbows, knees. Mirror the limbs.",
+      };
+    case "animal":
+      return {
+        parts: "35-60",
+        note: "Body as overlapping capsules (chest, belly, hips), neck, head with snout, eyes, ears; four legs in three segments with paws; a tail as a tapering chain of segments; any named wings, horns or spikes. The legs must reach the ground.",
+      };
+    case "robot":
+      return {
+        parts: "40-70",
+        note: "Armoured torso panels, head with emissive visor or eyes, articulated limbs with visible joint cylinders, hands or grippers, feet, panel seams, bolts, antennas and lights with emissive.",
       };
     case "furniture":
       return {
-        parts: "35-60",
-        note: "Main mass, joints and limbs or legs with feet, cushions or panels, edge trim, fasteners, and whatever the wording adds — every named feature gets its own parts.",
+        parts: "30-55",
+        note: "Real furniture dimensions. Frame, legs with feet, aprons or rails, the working surface (top, seat, mattress), cushions as rounded boxes, handles and hinges, edge trim.",
       };
-    case "handheld":
-    case "micro":
+    case "appliance":
+      return {
+        parts: "30-55",
+        note: "Real appliance dimensions. Casing with rounded edges, door or lid with seams, glass panels, control panel with buttons or knobs and a small emissive display, vents, feet, the functional parts the object is known for (porthole, slots, nozzle, turret).",
+      };
+    case "lighting":
+      return {
+        parts: "25-45",
+        note: "Weighted base with switch, stem or jointed arm with joint spheres, shade (cone, tube or sphere) with an emissive bulb inside, cable.",
+      };
+    case "weapon":
+      return {
+        parts: "20-40",
+        note: "Blade with fuller and tip, guard, grip with wrapping (repeat), pommel. Thin, flat blade — not a box.",
+      };
+    case "device":
+    case "container":
       return {
         parts: "30-55",
         note: "Main body, functional sub-volumes, seams and panel lines, controls, ports, feet or stand, screens or lenses with emissive, fasteners.",
@@ -133,30 +187,40 @@ type RawGeometry = {
   parts?: unknown;
 };
 
+/** Below this much time left, a second pass is not worth starting. */
+const REPAIR_MIN_MS = 18_000;
+
 /**
  * Ask the model to author the geometry itself, then validate and repair it.
- * Runs a second critique pass when the first attempt scores poorly, because a
- * single pass reliably produces floating or disconnected parts.
+ * Runs a second critique pass when the first attempt is structurally weak or
+ * misses something the prompt asked for — but only if the deadline allows.
  */
 export async function generateAIGeometry(options: {
   prompt: string;
   answers?: { question: string; answer: string }[];
   baseline: ThreeDConcept;
-  category: string;
+  plan: Blueprint;
   request: JsonRequester;
+  /** Epoch ms by which the whole generation has to be done. */
+  deadline?: number;
   /** Skip the repair pass when latency matters more than quality. */
   singlePass?: boolean;
 }): Promise<AIGeometryResult | null> {
-  const { prompt, baseline, category, request } = options;
+  const { prompt, baseline, plan, request } = options;
   const answers = options.answers ?? [];
   const params = parsePromptParams(prompt);
-  const target = detailTarget(category);
+  const target = detailTarget(plan.kind);
+  const expectations = expectationsFor(plan);
+  const remaining = () => (options.deadline ? options.deadline - Date.now() : Infinity);
 
   const system = `${GEOMETRY_RULES}
 
-DETAIL BUDGET for a "${category}": author ${target.parts} parts. ${target.note}
+DETAIL BUDGET for a ${plan.kind}: author ${target.parts} parts. ${target.note}
 Repeat and mirror multiply those into more rendered instances — use them.
 Hard limit: ${MAX_PARTS} entries in "parts".
+
+NAMING — the model is checked automatically: name every part after what it is
+(e.g. "Колесо", "Крыша", "Голова", "Плафон"), so each required feature is findable by name.
 
 ${EXAMPLE}`;
 
@@ -165,18 +229,23 @@ ${EXAMPLE}`;
     params.depth ? `depth ${params.depth} m` : null,
     params.height ? `height ${params.height} m` : null,
     params.floors ? `${params.floors} floors` : null,
-    params.count ? `count ${params.count}` : null,
     params.roof ? `roof ${params.roof}` : null,
     params.material ? `material ${params.material}` : null,
     params.color ? `main colour ${params.color}` : null,
-    params.features.size ? `features: ${[...params.features].join(", ")}` : null,
   ]
     .filter(Boolean)
     .join("; ");
 
-  const user = `Design this object: ${prompt}
+  const checklist = expectations.length
+    ? `REQUIRED — the result is rejected if any of these is missing:\n${expectations
+        .map((item) => `- ${item.en}${item.named ? " (asked for by the user)" : ""}`)
+        .join("\n")}`
+    : "";
 
-${measurements ? `Parsed from the request — honour these exactly: ${measurements}.` : "No explicit measurements were given; choose realistic ones."}
+  const user = `Design this object: ${prompt}
+What it is: a ${plan.kind}. Overall size about ${round3(plan.width)} (x) × ${round3(plan.length)} (z) × ${round3(plan.height)} (y) m${plan.copies > 1 ? `, ${plan.copies} copies side by side` : ""}.
+${measurements ? `Parsed from the request — honour these exactly: ${measurements}.` : "No explicit measurements were given; use realistic ones close to the size above."}
+${checklist}
 ${answers.length ? `Clarifications:\n${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n")}` : ""}
 ${describeBaseline(baseline)}
 
@@ -186,20 +255,23 @@ Return the JSON object now.`;
   let passes = 0;
 
   try {
-    const raw = await request<RawGeometry>(system, user);
+    const raw = await request<RawGeometry>(system, user, {
+      timeoutMs: Math.max(8_000, Math.min(40_000, remaining() - 4_000)),
+    });
     passes++;
-    best = toResult(raw, baseline, passes);
+    best = toResult(raw, baseline, plan, passes);
   } catch (error) {
     console.warn("AI geometry pass 1 failed", error instanceof Error ? error.name : error);
     return null;
   }
 
   if (!best) return null;
-  if (options.singlePass || best.score >= 0.78) return best;
+  const good = best.score >= 0.78 && best.match.missing.length === 0;
+  if (options.singlePass || good || remaining() < REPAIR_MIN_MS) return best;
 
   // Second pass: hand the model its own output plus the concrete defects.
   try {
-    const critique = buildCritique(best);
+    const critique = buildCritique(best, plan);
     const repaired = await request<RawGeometry>(
       `${GEOMETRY_RULES}
 
@@ -215,11 +287,12 @@ ${critique}
 Current parts:
 ${JSON.stringify(best.parts.map(compactPart))}
 
-Return the corrected JSON object now.`
+Return the corrected JSON object now.`,
+      { timeoutMs: Math.max(6_000, remaining() - 4_000) }
     );
     passes++;
-    const second = toResult(repaired, baseline, passes);
-    if (second && second.score > best.score) return second;
+    const second = toResult(repaired, baseline, plan, passes);
+    if (second && second.match.quality > best.match.quality) return second;
   } catch (error) {
     console.warn("AI geometry repair pass failed", error instanceof Error ? error.name : error);
   }
@@ -227,11 +300,21 @@ Return the corrected JSON object now.`
   return best;
 }
 
-function buildCritique(result: AIGeometryResult): string {
+function buildCritique(result: AIGeometryResult, plan: Blueprint): string {
   const notes: string[] = [];
   const dims = dimensionsOf(result.parts);
   const span = Math.max(dims.width, dims.height, dims.depth);
 
+  if (result.match.missing.length) {
+    notes.push(
+      `- MISSING features the user asked for: ${result.match.missing.join(", ")}. Add each as named parts attached to the body.`
+    );
+  }
+  if (result.match.sizeFit < 0.7) {
+    notes.push(
+      `- Wrong size: the model is ${dims.width} × ${dims.depth} × ${dims.height} m but should be about ${round3(plan.width)} × ${round3(plan.length)} × ${round3(plan.height)} m (x × z × y).`
+    );
+  }
   if (result.issues.length) notes.push(...result.issues.map((issue) => `- ${issue}`));
   if (result.score < 0.6) {
     notes.push(
@@ -285,16 +368,15 @@ function compactPart(item: ModelPart) {
 function toResult(
   raw: RawGeometry,
   baseline: ThreeDConcept,
+  plan: Blueprint,
   passes: number
 ): AIGeometryResult | null {
   if (!raw || typeof raw !== "object") return null;
 
-  const targetMaxSize = Math.max(
-    baseline.dimensions.width,
-    baseline.dimensions.height,
-    baseline.dimensions.depth
-  );
-  const repaired = validateAndRepair(raw.parts, { targetMaxSize });
+  // Rescale against the planned size, not the baseline's: the baseline can be
+  // the thing that is wrong.
+  const targetMaxSize = Math.max(plan.width, plan.length, plan.height) * Math.max(1, plan.copies);
+  const repaired = validateAndRepair(raw.parts, { targetMaxSize, clusters: plan.copies });
   if (repaired.parts.length < 4) return null;
 
   return {
@@ -308,24 +390,61 @@ function toResult(
     primitives: repaired.primitives,
     issues: repaired.issues,
     passes,
+    match: matchParts(plan, repaired.parts),
   };
 }
 
 /**
- * Choose between AI-authored geometry and the parametric baseline.
- * The AI follows the wording more closely, so it wins ties — but it never
- * ships when it is clearly the worse model.
+ * Kinds the parametric builder only sketches. For these the AI gets more slack:
+ * a capsule girl that scores well on tidiness is still a capsule girl.
+ */
+const WEAK_PROCEDURAL = new Set<ObjectKind>(["character", "animal", "robot", "product", "aircraft", "watercraft"]);
+
+export type GeometryChoice = {
+  concept: ThreeDConcept;
+  source: "ai" | "procedural";
+  /** Match report of the geometry that shipped. */
+  match: MatchReport;
+  /** Match report of the parametric baseline, for the log. */
+  baseMatch: MatchReport;
+  aiMatch?: MatchReport;
+  reason: string;
+};
+
+/**
+ * Choose between AI-authored geometry and the parametric baseline by overall
+ * quality — tidy geometry *and* the things the prompt asked for. The AI reads
+ * the wording, so it wins near-ties, and it wins outright when it covers
+ * features the baseline is missing.
  */
 export function pickBetterGeometry(
   baseline: ThreeDConcept,
-  ai: AIGeometryResult | null
-): { concept: ThreeDConcept; source: "ai" | "procedural"; aiScore: number; baseScore: number } {
-  const baseScore = scoreParts(baseline.parts);
-  if (!ai) return { concept: baseline, source: "procedural", aiScore: 0, baseScore };
+  ai: AIGeometryResult | null,
+  plan: Blueprint
+): GeometryChoice {
+  const baseMatch = matchParts(plan, baseline.parts);
+  if (!ai) {
+    return { concept: baseline, source: "procedural", match: baseMatch, baseMatch, reason: "AI недоступен" };
+  }
 
-  const wins = ai.score >= 0.45 && ai.score >= baseScore * 0.9;
-  if (!wins) return { concept: baseline, source: "procedural", aiScore: ai.score, baseScore };
+  const aiMatch = ai.match;
+  const margin = WEAK_PROCEDURAL.has(plan.kind) ? 0.1 : 0.04;
+  const coversMore = aiMatch.coverage > baseMatch.coverage + 0.15;
+  const usable = ai.score >= 0.45 && aiMatch.sizeFit >= 0.3;
+  const wins = usable && (aiMatch.quality >= baseMatch.quality - margin || coversMore);
 
+  const pct = (n: number) => `${Math.round(n * 100)}%`;
+  const reason = wins
+    ? `AI: качество ${pct(aiMatch.quality)} против ${pct(baseMatch.quality)}, соответствие запросу ${pct(aiMatch.coverage)} против ${pct(baseMatch.coverage)}`
+    : !usable
+      ? `AI-геометрия отклонена: ${ai.score < 0.45 ? "развалилась на части" : "не тот размер"}`
+      : `Параметрическая модель лучше: ${pct(baseMatch.quality)} против ${pct(aiMatch.quality)}`;
+
+  if (!wins) {
+    return { concept: baseline, source: "procedural", match: baseMatch, baseMatch, aiMatch, reason };
+  }
+
+  const dims = dimensionsOf(ai.parts);
   return {
     concept: {
       ...baseline,
@@ -333,16 +452,18 @@ export function pickBetterGeometry(
       description: ai.description,
       parts: ai.parts,
       structure: structureFromGroups(ai.parts),
-      dimensions: dimensionsOf(ai.parts),
+      dimensions: dims,
       source: "ai",
       requirements: [
-        `Габариты: ${dimensionsOf(ai.parts).width} × ${dimensionsOf(ai.parts).depth} × ${dimensionsOf(ai.parts).height} м`,
+        `Габариты: ${dims.width} × ${dims.depth} × ${dims.height} м`,
         `Детализация: ${primitiveCount(ai.parts)} примитивов`,
         ...baseline.requirements.slice(2),
       ],
     },
     source: "ai",
-    aiScore: ai.score,
-    baseScore,
+    match: aiMatch,
+    baseMatch,
+    aiMatch,
+    reason,
   };
 }

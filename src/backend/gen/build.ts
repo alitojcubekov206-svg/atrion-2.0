@@ -10,7 +10,14 @@
  * Axes: x = width (side to side), y = up, z = length (+z is the front).
  */
 import type { ModelPart, ThreeDConcept } from "@/shared/types";
-import { part, shade, wrapConcept, type Rng } from "@/shared/geometry";
+import {
+  part,
+  partsBounds,
+  shade,
+  translateParts,
+  wrapConcept,
+  type Rng,
+} from "@/shared/geometry";
 import { titleFromPrompt } from "@/backend/gen/prompt-params";
 import {
   cushion,
@@ -28,7 +35,7 @@ import {
   windowUnit,
   type Vec3,
 } from "@/backend/gen/details";
-import { describeBlueprint, type Blueprint } from "@/backend/gen/blueprint";
+import { describeBlueprint, planFromPrompt, type Blueprint } from "@/backend/gen/blueprint";
 
 /** The main mass, once it exists — everything else anchors to this. */
 type Body = {
@@ -36,6 +43,15 @@ type Body = {
   halfL: number;
   y0: number;
   y1: number;
+};
+
+/** The raised volume of a vehicle — glazing and doors are laid out on it. */
+type Cabin = {
+  y0: number;
+  y1: number;
+  z0: number;
+  z1: number;
+  halfW: number;
 };
 
 type Ctx = {
@@ -46,6 +62,11 @@ type Ctx = {
   body: Body;
   /** True when the thing stands on end (people, robots, buildings). */
   upright: boolean;
+  cabin?: Cabin;
+  /** Where a lamp's shade hangs, set by the radial mass. */
+  lampHead?: { at: Vec3; tilt: number };
+  /** Top of the floor slab inside a room shell. */
+  floorY?: number;
 };
 
 function push(ctx: Ctx, ...parts: (ModelPart | ModelPart[])[]) {
@@ -60,14 +81,50 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
 /* ================= entry point ================= */
 
 export function buildFromBlueprint(bp: Blueprint): ThreeDConcept {
+  let parts = buildParts(bp, "p");
+
+  // "три стула" — the same object again, side by side.
+  if (bp.copies > 1) {
+    const { min, max } = partsBounds(parts);
+    const step = (max[0] - min[0]) * 1.25;
+    const single = parts;
+    parts = [];
+    for (let i = 0; i < bp.copies; i++) {
+      const dx = (i - (bp.copies - 1) / 2) * step;
+      parts.push(...translateParts(single, [dx, 0, 0], `c${i}-`));
+    }
+  }
+
+  return wrapConcept({
+    name: titleFromPrompt(bp.prompt, "Модель Atrion"),
+    description: describeModel(bp),
+    category: bp.kind,
+    seed: bp.seed,
+    parts,
+    engineeringNotes: [
+      `Разбор запроса: ${describeBlueprint(bp)}`,
+      `Найденные признаки: ${bp.matched.join(", ")}`,
+      `Собрано деталей: ${parts.length}`,
+    ],
+  });
+}
+
+/** Geometry for one blueprint, before grounding — reused for room furniture. */
+function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
   const ctx: Ctx = {
     bp,
     rng: bp.rng,
-    id: ids("p"),
+    id: ids(prefix),
     parts: [],
     body: { halfW: bp.width / 2, halfL: bp.length / 2, y0: 0, y1: bp.height },
     upright: bp.legs === 2 || bp.massPlan === "stacked" || bp.massPlan === "shell",
   };
+
+  // A sword on its own is the whole object, not a detail on a body.
+  if (bp.kind === "weapon" && bp.arms === 0) {
+    addStandaloneBlade(ctx);
+    return ctx.parts;
+  }
 
   const clearance = groundClearance(ctx);
   ctx.body.y0 = clearance;
@@ -77,6 +134,7 @@ export function buildFromBlueprint(bp: Blueprint): ThreeDConcept {
 
   // Ground contact
   if (bp.wheels > 0) addWheels(ctx);
+  if (bp.trailer) addTrailer(ctx);
   if (bp.tracks) addTracks(ctx);
   if (bp.legs > 0) addLegs(ctx);
   if (bp.furnitureLegs > 0) addFurnitureLegs(ctx);
@@ -86,6 +144,8 @@ export function buildFromBlueprint(bp: Blueprint): ThreeDConcept {
   // Anatomy
   if (bp.head > 0) addHead(ctx);
   if (bp.arms > 0) addArms(ctx);
+  if (bp.armour && bp.head > 0 && ctx.upright) addArmour(ctx);
+  if (bp.blade) addHeldBlade(ctx);
   if (bp.wings > 0) addWings(ctx);
   if (bp.tail > 0) addTail(ctx);
   if (bp.spikes > 0) addSpikes(ctx);
@@ -115,6 +175,7 @@ export function buildFromBlueprint(bp: Blueprint): ThreeDConcept {
   if (bp.shelves > 0) addShelves(ctx);
   if (bp.drawers > 0) addDrawers(ctx);
   if (bp.pillows > 0) addPillows(ctx);
+  if (bp.furnishings.length && bp.massPlan === "shell") furnishRoom(ctx);
 
   // Hardware
   if (bp.screens > 0) addScreens(ctx);
@@ -123,6 +184,7 @@ export function buildFromBlueprint(bp: Blueprint): ThreeDConcept {
   if (bp.lenses > 0) addLenses(ctx);
   if (bp.antennas > 0) addAntennas(ctx);
   if (bp.vents > 0) addVents(ctx);
+  if (bp.slots > 0) addSlots(ctx);
   if (bp.handles > 0) addHandles(ctx);
   if (bp.spout) addSpout(ctx);
   if (bp.lid) addLid(ctx);
@@ -134,23 +196,10 @@ export function buildFromBlueprint(bp: Blueprint): ThreeDConcept {
   if (bp.mast) addMast(ctx);
 
   addSurfaceDetail(ctx);
-
-  return wrapConcept({
-    name: titleFromPrompt(bp.prompt, "Модель Atrion"),
-    description: describeModel(ctx),
-    category: bp.sizeClass,
-    seed: bp.seed,
-    parts: ctx.parts,
-    engineeringNotes: [
-      `Разбор запроса: ${describeBlueprint(bp)}`,
-      `Найденные признаки: ${bp.matched.join(", ")}`,
-      `Собрано деталей: ${ctx.parts.length}`,
-    ],
-  });
+  return ctx.parts;
 }
 
-function describeModel(ctx: Ctx): string {
-  const { bp } = ctx;
+function describeModel(bp: Blueprint): string {
   const bits: string[] = [];
   if (bp.floors > 0) bits.push(`${bp.floors} эт.`);
   if (bp.wheels) bits.push(`${bp.wheels} колёс`);
@@ -159,14 +208,22 @@ function describeModel(ctx: Ctx): string {
   if (bp.windows) bits.push(`${bp.windows} окон`);
   if (bp.screens) bits.push("экран");
   if (bp.roof !== "none") bits.push(`крыша ${bp.roof}`);
+  if (bp.furnishings.length) bits.push(`мебель: ${bp.furnishings.join(", ")}`);
+  if (bp.copies > 1) bits.push(`${bp.copies} шт.`);
   return `Модель по описанию «${bp.prompt}». ${bits.length ? `Состав: ${bits.join(", ")}.` : ""} Габарит ${bp.width.toFixed(2)} × ${bp.length.toFixed(2)} × ${bp.height.toFixed(2)} м.`;
 }
 
 /* ================= mass ================= */
 
+/** Wheel diameter: a house on wheels rolls on trailer wheels, not on wheels as tall as its walls. */
+function wheelDiameter(bp: Blueprint): number {
+  const diameter = bp.height * bp.wheelSize;
+  return bp.kind === "vehicle" || bp.kind === "aircraft" ? diameter : Math.min(diameter, 0.9);
+}
+
 function groundClearance(ctx: Ctx): number {
   const { bp } = ctx;
-  if (bp.wheels > 0) return bp.height * bp.wheelSize * 0.55;
+  if (bp.wheels > 0) return wheelDiameter(bp) * 0.55;
   if (bp.tracks) return bp.height * 0.3;
   if (bp.legs > 0 && bp.legStyle !== "furniture") return bp.height * bp.legLength;
   if (bp.furnitureLegs > 0 && (bp.tabletop || bp.seat)) {
@@ -225,7 +282,12 @@ function stackProfile(ctx: Ctx, levels: number): number[] {
 
 function massStacked(ctx: Ctx) {
   const { bp, body } = ctx;
-  const levels = clamp(bp.floors > 0 ? bp.floors : Math.max(2, bp.bodySegments), 1, 40);
+  const single = bp.kind === "appliance" || bp.kind === "furniture" || bp.kind === "device";
+  const levels = clamp(
+    bp.floors > 0 ? bp.floors : single ? Math.max(1, bp.bodySegments) : Math.max(2, bp.bodySegments),
+    1,
+    40
+  );
   const profile = stackProfile(ctx, levels);
   const total = body.y1 - body.y0;
   const step = total / levels;
@@ -352,18 +414,28 @@ function massElongated(ctx: Ctx) {
   const total = body.y1 - body.y0;
   const step = bp.length / segments;
 
+  // Cars, trucks and boats carry a raised cabin. It has to fit inside the
+  // requested height: stacking it on top made a 1.5 m sports car 2.1 m tall.
+  const cabin =
+    (bp.wheels > 2 || bp.tracks || bp.hull) && !bp.cannon && bp.kind !== "aircraft";
+  const truck = cabin && bp.wheels > 0 && (bp.wheels >= 6 || bp.length >= 7);
+  const lowerShare = !cabin ? 1 : truck ? 0.4 : bp.hull ? 0.62 : 0.56;
+  const lower = total * lowerShare;
+  const lowerTop = body.y0 + lower;
+
   for (let i = 0; i < segments; i++) {
     const t = segments === 1 ? 0 : i / (segments - 1);
     const shrink = 1 - t * bp.taper * 0.6;
     const z = -bp.length / 2 + step * (i + 0.5);
+    const height = cabin ? lower : total * (0.9 + 0.1 * shrink);
     push(
       ctx,
-      part(ctx.id(), `Корпус ${i + 1}`, {
+      part(ctx.id(), cabin ? (truck ? `Рама ${i + 1}` : `Кузов ${i + 1}`) : `Корпус ${i + 1}`, {
         shape: bp.bodyShape === "prism" ? "box" : bp.bodyShape,
         role: "volume",
         group: "Корпус",
-        position: [0, body.y0 + total * 0.5, z],
-        size: [bp.width * shrink, total * (0.9 + 0.1 * shrink), step * 1.04],
+        position: [0, body.y0 + (cabin ? lower / 2 : total * 0.5), z],
+        size: [bp.width * shrink, height, step * 1.04],
         color: i === 0 ? shade(bp.primary, -0.04) : bp.primary,
         material: "Корпус",
         metalness: bp.metalness,
@@ -372,28 +444,82 @@ function massElongated(ctx: Ctx) {
     );
   }
 
-  // A raised upper volume reads as a cabin, a chest, a superstructure.
-  if (bp.wheels > 0 || bp.tracks || bp.hull) {
-    const cabinL = bp.length * 0.42;
+  body.halfW = bp.width / 2;
+  body.halfL = bp.length / 2;
+  if (!cabin) return;
+
+  const upper = body.y1 - lowerTop;
+  if (truck) {
+    // Cab up front, cargo box behind it.
+    const cabL = bp.length * 0.26;
+    const cabZ = bp.length / 2 - cabL / 2;
+    const cargoL = bp.length - cabL - bp.length * 0.04;
     push(
       ctx,
-      part(ctx.id(), "Верхний объём", {
+      part(ctx.id(), "Кабина", {
         shape: "box",
         role: "volume",
-        group: "Корпус",
-        position: [0, body.y1 + total * 0.22, bp.length * 0.02],
-        size: [bp.width * 0.86, total * 0.5, cabinL],
-        color: shade(bp.primary, 0.06),
+        group: "Кабина",
+        position: [0, lowerTop + upper / 2 - upper * 0.02, cabZ],
+        size: [bp.width * 0.94, upper * 1.04, cabL],
+        color: shade(bp.primary, 0.05),
         material: "Кабина",
+        metalness: bp.metalness,
+        roughness: bp.roughness,
+      }),
+      part(ctx.id(), "Грузовой отсек", {
+        shape: "box",
+        role: "volume",
+        group: "Кузов",
+        position: [0, lowerTop + (upper * 0.96) / 2 - upper * 0.02, -bp.length / 2 + cargoL / 2],
+        size: [bp.width * 0.98, upper * 0.96, cargoL],
+        color: shade(bp.secondary, 0.08),
+        material: "Фургон",
+        roughness: 0.7,
+      })
+    );
+    ctx.cabin = { y0: lowerTop, y1: body.y1, z0: bp.length / 2 - cabL, z1: bp.length / 2, halfW: bp.width * 0.47 };
+  } else {
+    const cabinL = bp.length * (bp.hull ? 0.36 : 0.46);
+    const cabinZ = -bp.length * (bp.hull ? 0.08 : 0.04);
+    push(
+      ctx,
+      part(ctx.id(), bp.hull ? "Надстройка" : "Кабина", {
+        shape: "box",
+        role: "volume",
+        group: "Кабина",
+        position: [0, lowerTop + upper / 2 - upper * 0.03, cabinZ],
+        size: [bp.width * 0.84, upper * 1.06, cabinL],
+        color: shade(bp.primary, 0.06),
+        material: bp.hull ? "Надстройка" : "Кабина",
+        metalness: bp.metalness,
+        roughness: bp.roughness,
+      }),
+      // Hood and trunk slope into the cabin instead of meeting it at a step.
+      part(ctx.id(), "Капот", {
+        shape: "wedge",
+        role: "detail",
+        group: "Кузов",
+        position: [0, lowerTop + upper * 0.12, cabinZ + cabinL / 2 + bp.length * 0.05],
+        size: [bp.length * 0.1, upper * 0.24, bp.width * 0.84],
+        rotation: [0, Math.PI / 2, 0],
+        color: shade(bp.primary, -0.02),
+        material: "Капот",
         metalness: bp.metalness,
         roughness: bp.roughness,
       })
     );
-    body.y1 += total * 0.45;
+    ctx.cabin = {
+      y0: lowerTop,
+      y1: body.y1,
+      z0: cabinZ - cabinL / 2,
+      z1: cabinZ + cabinL / 2,
+      halfW: bp.width * 0.42,
+    };
   }
 
-  body.halfW = bp.width / 2;
-  body.halfL = bp.length / 2;
+  // From here on "the body" is the lower hull — lights, trim and doors sit on it.
+  body.y1 = lowerTop;
 }
 
 function massPlatform(ctx: Ctx) {
@@ -438,8 +564,147 @@ function massPlatform(ctx: Ctx) {
   body.halfL = bp.length / 2;
 }
 
+/** Point `length` along a direction tilted `angle` radians from +y toward +z. */
+function along(start: Vec3, angle: number, length: number): Vec3 {
+  return [start[0], start[1] + Math.cos(angle) * length, start[2] + Math.sin(angle) * length];
+}
+
+/** A lamp: weighted base, a stem or a jointed arm, and the head the shade hangs from. */
+function massLamp(ctx: Ctx) {
+  const { bp, body } = ctx;
+  const total = body.y1 - body.y0;
+  const baseD = Math.max(bp.width * 0.75, total * 0.32);
+  const baseH = total * 0.05;
+  const stemD = Math.max(0.012, total * 0.035);
+  const metal = { metalness: Math.max(bp.metalness, 0.55), roughness: 0.35 };
+
+  push(
+    ctx,
+    part(ctx.id(), "Основание", {
+      shape: "cylinder",
+      role: "foundation",
+      group: "База",
+      position: [0, body.y0 + baseH / 2, 0],
+      size: [baseD, baseH, baseD],
+      sides: 32,
+      color: shade(bp.trim, 0.08),
+      material: "Утяжелённое основание",
+      ...metal,
+    }),
+    part(ctx.id(), "Выключатель", {
+      shape: "box",
+      role: "detail",
+      group: "База",
+      position: [baseD * 0.28, body.y0 + baseH + total * 0.008, baseD * 0.12],
+      size: [baseD * 0.12, total * 0.016, baseD * 0.08],
+      color: bp.accent,
+      material: "Выключатель",
+    })
+  );
+
+  const baseTop = body.y0 + baseH;
+  if (!bp.lampArm) {
+    const stemH = total * 0.8;
+    push(
+      ctx,
+      part(ctx.id(), "Стойка", {
+        shape: "cylinder",
+        role: "structure",
+        group: "Стойка",
+        position: [0, baseTop + stemH / 2, 0],
+        size: [stemD, stemH, stemD],
+        sides: 16,
+        color: bp.primary,
+        material: "Стойка",
+        ...metal,
+      })
+    );
+    ctx.lampHead = { at: [0, baseTop + stemH, 0], tilt: 0 };
+  } else {
+    // Two arms and two joints — the silhouette that says "desk lamp".
+    const lowerAngle = -0.3;
+    const upperAngle = 1.15;
+    const lowerL = total * 0.62;
+    const upperL = total * 0.42;
+    const start: Vec3 = [0, baseTop, -baseD * 0.12];
+    const elbow = along(start, lowerAngle, lowerL);
+    const wrist = along(elbow, upperAngle, upperL);
+    const mid = (a: Vec3, b: Vec3): Vec3 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+
+    push(
+      ctx,
+      part(ctx.id(), "Нижнее плечо", {
+        shape: "cylinder",
+        role: "structure",
+        group: "Стойка",
+        position: mid(start, elbow),
+        size: [stemD, lowerL, stemD],
+        rotation: [lowerAngle, 0, 0],
+        sides: 14,
+        color: bp.primary,
+        material: "Плечо",
+        ...metal,
+      }),
+      part(ctx.id(), "Пружина", {
+        shape: "cylinder",
+        role: "detail",
+        group: "Стойка",
+        position: mid(start, elbow),
+        size: [stemD * 0.45, lowerL * 0.7, stemD * 0.45],
+        rotation: [lowerAngle, 0, 0],
+        sides: 8,
+        color: "#b6bcc4",
+        material: "Пружина",
+        metalness: 0.85,
+        roughness: 0.25,
+      }),
+      part(ctx.id(), "Локтевой шарнир", {
+        shape: "sphere",
+        role: "detail",
+        group: "Стойка",
+        position: elbow,
+        size: [stemD * 2.2, stemD * 2.2, stemD * 2.2],
+        color: shade(bp.trim, -0.05),
+        material: "Шарнир",
+        ...metal,
+      }),
+      part(ctx.id(), "Верхнее плечо", {
+        shape: "cylinder",
+        role: "structure",
+        group: "Стойка",
+        position: mid(elbow, wrist),
+        size: [stemD * 0.9, upperL, stemD * 0.9],
+        rotation: [upperAngle, 0, 0],
+        sides: 14,
+        color: bp.primary,
+        material: "Плечо",
+        ...metal,
+      }),
+      part(ctx.id(), "Шарнир плафона", {
+        shape: "sphere",
+        role: "detail",
+        group: "Стойка",
+        position: wrist,
+        size: [stemD * 1.8, stemD * 1.8, stemD * 1.8],
+        color: shade(bp.trim, -0.05),
+        material: "Шарнир",
+        ...metal,
+      })
+    );
+    ctx.lampHead = { at: wrist, tilt: 0.55 };
+  }
+
+  body.halfW = baseD / 2;
+  body.halfL = baseD / 2;
+  body.y1 = baseTop;
+}
+
 function massRadial(ctx: Ctx) {
   const { bp, body } = ctx;
+  if (bp.kind === "lighting") {
+    massLamp(ctx);
+    return;
+  }
   const total = body.y1 - body.y0;
   const baseR = bp.width * 0.5;
 
@@ -512,16 +777,17 @@ function massShell(ctx: Ctx) {
       material: "Стена",
       roughness: 0.9,
     }),
+    // Back and left walls only: the default camera looks in from the front
+    // right, and a right-hand wall would hide the whole interior.
     part(ctx.id(), "Боковая стена", {
       shape: "box",
       role: "wall",
       group: "Стены",
-      position: [bp.width / 2 - wall / 2, body.y0 + h / 2, 0],
+      position: [-bp.width / 2 + wall / 2, body.y0 + h / 2, 0],
       size: [wall, h, bp.length],
       color: shade(bp.primary, -0.04),
       material: "Стена",
       roughness: 0.9,
-      mirror: "x",
     }),
     part(ctx.id(), "Плинтус", {
       shape: "box",
@@ -536,11 +802,10 @@ function massShell(ctx: Ctx) {
       shape: "box",
       role: "detail",
       group: "Стены",
-      position: [bp.width / 2 - wall * 1.4, body.y0 + wall + h * 0.03, 0],
+      position: [-bp.width / 2 + wall * 1.4, body.y0 + wall + h * 0.03, 0],
       size: [wall * 0.6, h * 0.045, bp.length * 0.98],
       color: bp.trim,
       material: "Плинтус",
-      mirror: "x",
     }),
     part(ctx.id(), "Карниз", {
       shape: "box",
@@ -555,13 +820,14 @@ function massShell(ctx: Ctx) {
 
   body.halfW = bp.width / 2 - wall;
   body.halfL = bp.length / 2 - wall;
+  ctx.floorY = body.y0 + wall;
 }
 
 /* ================= ground contact ================= */
 
 function addWheels(ctx: Ctx) {
   const { bp, body } = ctx;
-  const diameter = bp.height * bp.wheelSize;
+  const diameter = wheelDiameter(bp);
   const width = diameter * 0.34;
   const pairs = clamp(Math.round(bp.wheels / 2), 1, 6);
   const y = diameter / 2;
@@ -1100,15 +1366,22 @@ function addHead(ctx: Ctx) {
   }
 }
 
-function addArms(ctx: Ctx) {
-  const { bp, body } = ctx;
-  const count = clamp(bp.arms, 1, 8);
-  const pairs = Math.max(1, Math.round(count / 2));
+/** Shoulder, reach and limb thickness — shared by the arms and whatever they hold. */
+function armFrame(ctx: Ctx) {
+  const { body } = ctx;
   const span = body.y1 - body.y0;
   const shoulderY = body.y1 - span * 0.12;
   const armLength = span * 0.92;
   const thickness = Math.min(body.halfW * 0.34, armLength * 0.16);
   const x = body.halfW * 1.02;
+  return { span, shoulderY, armLength, thickness, x, hand: [x + thickness * 0.34, shoulderY - armLength * 0.98, 0] as Vec3 };
+}
+
+function addArms(ctx: Ctx) {
+  const { bp } = ctx;
+  const count = clamp(bp.arms, 1, 8);
+  const pairs = Math.max(1, Math.round(count / 2));
+  const { span, shoulderY, armLength, thickness, x } = armFrame(ctx);
   const mech = bp.legStyle === "mech";
   const skin = bp.secondary;
   const repeat = pairs > 1 ? { count: pairs, step: [0, -span * 0.22, 0] as Vec3 } : undefined;
@@ -1382,6 +1655,14 @@ function addFins(ctx: Ctx) {
  */
 function addWindows(ctx: Ctx) {
   const { bp, body } = ctx;
+  if (ctx.cabin) {
+    addVehicleGlazing(ctx);
+    return;
+  }
+  if (bp.massPlan === "shell") {
+    addRoomWindows(ctx);
+    return;
+  }
   const levels = Math.max(1, bp.floors || 1);
   const span = body.y1 - body.y0;
   const levelHeight = span / levels;
@@ -1470,10 +1751,36 @@ function addDoors(ctx: Ctx) {
   const height = Math.min(span * 0.72, bp.height * 0.3);
   const width = Math.min(bp.width * 0.2, height * 0.62);
 
-  if (bp.shelves > 0 || bp.drawers > 0) {
-    // Cabinet doors: full-height leaves on the front of the carcass.
+  if (ctx.cabin && bp.kind === "vehicle") {
+    addVehicleDoors(ctx);
+    return;
+  }
+
+  if (bp.massPlan === "shell") {
+    // A room door on the side wall, opening inward.
+    const doorH = Math.min(2.05, span * 0.78);
+    push(
+      ctx,
+      doorUnit({
+        id: ctx.id,
+        group: "Вход",
+        center: [-body.halfW, (ctx.floorY ?? body.y0) + doorH / 2, body.halfL * 0.45],
+        width: Math.min(0.9, bp.length * 0.25),
+        height: doorH,
+        facing: "right",
+        leafColor: shade(bp.accent, -0.1),
+        frameColor: shade(bp.trim, 0.3),
+      })
+    );
+    return;
+  }
+
+  if (bp.shelves > 0 || bp.drawers > 0 || bp.kind === "appliance" || bp.kind === "furniture") {
+    // Cabinet doors: full-height leaves on the front of the carcass. When there
+    // are drawers too, the doors take the left part and the drawers the right.
     const leaves = clamp(bp.doors, 1, 4);
-    const leafWidth = (bp.width * 0.96) / leaves;
+    const share = bp.drawers > 0 ? 0.6 : 0.96;
+    const leafWidth = (bp.width * share) / leaves;
     push(
       ctx,
       part(ctx.id(), "Фасад дверцы", {
@@ -2540,6 +2847,9 @@ function addDrawers(ctx: Ctx) {
   const count = clamp(bp.drawers, 1, 8);
   const span = body.y1 - body.y0;
   const height = (span * 0.9) / count;
+  // Doors take the left of the front when both are present (see addDoors).
+  const frontW = bp.doors > 0 ? bp.width * 0.34 : bp.width * 0.9;
+  const frontX = bp.doors > 0 ? bp.width * 0.3 : 0;
 
   push(
     ctx,
@@ -2547,8 +2857,8 @@ function addDrawers(ctx: Ctx) {
       shape: "box",
       role: "furniture",
       group: "Ящики",
-      position: [0, body.y0 + span * 0.05 + height / 2, body.halfL + bp.length * 0.015],
-      size: [bp.width * 0.9, height * 0.9, bp.length * 0.03],
+      position: [frontX, body.y0 + span * 0.05 + height / 2, body.halfL + bp.length * 0.015],
+      size: [frontW, height * 0.9, bp.length * 0.03],
       color: shade(bp.primary, 0.08),
       material: "Фасад",
       roughness: bp.roughness,
@@ -2558,8 +2868,8 @@ function addDrawers(ctx: Ctx) {
       shape: "cylinder",
       role: "detail",
       group: "Ящики",
-      position: [0, body.y0 + span * 0.05 + height / 2, body.halfL + bp.length * 0.04],
-      size: [bp.width * 0.018, bp.width * 0.3, bp.width * 0.018],
+      position: [frontX, body.y0 + span * 0.05 + height / 2, body.halfL + bp.length * 0.04],
+      size: [bp.width * 0.018, frontW * 0.34, bp.width * 0.018],
       rotation: [0, 0, Math.PI / 2],
       sides: 10,
       color: "#b6bcc4",
@@ -2625,12 +2935,14 @@ function addScreens(ctx: Ctx) {
     return;
   }
 
+  const appliance = bp.kind === "appliance";
   push(
     ctx,
     screenPanel({
       id: ctx.id,
-      center: [0, body.y0 + (body.y1 - body.y0) * 0.56, body.halfL + bp.length * 0.02],
-      width,
+      ...(appliance ? { name: "Дверца со стеклом" } : {}),
+      center: [appliance ? -bp.width * 0.12 : 0, body.y0 + (body.y1 - body.y0) * 0.5, body.halfL + bp.length * 0.02],
+      width: appliance ? bp.width * 0.62 : width,
       height,
       bezelColor: shade(bp.trim, 0.1),
       screenColor: "#16324f",
@@ -2700,7 +3012,33 @@ function addButtons(ctx: Ctx) {
   const { bp, body } = ctx;
   const count = clamp(bp.buttons, 1, 12);
   const size = Math.min(bp.width, bp.length) * 0.06;
-  const y = body.y0 + (body.y1 - body.y0) * 0.24;
+  const span = body.y1 - body.y0;
+
+  if (bp.kind === "appliance" && (bp.screens > 0 || bp.bodyShape === "cylinder")) {
+    // Microwave: a column beside the door. Robot vacuum: buttons on the lid.
+    const top = bp.bodyShape === "cylinder";
+    push(
+      ctx,
+      part(ctx.id(), "Кнопка", {
+        shape: "cylinder",
+        role: "detail",
+        group: "Управление",
+        position: top
+          ? [-size * 0.8, body.y1 + size * 0.1, size * 1.6]
+          : [bp.width * 0.37, body.y0 + span * 0.78, body.halfL + size * 0.2],
+        size: [size, size * 0.4, size],
+        ...(top ? {} : { rotation: [Math.PI / 2, 0, 0] as Vec3 }),
+        sides: 14,
+        color: bp.accent,
+        material: "Кнопка",
+        metalness: 0.3,
+        roughness: 0.4,
+        repeat: { count, step: top ? [size * 1.6, 0, 0] : [0, -span * 0.12, 0] },
+      })
+    );
+    return;
+  }
+  const y = body.y0 + span * (bp.kind === "appliance" && bp.lenses > 0 ? 0.9 : 0.24);
 
   push(
     ctx,
@@ -2723,6 +3061,53 @@ function addButtons(ctx: Ctx) {
 
 function addLenses(ctx: Ctx) {
   const { bp, body } = ctx;
+  if (bp.kind === "appliance") {
+    // A washing-machine porthole: ring, glass and a hinge.
+    const span = body.y1 - body.y0;
+    const d = Math.min(bp.width, span) * 0.62;
+    const y = body.y0 + span * 0.45;
+    push(
+      ctx,
+      part(ctx.id(), "Люк", {
+        shape: "torus",
+        role: "door",
+        group: "Люк",
+        position: [0, y, body.halfL + d * 0.05],
+        size: [d, d * 0.14, d],
+        rotation: [Math.PI / 2, 0, 0],
+        hole: 0.78,
+        sides: 36,
+        color: "#c9ced6",
+        material: "Обод люка",
+        metalness: 0.75,
+        roughness: 0.25,
+      }),
+      part(ctx.id(), "Стекло люка", {
+        shape: "cylinder",
+        role: "window",
+        group: "Люк",
+        position: [0, y, body.halfL + d * 0.03],
+        size: [d * 0.82, d * 0.04, d * 0.82],
+        rotation: [Math.PI / 2, 0, 0],
+        sides: 36,
+        color: "#3a5670",
+        material: "Стекло",
+        opacity: 0.55,
+        roughness: 0.05,
+      }),
+      part(ctx.id(), "Петля люка", {
+        shape: "box",
+        role: "detail",
+        group: "Люк",
+        position: [-d * 0.52, y, body.halfL + d * 0.05],
+        size: [d * 0.08, d * 0.2, d * 0.06],
+        color: "#9aa3ad",
+        material: "Петля",
+        metalness: 0.7,
+      })
+    );
+    return;
+  }
   const count = clamp(bp.lenses, 1, 6);
   const size = Math.min(bp.width, bp.length) * 0.18;
   const y = body.y0 + (body.y1 - body.y0) * 0.78;
@@ -2860,6 +3245,50 @@ function addHandles(ctx: Ctx) {
     return;
   }
 
+  // Vehicles get handles on their doors; buildings and rooms have none to carry.
+  if (ctx.cabin || ["vehicle", "building", "landmark", "room"].includes(bp.kind)) return;
+
+  if (bp.kind === "furniture" || bp.kind === "appliance" || bp.doors > 0) {
+    // Pull bars on the front, at the meeting edge of the leaves.
+    const span = body.y1 - body.y0;
+    const barH = Math.min(span * 0.35, 0.4);
+    const barD = Math.max(0.008, Math.min(bp.width, bp.length) * 0.03);
+    const paired = bp.doors >= 2 && bp.drawers === 0;
+    const x = paired ? bp.width * 0.05 : bp.drawers > 0 ? bp.width * 0.06 : bp.screens > 0 ? bp.width * 0.22 : bp.width * 0.36;
+    const y = body.y0 + span * (bp.kind === "appliance" ? 0.62 : 0.5);
+    const z = body.halfL + bp.length * 0.04;
+    push(
+      ctx,
+      part(ctx.id(), "Ручка", {
+        shape: "cylinder",
+        role: "detail",
+        group: "Ручка",
+        position: [x, y, z + barD * 1.6],
+        size: [barD, barH, barD],
+        sides: 12,
+        color: "#c9ced6",
+        material: "Ручка",
+        metalness: 0.8,
+        roughness: 0.25,
+        ...(paired ? { mirror: "x" as const } : {}),
+      }),
+      part(ctx.id(), "Крепление ручки", {
+        shape: "box",
+        role: "detail",
+        group: "Ручка",
+        position: [x, y - barH * 0.38, z + barD * 0.6],
+        size: [barD * 0.8, barD * 0.8, barD * 2],
+        color: "#9aa3ad",
+        material: "Крепление",
+        metalness: 0.7,
+        repeat: { count: 2, step: [0, barH * 0.76, 0] },
+        ...(paired ? { mirror: "x" as const } : {}),
+      })
+    );
+    return;
+  }
+
+
   push(
     ctx,
     part(ctx.id(), "Рукоять", {
@@ -2910,6 +3339,37 @@ function addSpout(ctx: Ctx) {
 function addLid(ctx: Ctx) {
   const { bp, body } = ctx;
   const size = Math.min(bp.width, bp.length);
+  if (bp.kind === "appliance") {
+    // Robot vacuum: the lidar turret and a bumper ring.
+    push(
+      ctx,
+      part(ctx.id(), "Лидар", {
+        shape: "cylinder",
+        role: "detail",
+        group: "Датчики",
+        position: [0, body.y1 + bp.height * 0.12, -size * 0.12],
+        size: [size * 0.26, bp.height * 0.26, size * 0.26],
+        sides: 24,
+        color: shade(bp.trim, -0.05),
+        material: "Лидар",
+        metalness: 0.4,
+        roughness: 0.3,
+      }),
+      part(ctx.id(), "Бампер", {
+        shape: "tube",
+        role: "detail",
+        group: "Корпус",
+        position: [0, body.y0 + (body.y1 - body.y0) * 0.45, 0],
+        size: [size * 1.07, (body.y1 - body.y0) * 0.42, size * 1.07],
+        hole: 0.94,
+        sides: 40,
+        color: "#2a2c31",
+        material: "Бампер",
+        roughness: 0.7,
+      })
+    );
+    return;
+  }
   push(
     ctx,
     part(ctx.id(), "Крышка", {
@@ -3054,15 +3514,96 @@ function addCables(ctx: Ctx) {
   );
 }
 
-function addLights(ctx: Ctx) {
-  const { bp, body } = ctx;
-  const count = clamp(bp.lights, 1, 8);
-  const size = Math.min(bp.width, bp.height) * 0.16;
-  const y = body.y0 + (body.y1 - body.y0) * (bp.wheels > 0 ? 0.45 : 0.7);
+function addLampShade(ctx: Ctx) {
+  const { bp } = ctx;
+  const { at, tilt } = ctx.lampHead!;
+  const total = bp.height;
+  const desk = bp.lampArm;
+  const shadeD = desk ? Math.max(bp.width * 0.8, total * 0.3) : Math.max(bp.width * 0.9, total * 0.24);
+  const shadeH = shadeD * (desk ? 0.75 : 0.7);
+  // A desk shade hangs off the wrist with its apex on the joint; a floor lamp
+  // carries a drum shade centred over the stem.
+  const t = desk ? -tilt : 0;
+  const center: Vec3 = desk
+    ? [at[0], at[1] - Math.cos(t) * shadeH * 0.42, at[2] - Math.sin(t) * shadeH * 0.42]
+    : [at[0], at[1] + shadeH * 0.3, at[2]];
+  const rim: Vec3 = [0, -Math.cos(t) * shadeH * 0.5, -Math.sin(t) * shadeH * 0.5];
 
   push(
     ctx,
-    part(ctx.id(), "Фара", {
+    part(ctx.id(), desk ? "Плафон" : "Абажур", {
+      shape: desk ? "cone" : "tube",
+      role: "light",
+      group: "Плафон",
+      position: center,
+      size: [shadeD, shadeH, shadeD],
+      rotation: [t, 0, 0],
+      sides: 32,
+      ...(desk ? {} : { hole: 0.94, opacity: 0.92 }),
+      color: desk ? bp.accent : "#efe6d2",
+      material: desk ? "Плафон" : "Абажур",
+      metalness: desk ? 0.5 : 0,
+      roughness: desk ? 0.35 : 0.9,
+    }),
+    part(ctx.id(), "Лампочка", {
+      shape: "sphere",
+      role: "light",
+      group: "Плафон",
+      position: [center[0] + rim[0] * 0.5, center[1] + rim[1] * 0.5, center[2] + rim[2] * 0.5],
+      size: [shadeD * 0.32, shadeD * 0.36, shadeD * 0.32],
+      color: "#fff2c0",
+      material: "Стекло лампы",
+      emissive: 0.95,
+      opacity: 0.9,
+      roughness: 0.1,
+    }),
+    part(ctx.id(), "Провод", {
+      shape: "cylinder",
+      role: "detail",
+      group: "База",
+      position: [0, Math.max(0.004, total * 0.008), -bp.width * 0.4 - total * 0.15],
+      size: [Math.max(0.005, total * 0.012), total * 0.3, Math.max(0.005, total * 0.012)],
+      rotation: [Math.PI / 2, 0, 0],
+      sides: 8,
+      color: "#1c1e22",
+      material: "Провод",
+      roughness: 0.8,
+    })
+  );
+  if (desk) {
+    push(
+      ctx,
+      part(ctx.id(), "Свечение", {
+        shape: "cylinder",
+        role: "light",
+        group: "Плафон",
+        position: [center[0] + rim[0] * 0.96, center[1] + rim[1] * 0.96, center[2] + rim[2] * 0.96],
+        size: [shadeD * 0.9, shadeH * 0.03, shadeD * 0.9],
+        rotation: [t, 0, 0],
+        sides: 32,
+        color: "#fff7d6",
+        material: "Рассеиватель",
+        emissive: 0.7,
+        opacity: 0.85,
+      })
+    );
+  }
+}
+
+function addLights(ctx: Ctx) {
+  const { bp, body } = ctx;
+  if (bp.kind === "lighting" && ctx.lampHead) {
+    addLampShade(ctx);
+    return;
+  }
+  const count = clamp(bp.lights, 1, 8);
+  const size = Math.min(bp.width, bp.height) * 0.16;
+  const y = body.y0 + (body.y1 - body.y0) * (bp.wheels > 0 ? 0.45 : 0.7);
+  const vehicle = bp.kind === "vehicle" || bp.wheels > 0 || bp.tracks;
+
+  push(
+    ctx,
+    part(ctx.id(), vehicle ? "Фара" : "Световой модуль", {
       shape: "sphere",
       role: "light",
       group: "Оптика",
@@ -3236,6 +3777,620 @@ function addMast(ctx: Ctx) {
   );
 }
 
+/* ================= vehicles ================= */
+
+function addVehicleGlazing(ctx: Ctx) {
+  const { bp } = ctx;
+  const c = ctx.cabin!;
+  const h = c.y1 - c.y0;
+  const len = c.z1 - c.z0;
+  const pane = Math.max(0.008, h * 0.03);
+  const glass = {
+    color: bp.glassy ? "#a7d8f5" : "#6f9fc4",
+    material: "Стекло",
+    opacity: 0.55,
+    metalness: 0.1,
+    roughness: 0.05,
+  };
+
+  push(
+    ctx,
+    part(ctx.id(), "Лобовое стекло", {
+      shape: "box",
+      role: "window",
+      group: "Остекление",
+      position: [0, c.y0 + h * 0.56, c.z1 + pane * 0.4],
+      size: [c.halfW * 2 * 0.88, h * 0.62, pane],
+      ...glass,
+    }),
+    part(ctx.id(), "Заднее стекло", {
+      shape: "box",
+      role: "window",
+      group: "Остекление",
+      position: [0, c.y0 + h * 0.58, c.z0 - pane * 0.4],
+      size: [c.halfW * 2 * 0.8, h * 0.5, pane],
+      ...glass,
+    }),
+    part(ctx.id(), "Боковое стекло", {
+      shape: "box",
+      role: "window",
+      group: "Остекление",
+      position: [c.halfW + pane * 0.4, c.y0 + h * 0.56, (c.z0 + c.z1) / 2],
+      size: [pane, h * 0.56, len * 0.84],
+      mirror: "x",
+      ...glass,
+    }),
+    part(ctx.id(), "Стойка кузова", {
+      shape: "box",
+      role: "structure",
+      group: "Кузов",
+      position: [c.halfW + pane * 0.9, c.y0 + h * 0.56, (c.z0 + c.z1) / 2],
+      size: [pane * 1.2, h * 0.6, Math.max(0.04, len * 0.05)],
+      color: shade(bp.trim, -0.1),
+      material: "Стойка",
+      mirror: "x",
+    }),
+    part(ctx.id(), "Дворник", {
+      shape: "box",
+      role: "detail",
+      group: "Остекление",
+      position: [c.halfW * 0.3, c.y0 + h * 0.28, c.z1 + pane * 1.4],
+      size: [c.halfW * 0.75, h * 0.03, pane],
+      rotation: [0, 0, 0.12],
+      color: "#1c1e22",
+      material: "Дворник",
+      mirror: "x",
+    }),
+    part(ctx.id(), "Зеркало", {
+      shape: "box",
+      role: "detail",
+      group: "Кузов",
+      position: [c.halfW + bp.width * 0.06, c.y0 + h * 0.3, c.z1 - len * 0.08],
+      size: [bp.width * 0.09, h * 0.14, bp.width * 0.035],
+      color: shade(bp.primary, -0.08),
+      material: "Зеркало",
+      mirror: "x",
+    })
+  );
+}
+
+function addVehicleDoors(ctx: Ctx) {
+  const { bp, body } = ctx;
+  const c = ctx.cabin!;
+  const perSide = clamp(Math.round(bp.doors / 2), 1, 2);
+  const len = (c.z1 - c.z0) / perSide;
+  const skin = Math.max(0.006, bp.width * 0.008);
+  // A truck cab carries its doors up on the cab; a car's sit on the lower body.
+  const onCab = c.z1 >= bp.length / 2 - 1e-6;
+  const x = (onCab ? c.halfW : body.halfW) + skin / 2;
+  const y0 = onCab ? c.y0 : body.y0 + (body.y1 - body.y0) * 0.12;
+  const y1 = onCab ? c.y1 - (c.y1 - c.y0) * 0.08 : body.y1 - (body.y1 - body.y0) * 0.04;
+  const repeat = perSide > 1 ? { repeat: { count: perSide, step: [0, 0, -len] as Vec3 } } : {};
+
+  push(
+    ctx,
+    part(ctx.id(), "Дверь", {
+      shape: "box",
+      role: "door",
+      group: "Двери",
+      position: [x, (y0 + y1) / 2, c.z1 - len / 2],
+      size: [skin, y1 - y0, len * 0.94],
+      color: shade(bp.primary, 0.03),
+      material: "Дверь",
+      metalness: bp.metalness,
+      roughness: bp.roughness,
+      mirror: "x",
+      ...repeat,
+    }),
+    part(ctx.id(), "Ручка двери", {
+      shape: "box",
+      role: "detail",
+      group: "Двери",
+      position: [x + skin * 1.5, y0 + (y1 - y0) * 0.78, c.z1 - len * 0.8],
+      size: [skin * 2, Math.max(0.015, (y1 - y0) * 0.07), len * 0.16],
+      color: "#c9ced6",
+      material: "Ручка",
+      metalness: 0.8,
+      roughness: 0.25,
+      mirror: "x",
+      ...repeat,
+    })
+  );
+}
+
+function addTrailer(ctx: Ctx) {
+  const { bp, body } = ctx;
+  const diameter = wheelDiameter(bp);
+  const trailerL = bp.length * 0.7;
+  const gap = bp.length * 0.06;
+  const z = -bp.length / 2 - gap - trailerL / 2;
+  const y0 = diameter * 0.55;
+  const h = Math.max(bp.height * 0.4, (bp.height - y0) * 0.9);
+
+  push(
+    ctx,
+    part(ctx.id(), "Прицеп", {
+      shape: "box",
+      role: "volume",
+      group: "Прицеп",
+      position: [0, y0 + h / 2, z],
+      size: [bp.width * 0.98, h, trailerL],
+      color: shade(bp.secondary, 0.1),
+      material: "Прицеп",
+      roughness: 0.7,
+    }),
+    part(ctx.id(), "Рама прицепа", {
+      shape: "box",
+      role: "structure",
+      group: "Прицеп",
+      position: [0, y0 - diameter * 0.04, z],
+      size: [bp.width * 0.7, diameter * 0.12, trailerL * 1.02],
+      color: "#3a3d42",
+      material: "Рама",
+      metalness: 0.6,
+    }),
+    part(ctx.id(), "Сцепка", {
+      shape: "cylinder",
+      role: "structure",
+      group: "Прицеп",
+      position: [0, y0, -bp.length / 2 - gap / 2],
+      size: [diameter * 0.12, gap * 1.6, diameter * 0.12],
+      rotation: [Math.PI / 2, 0, 0],
+      sides: 10,
+      color: "#4a4f57",
+      material: "Сцепка",
+      metalness: 0.7,
+    })
+  );
+  for (const offset of [-0.25, 0.25]) {
+    push(
+      ctx,
+      wheelUnit({
+        id: ctx.id,
+        center: [body.halfW * 0.94, diameter / 2, z + trailerL * offset],
+        diameter,
+        width: diameter * 0.34,
+        axis: "x",
+        rimColor: "#b6bcc4",
+        spokes: 5,
+        mirror: "x",
+        name: "Колесо прицепа",
+      })
+    );
+  }
+}
+
+/* ================= rooms ================= */
+
+function addRoomWindows(ctx: Ctx) {
+  const { bp, body } = ctx;
+  const span = body.y1 - body.y0;
+  const count = clamp(bp.windowsExplicit ? bp.windows : Math.round(bp.width / 2.6), 1, 4);
+  const step = (bp.width * 0.8) / count;
+  push(
+    ctx,
+    windowUnit({
+      id: ctx.id,
+      group: "Окна",
+      name: "Окно",
+      center: [-bp.width * 0.4 + step / 2, body.y0 + span * 0.56, -body.halfL],
+      width: Math.min(1.4, step * 0.7),
+      height: Math.min(1.5, span * 0.5),
+      facing: "front",
+      frameColor: shade(bp.trim, 0.35),
+      glassColor: "#a9d6f2",
+      mullions: 1,
+      transom: true,
+      sill: true,
+      ...(count > 1 ? { repeat: { count, step: [step, 0, 0] as Vec3 } } : {}),
+    })
+  );
+}
+
+const BIG_FURNITURE = new Set(["кровать", "диван", "шкаф", "кухонный гарнитур"]);
+
+/**
+ * Build each named piece as its own object, then stand it in the room: big
+ * pieces against the back wall, the rest in a row in front, a chair tucked
+ * behind its table so it faces it.
+ */
+function furnishRoom(ctx: Ctx) {
+  const { bp, body } = ctx;
+  const floor = ctx.floorY ?? body.y0;
+  const margin = 0.06;
+
+  const pieces = bp.furnishings.slice(0, 6).map((word, index) => {
+    const plan = planFromPrompt(word);
+    plan.kind = "furniture";
+    const parts = buildParts(plan, `f${index}`);
+    const { min, max } = partsBounds(parts);
+    return {
+      word,
+      parts,
+      w: max[0] - min[0],
+      d: max[2] - min[2],
+      cx: (min[0] + max[0]) / 2,
+      cz: (min[2] + max[2]) / 2,
+      minY: min[1],
+    };
+  });
+  type Piece = (typeof pieces)[number];
+  const placed: { piece: Piece; x: number; z: number }[] = [];
+
+  let cursor = -body.halfW + margin;
+  const front: Piece[] = [];
+  for (const piece of pieces) {
+    if (BIG_FURNITURE.has(piece.word) && cursor + piece.w <= body.halfW - margin) {
+      placed.push({ piece, x: cursor + piece.w / 2, z: -body.halfL + margin + piece.d / 2 });
+      cursor += piece.w + margin * 3;
+    } else {
+      front.push(piece);
+    }
+  }
+
+  const backDepth = Math.max(0, ...placed.map((item) => item.piece.d));
+  const table = front.find((piece) => piece.word === "стол" || piece.word === "журнальный столик");
+  const chair = table ? front.find((piece) => piece.word === "стул") : undefined;
+  const row = front.filter((piece) => piece !== chair);
+  const walkway = chair ? chair.d + 0.25 : 0.55;
+  const rowWidth = row.reduce((sum, piece) => sum + piece.w, 0) + margin * 4 * Math.max(0, row.length - 1);
+  let x = -Math.min(rowWidth, body.halfW * 2 - margin * 2) / 2;
+
+  for (const piece of row) {
+    if (x + piece.w > body.halfW - margin) break;
+    const z = Math.min(
+      body.halfL - margin - piece.d / 2,
+      -body.halfL + margin + backDepth + walkway + piece.d / 2
+    );
+    placed.push({ piece, x: x + piece.w / 2, z });
+    if (piece === table && chair) {
+      placed.push({ piece: chair, x: x + piece.w / 2, z: z - piece.d / 2 - chair.d / 2 + 0.14 });
+    }
+    x += piece.w + margin * 4;
+  }
+
+  for (const { piece, x: px, z: pz } of placed) {
+    const label = piece.word.charAt(0).toUpperCase() + piece.word.slice(1);
+    const moved = translateParts(piece.parts, [px - piece.cx, floor - piece.minY, pz - piece.cz]);
+    push(
+      ctx,
+      moved.map((item) => ({ ...item, group: label }))
+    );
+  }
+}
+
+/* ================= armour ================= */
+
+/** Plate over a standing figure: helmet with visor, breastplate, belt, greaves. */
+function addArmour(ctx: Ctx) {
+  const { bp, body } = ctx;
+  const { center, size } = headAnchor(ctx);
+  const span = body.y1 - body.y0;
+  const steel = { color: "#9aa3ad", material: "Сталь", metalness: 0.85, roughness: 0.28 };
+  const dark = { color: "#4a4f57", material: "Сталь", metalness: 0.8, roughness: 0.35 };
+  const legX = body.halfW * 0.45;
+  const legLength = body.y0;
+
+  push(
+    ctx,
+    part(ctx.id(), "Шлем", {
+      shape: "sphere",
+      role: "head",
+      group: "Доспехи",
+      position: [center[0], center[1] + size * 0.06, center[2] - size * 0.02],
+      size: [size * 1.16, size * 1.14, size * 1.16],
+      ...steel,
+    }),
+    part(ctx.id(), "Забрало", {
+      shape: "box",
+      role: "detail",
+      group: "Доспехи",
+      position: [center[0], center[1] + size * 0.04, center[2] + size * 0.52],
+      size: [size * 0.62, size * 0.1, size * 0.12],
+      ...dark,
+    }),
+    part(ctx.id(), "Гребень шлема", {
+      shape: "box",
+      role: "detail",
+      group: "Доспехи",
+      position: [center[0], center[1] + size * 0.6, center[2] - size * 0.05],
+      size: [size * 0.08, size * 0.18, size * 0.9],
+      color: bp.accent,
+      material: "Плюмаж",
+      roughness: 0.8,
+    }),
+    part(ctx.id(), "Кираса", {
+      shape: "capsule",
+      role: "detail",
+      group: "Доспехи",
+      position: [0, body.y0 + span * 0.62, 0],
+      size: [body.halfW * 2.08, span * 0.62, body.halfL * 2.1],
+      ...steel,
+    }),
+    part(ctx.id(), "Пояс", {
+      shape: "torus",
+      role: "detail",
+      group: "Доспехи",
+      position: [0, body.y0 + span * 0.3, 0],
+      size: [body.halfW * 2.12, span * 0.06, body.halfL * 2.12],
+      hole: 0.8,
+      sides: 28,
+      color: "#3b2a20",
+      material: "Кожа",
+      roughness: 0.8,
+    }),
+    part(ctx.id(), "Пряжка", {
+      shape: "box",
+      role: "detail",
+      group: "Доспехи",
+      position: [0, body.y0 + span * 0.3, body.halfL * 1.06],
+      size: [body.halfW * 0.3, span * 0.07, body.halfL * 0.1],
+      color: "#c9973f",
+      material: "Латунь",
+      metalness: 0.8,
+    })
+  );
+
+  if (legLength > 0.05) {
+    push(
+      ctx,
+      part(ctx.id(), "Поножи", {
+        shape: "cylinder",
+        role: "limb",
+        group: "Доспехи",
+        position: [legX, legLength * 0.3, 0],
+        size: [body.halfW * 0.5, legLength * 0.42, body.halfW * 0.5],
+        sides: 16,
+        mirror: "x",
+        ...steel,
+      }),
+      part(ctx.id(), "Наколенник", {
+        shape: "sphere",
+        role: "limb",
+        group: "Доспехи",
+        position: [legX, legLength * 0.5, body.halfW * 0.12],
+        size: [body.halfW * 0.4, body.halfW * 0.36, body.halfW * 0.3],
+        mirror: "x",
+        ...dark,
+      })
+    );
+  }
+}
+
+/* ================= blades ================= */
+
+/** A sword in the right hand, point down along the leg. */
+function addHeldBlade(ctx: Ctx) {
+  const { bp } = ctx;
+  if (bp.arms === 0) return;
+  const { hand, thickness } = armFrame(ctx);
+  const grip = thickness * 1.6;
+  const x = hand[0] + thickness * 0.1;
+  const z = thickness * 0.5;
+  const guardY = hand[1] - grip / 2 - thickness * 0.15;
+  const bladeLen = Math.max(thickness * 4, Math.min(guardY - 0.05, bp.height * 0.5));
+  const steel = { color: "#c9ced6", material: "Сталь", metalness: 0.85, roughness: 0.2 };
+
+  push(
+    ctx,
+    part(ctx.id(), "Рукоять меча", {
+      shape: "cylinder",
+      role: "detail",
+      group: "Оружие",
+      position: [x, hand[1], z],
+      size: [thickness * 0.35, grip, thickness * 0.35],
+      sides: 10,
+      color: "#3b2a20",
+      material: "Кожа",
+      roughness: 0.8,
+    }),
+    part(ctx.id(), "Навершие", {
+      shape: "sphere",
+      role: "detail",
+      group: "Оружие",
+      position: [x, hand[1] + grip / 2 + thickness * 0.18, z],
+      size: [thickness * 0.5, thickness * 0.5, thickness * 0.5],
+      color: "#c9973f",
+      material: "Латунь",
+      metalness: 0.8,
+    }),
+    part(ctx.id(), "Гарда", {
+      shape: "box",
+      role: "detail",
+      group: "Оружие",
+      position: [x, guardY, z],
+      size: [thickness * 2.2, thickness * 0.3, thickness * 0.5],
+      color: "#c9973f",
+      material: "Латунь",
+      metalness: 0.8,
+    }),
+    part(ctx.id(), "Клинок", {
+      shape: "box",
+      role: "detail",
+      group: "Оружие",
+      position: [x, guardY - bladeLen / 2, z],
+      size: [thickness * 0.55, bladeLen, thickness * 0.1],
+      ...steel,
+    }),
+    part(ctx.id(), "Острие", {
+      shape: "pyramid",
+      role: "detail",
+      group: "Оружие",
+      position: [x, guardY - bladeLen - thickness * 0.35, z],
+      size: [thickness * 0.55, thickness * 0.7, thickness * 0.1],
+      rotation: [Math.PI, 0, 0],
+      ...steel,
+    })
+  );
+}
+
+/** The weapon as the whole object, standing point up. */
+function addStandaloneBlade(ctx: Ctx) {
+  const { bp } = ctx;
+  const H = bp.height;
+  const steel = { color: "#c9ced6", material: "Сталь", metalness: 0.85, roughness: 0.2 };
+  const brass = { color: "#c9973f", material: "Латунь", metalness: 0.8, roughness: 0.3 };
+
+  if (/топор|axe/i.test(bp.params.raw)) {
+    push(
+      ctx,
+      part(ctx.id(), "Топорище", {
+        shape: "cylinder",
+        role: "structure",
+        group: "Рукоять",
+        position: [0, H * 0.475, 0],
+        size: [H * 0.045, H * 0.95, H * 0.045],
+        sides: 12,
+        color: "#7a543a",
+        material: "Дерево",
+        roughness: 0.8,
+      }),
+      part(ctx.id(), "Обух", {
+        shape: "box",
+        role: "detail",
+        group: "Топор",
+        position: [0, H * 0.86, 0],
+        size: [H * 0.12, H * 0.13, H * 0.06],
+        ...steel,
+      }),
+      part(ctx.id(), "Лезвие топора", {
+        shape: "wedge",
+        role: "detail",
+        group: "Топор",
+        position: [H * 0.14, H * 0.86, 0],
+        size: [H * 0.2, H * 0.22, H * 0.025],
+        ...steel,
+      })
+    );
+    return;
+  }
+
+  push(
+    ctx,
+    part(ctx.id(), "Навершие", {
+      shape: "sphere",
+      role: "detail",
+      group: "Рукоять",
+      position: [0, H * 0.028, 0],
+      size: [H * 0.055, H * 0.055, H * 0.055],
+      ...brass,
+    }),
+    part(ctx.id(), "Рукоять", {
+      shape: "cylinder",
+      role: "structure",
+      group: "Рукоять",
+      position: [0, H * 0.145, 0],
+      size: [H * 0.035, H * 0.18, H * 0.035],
+      sides: 12,
+      color: "#3b2a20",
+      material: "Кожа",
+      roughness: 0.85,
+    }),
+    part(ctx.id(), "Обмотка", {
+      shape: "torus",
+      role: "detail",
+      group: "Рукоять",
+      position: [0, H * 0.075, 0],
+      size: [H * 0.04, H * 0.008, H * 0.04],
+      hole: 0.7,
+      sides: 14,
+      color: "#2a1d16",
+      material: "Кожа",
+      repeat: { count: 5, step: [0, H * 0.034, 0] },
+    }),
+    part(ctx.id(), "Гарда", {
+      shape: "box",
+      role: "detail",
+      group: "Гарда",
+      position: [0, H * 0.245, 0],
+      size: [bp.width, H * 0.03, H * 0.05],
+      ...brass,
+    }),
+    part(ctx.id(), "Наконечник гарды", {
+      shape: "sphere",
+      role: "detail",
+      group: "Гарда",
+      position: [bp.width / 2, H * 0.245, 0],
+      size: [H * 0.04, H * 0.04, H * 0.04],
+      mirror: "x",
+      ...brass,
+    }),
+    part(ctx.id(), "Клинок", {
+      shape: "box",
+      role: "volume",
+      group: "Клинок",
+      position: [0, H * 0.57, 0],
+      size: [H * 0.055, H * 0.62, H * 0.009],
+      ...steel,
+    }),
+    part(ctx.id(), "Дол", {
+      shape: "box",
+      role: "detail",
+      group: "Клинок",
+      position: [0, H * 0.53, 0],
+      size: [H * 0.012, H * 0.48, H * 0.0115],
+      color: "#9aa3ad",
+      material: "Дол",
+      metalness: 0.85,
+      roughness: 0.3,
+    }),
+    part(ctx.id(), "Острие", {
+      shape: "pyramid",
+      role: "detail",
+      group: "Клинок",
+      position: [0, H * 0.93, 0],
+      size: [H * 0.055, H * 0.1, H * 0.009],
+      ...steel,
+    })
+  );
+}
+
+/* ================= appliances ================= */
+
+function addSlots(ctx: Ctx) {
+  const { bp, body } = ctx;
+  const count = clamp(bp.slots, 1, 4);
+  const span = body.y1 - body.y0;
+  const depth = Math.max(0.004, bp.height * 0.03);
+  const gap = (bp.length * 0.62) / count;
+
+  push(
+    ctx,
+    part(ctx.id(), "Слот для хлеба", {
+      shape: "box",
+      role: "detail",
+      group: "Слоты",
+      position: [0, body.y1 + depth * 0.2, -bp.length * 0.31 + gap / 2],
+      size: [bp.width * 0.72, depth, bp.length * 0.12],
+      color: "#1b1d21",
+      material: "Слот",
+      roughness: 0.9,
+      ...(count > 1 ? { repeat: { count, step: [0, 0, gap] as Vec3 } } : {}),
+    }),
+    part(ctx.id(), "Рычаг", {
+      shape: "box",
+      role: "detail",
+      group: "Управление",
+      position: [body.halfW + bp.width * 0.03, body.y0 + span * 0.62, 0],
+      size: [bp.width * 0.06, span * 0.07, bp.length * 0.2],
+      color: bp.trim,
+      material: "Рычаг",
+      metalness: 0.4,
+    }),
+    part(ctx.id(), "Ножка", {
+      shape: "cylinder",
+      role: "foundation",
+      group: "Корпус",
+      position: [body.halfW * 0.8, body.y0 + span * 0.015, body.halfL * 0.75],
+      size: [bp.width * 0.06, span * 0.03, bp.width * 0.06],
+      sides: 10,
+      color: "#1b1d21",
+      material: "Резина",
+      mirror: "xz",
+    })
+  );
+}
+
 /* ================= finishing ================= */
 
 /**
@@ -3245,33 +4400,44 @@ function addMast(ctx: Ctx) {
  */
 function addSurfaceDetail(ctx: Ctx) {
   const { bp, body } = ctx;
-  if (bp.detail < 0.7) return;
+  // Lamps are all stem and shade; rooms have their own plinths and an open
+  // front; bolts and trim plates on a cat or a girl only make them look boxed.
+  if (bp.detail < 0.7 || bp.kind === "lighting" || bp.massPlan === "shell") return;
+  if (bp.kind === "character" || bp.kind === "animal") return;
 
   const span = body.y1 - body.y0;
   if (span <= 0.01) return;
+  // A round body gets round trim — a square plate on a robot vacuum reads as a lid.
+  const round = bp.bodyShape === "cylinder" || bp.bodyShape === "sphere" || bp.bodyShape === "capsule";
+  if (round && bp.massPlan === "elongated") return;
+  const trimShape = round ? ("cylinder" as const) : ("box" as const);
 
   const seamColor = shade(bp.primary, -0.22);
   const seams = clamp(Math.round(bp.detail * 3), 2, 8);
 
-  push(
-    ctx,
-    panelSeam({
-      id: ctx.id,
-      group: "Отделка",
-      name: "Шов панели",
-      center: [-body.halfW * 0.6, body.y0 + span * 0.5, body.halfL],
-      length: span * 0.9,
-      facing: "front",
-      along: "v",
-      color: seamColor,
-      thickness: Math.max(0.004, span * 0.012),
-    })
-  );
+  // A flat seam only sits on a flat front.
+  if (!round) {
+    push(
+      ctx,
+      panelSeam({
+        id: ctx.id,
+        group: "Отделка",
+        name: "Шов панели",
+        center: [-body.halfW * 0.6, body.y0 + span * 0.5, body.halfL],
+        length: span * 0.9,
+        facing: "front",
+        along: "v",
+        color: seamColor,
+        thickness: Math.max(0.004, span * 0.012),
+      })
+    );
+  }
 
   push(
     ctx,
     part(ctx.id(), "Верхний кант", {
-      shape: "box",
+      shape: trimShape,
+      ...(round ? { sides: 40 } : {}),
       role: "detail",
       group: "Отделка",
       position: [0, body.y1, 0],
@@ -3281,7 +4447,8 @@ function addSurfaceDetail(ctx: Ctx) {
       metalness: Math.max(bp.metalness, 0.25),
     }),
     part(ctx.id(), "Нижний кант", {
-      shape: "box",
+      shape: trimShape,
+      ...(round ? { sides: 40 } : {}),
       role: "detail",
       group: "Отделка",
       position: [0, body.y0 + Math.max(0.005, span * 0.012), 0],
@@ -3320,7 +4487,7 @@ function addSurfaceDetail(ctx: Ctx) {
         role: "light",
         group: "Отделка",
         position: [0, body.y0 + span * 0.82, body.halfL + Math.max(0.003, span * 0.008)],
-        size: [body.halfW * 1.5, Math.max(0.005, span * 0.018), Math.max(0.005, span * 0.012)],
+        size: [body.halfW * (round ? 0.7 : 1.5), Math.max(0.005, span * 0.018), Math.max(0.005, span * 0.012)],
         color: bp.accent,
         material: "Подсветка",
         emissive: 0.9,

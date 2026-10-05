@@ -96,9 +96,13 @@ export async function POST(req: Request) {
     // which geometry won, and how detailed the result is.
     const diagnostics = {
       plan: generationPlan.summary,
+      kind: generationPlan.blueprint.kind,
       matched: generationPlan.blueprint.matched,
       source: result.source,
       score: result.score,
+      match: result.match,
+      quality: result.quality,
+      missing: result.missing,
       primitives: result.primitives,
       parts: result.concept.parts.length,
       notes: result.notes,

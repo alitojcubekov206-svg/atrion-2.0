@@ -1,19 +1,23 @@
 import type { ThreeDConcept } from "@/shared/types";
 import { scoreParts } from "@/backend/gen/validate";
-import { describeBlueprint, planFromPrompt, type Blueprint } from "@/backend/gen/blueprint";
+import {
+  describeBlueprint,
+  planFromPrompt,
+  type Blueprint,
+  type ObjectKind,
+} from "@/backend/gen/blueprint";
 import { buildFromBlueprint } from "@/backend/gen/build";
 
 export type { Blueprint };
 
 /**
- * Coarse class of the thing being described. There is no per-class geometry —
- * this only tells the AI layer how much detail to ask for and sets the default
- * scale when the prompt gives no numbers.
+ * What the described thing is — building, character, appliance… It drives the
+ * AI detail brief, the clarifying interview and the prompt-match check.
  */
-export type ConceptCategory = Blueprint["sizeClass"];
+export type ConceptCategory = ObjectKind;
 
 export function detectCategory(prompt: string): ConceptCategory {
-  return planFromPrompt(prompt).sizeClass;
+  return planFromPrompt(prompt).kind;
 }
 
 /**
@@ -24,11 +28,19 @@ export function detectCategory(prompt: string): ConceptCategory {
  * becomes a feature vector and one builder renders it.
  */
 export function buildFromPrompt(prompt: string): ThreeDConcept {
-  const blueprint = planFromPrompt(prompt);
+  return buildFromPlan(planFromPrompt(prompt));
+}
+
+/** Same as `buildFromPrompt`, for callers that already hold the blueprint. */
+export function buildFromPlan(blueprint: Blueprint): ThreeDConcept {
   try {
     return buildFromBlueprint(blueprint);
   } catch (error) {
-    console.error("Procedural build failed", { prompt, plan: describeBlueprint(blueprint) }, error);
+    console.error(
+      "Procedural build failed",
+      { prompt: blueprint.prompt, plan: describeBlueprint(blueprint) },
+      error
+    );
     // A blank plan still produces a body — better than failing the request.
     return buildFromBlueprint(planFromPrompt("объект"));
   }

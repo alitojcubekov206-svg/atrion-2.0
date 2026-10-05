@@ -1,5 +1,13 @@
 import type { ModelPart, PartShape } from "@/shared/types";
-import { expandPart, groundParts, partsBounds, primitiveCount, round3, scaleParts } from "@/shared/geometry";
+import {
+  expandPart,
+  groundParts,
+  partsBounds,
+  primitiveCount,
+  rotatedHalfExtent,
+  round3,
+  scaleParts,
+} from "@/shared/geometry";
 
 const SHAPES: PartShape[] = [
   "box",
@@ -202,19 +210,23 @@ export function sanitizeParts(value: unknown): ModelPart[] {
 
 type Box = { min: [number, number, number]; max: [number, number, number] };
 
+/** World-space box of every instance — rotation included, so a tilted arm is measured where it is. */
 function instanceBoxes(item: ModelPart): Box[] {
-  return expandPart(item).map((instance) => ({
-    min: [
-      instance.position[0] - instance.size[0] / 2,
-      instance.position[1] - instance.size[1] / 2,
-      instance.position[2] - instance.size[2] / 2,
-    ] as [number, number, number],
-    max: [
-      instance.position[0] + instance.size[0] / 2,
-      instance.position[1] + instance.size[1] / 2,
-      instance.position[2] + instance.size[2] / 2,
-    ] as [number, number, number],
-  }));
+  return expandPart(item).map((instance) => {
+    const half = rotatedHalfExtent(instance.size, instance.rotation);
+    return {
+      min: [
+        instance.position[0] - half[0],
+        instance.position[1] - half[1],
+        instance.position[2] - half[2],
+      ] as [number, number, number],
+      max: [
+        instance.position[0] + half[0],
+        instance.position[1] + half[1],
+        instance.position[2] + half[2],
+      ] as [number, number, number],
+    };
+  });
 }
 
 function boxesTouch(a: Box, b: Box, tolerance: number): boolean {
@@ -233,7 +245,7 @@ function boxesTouch(a: Box, b: Box, tolerance: number): boolean {
  * bounding boxes touch or overlap — the cheap test that separates "one object"
  * from "a pile of floating boxes".
  */
-function connectedGroups(parts: ModelPart[], tolerance: number): number[][] {
+export function connectedGroups(parts: ModelPart[], tolerance: number): number[][] {
   const boxes = parts.map(instanceBoxes);
   const parent = parts.map((_, index) => index);
 
@@ -284,12 +296,19 @@ function boundsOf(indices: number[], parts: ModelPart[]): Box {
  * Pull detached fragments back onto the main body instead of dropping them —
  * a stray chimney should land on the roof, not disappear.
  */
-function reattachFloaters(parts: ModelPart[], tolerance: number): { parts: ModelPart[]; moved: number } {
+function reattachFloaters(
+  parts: ModelPart[],
+  tolerance: number,
+  keep = 1
+): { parts: ModelPart[]; moved: number } {
   if (parts.length < 2) return { parts, moved: 0 };
   const groups = connectedGroups(parts, tolerance);
-  if (groups.length <= 1) return { parts, moved: 0 };
+  if (groups.length <= keep) return { parts, moved: 0 };
 
-  const [main, ...loose] = groups;
+  // The `keep` largest clusters are separate objects on purpose; only the
+  // fragments beyond them get pulled back onto the main body.
+  const main = groups[0];
+  const loose = groups.slice(keep);
   const mainBox = boundsOf(main, parts);
   const mainCentre: [number, number, number] = [
     (mainBox.min[0] + mainBox.max[0]) / 2,
@@ -382,7 +401,11 @@ function dedupe(parts: ModelPart[]): { parts: ModelPart[]; removed: number } {
  * Quality score for a parts list. Used to decide whether AI-authored geometry
  * beats the parametric baseline — never ship the worse of the two.
  */
-export function scoreParts(parts: ModelPart[]): number {
+/**
+ * 0–1 structure score. `clusters` is how many separate objects the prompt asked
+ * for ("три стула"): that many disconnected groups are intended, not broken.
+ */
+export function scoreParts(parts: ModelPart[], options: { clusters?: number } = {}): number {
   if (parts.length < 3) return 0;
 
   const primitives = primitiveCount(parts);
@@ -392,7 +415,10 @@ export function scoreParts(parts: ModelPart[]): number {
 
   // Coherence: share of parts in the largest connected cluster.
   const groups = connectedGroups(parts, span * 0.02);
-  const coherence = groups.length ? groups[0].length / parts.length : 0;
+  const keep = Math.max(1, options.clusters ?? 1);
+  const coherence = groups.length
+    ? groups.slice(0, keep).reduce((sum, group) => sum + group.length, 0) / parts.length
+    : 0;
 
   // Detail: more primitives read as a finished model, with diminishing returns.
   const detail = Math.min(1, Math.log10(1 + primitives) / Math.log10(1 + 90));
@@ -418,7 +444,7 @@ export function scoreParts(parts: ModelPart[]): number {
  */
 export function validateAndRepair(
   value: unknown,
-  options: { targetMaxSize?: number } = {}
+  options: { targetMaxSize?: number; clusters?: number } = {}
 ): RepairReport {
   const issues: string[] = [];
   let parts = sanitizeParts(value);
@@ -438,7 +464,7 @@ export function validateAndRepair(
   const { min, max } = partsBounds(parts);
   const span = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
 
-  const reattached = reattachFloaters(parts, Math.max(0.02, span * 0.02));
+  const reattached = reattachFloaters(parts, Math.max(0.02, span * 0.02), options.clusters ?? 1);
   if (reattached.moved > 0) issues.push(`Присоединено отвалившихся деталей: ${reattached.moved}`);
   parts = reattached.parts;
 
@@ -456,7 +482,7 @@ export function validateAndRepair(
   return {
     parts,
     issues,
-    score: scoreParts(parts),
+    score: scoreParts(parts, { clusters: options.clusters }),
     primitives: primitiveCount(parts),
   };
 }

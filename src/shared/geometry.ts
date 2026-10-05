@@ -181,6 +181,74 @@ export function expandPart(item: ModelPart): PartInstance[] {
   return instances;
 }
 
+/**
+ * Replace `mirror` with explicit mirrored parts. Mirroring is about the model's
+ * own axes, so anything that is about to be moved off the origin — a piece of
+ * furniture placed in a room, a second chair in a row — has to bake it first or
+ * its mirrored half would land on the far side of the scene.
+ */
+export function bakeMirrors(parts: ModelPart[]): ModelPart[] {
+  const out: ModelPart[] = [];
+  for (const item of parts) {
+    if (!item.mirror) {
+      out.push(item);
+      continue;
+    }
+    const { mirror, ...plain } = item;
+    let copies: ModelPart[] = [plain];
+    const axes: ("x" | "z")[] = mirror === "xz" ? ["x", "z"] : [mirror];
+    for (const axis of axes) {
+      const flipped = copies.map((copy) => {
+        const i = axis === "x" ? 0 : 2;
+        const position = [...copy.position] as [number, number, number];
+        position[i] = -position[i];
+        const rotation: [number, number, number] =
+          axis === "x"
+            ? [copy.rotation[0], -copy.rotation[1], -copy.rotation[2]]
+            : [-copy.rotation[0], -copy.rotation[1], copy.rotation[2]];
+        const repeat = copy.repeat
+          ? {
+              ...copy.repeat,
+              step: copy.repeat.step.map((n, k) => (k === i ? -n : n)) as [number, number, number],
+              ...(copy.repeat.rotationStep
+                ? {
+                    rotationStep: (axis === "x"
+                      ? [copy.repeat.rotationStep[0], -copy.repeat.rotationStep[1], -copy.repeat.rotationStep[2]]
+                      : [-copy.repeat.rotationStep[0], -copy.repeat.rotationStep[1], copy.repeat.rotationStep[2]]) as [
+                      number,
+                      number,
+                      number,
+                    ],
+                  }
+                : {}),
+            }
+          : undefined;
+        return { ...copy, id: `${copy.id}-m${axis}`, position, rotation, ...(repeat ? { repeat } : {}) };
+      });
+      copies = [...copies, ...flipped];
+    }
+    out.push(...copies);
+  }
+  return out;
+}
+
+/** Move a finished set of parts, baking mirrors first so nothing flips back. */
+export function translateParts(
+  parts: ModelPart[],
+  delta: [number, number, number],
+  idPrefix = ""
+): ModelPart[] {
+  return bakeMirrors(parts).map((item) => ({
+    ...item,
+    id: idPrefix ? `${idPrefix}${item.id}` : item.id,
+    position: [
+      round3(item.position[0] + delta[0]),
+      round3(item.position[1] + delta[1]),
+      round3(item.position[2] + delta[2]),
+    ] as [number, number, number],
+  }));
+}
+
 /** Total rendered primitive count — the honest "detail" number. */
 export function primitiveCount(parts: ModelPart[]): number {
   return parts.reduce((total, item) => total + expandPart(item).length, 0);
@@ -215,7 +283,7 @@ export function partsBounds(parts: ModelPart[]): Bounds {
   return { min, max };
 }
 
-function rotatedHalfExtent(
+export function rotatedHalfExtent(
   size: [number, number, number],
   rotation: [number, number, number]
 ): [number, number, number] {

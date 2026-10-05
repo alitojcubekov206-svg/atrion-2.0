@@ -7,8 +7,9 @@ import type {
   StarterKit,
   ThreeDConcept,
 } from "@/shared/types";
-import { buildFromPrompt, detectCategory } from "@/backend/procedural-3d";
+import { buildFromPlan, buildFromPrompt, detectCategory, planFor } from "@/backend/procedural-3d";
 import { generateAIGeometry, pickBetterGeometry } from "@/backend/gen/ai-geometry";
+import { matchParts } from "@/backend/gen/match";
 import { dimensionsOf, primitiveCount, structureFromGroups } from "@/shared/geometry";
 import { sanitizeParts, scoreParts, validateAndRepair } from "@/backend/gen/validate";
 
@@ -81,13 +82,14 @@ function isProviderFailure(error: unknown) {
 async function requestJSON<T>(
   provider: AIProvider,
   system: string,
-  user: string
+  user: string,
+  timeoutMs = 60_000
 ): Promise<T> {
   const client = new OpenAI({
     apiKey: provider.apiKey,
     baseURL: provider.baseURL,
     maxRetries: 0,
-    timeout: 60_000,
+    timeout: Math.max(1_000, timeoutMs),
   });
   const res = await client.chat.completions.create({
     model: provider.model,
@@ -103,22 +105,35 @@ async function requestJSON<T>(
   return JSON.parse(text) as T;
 }
 
-async function chatJSON<T>(system: string, user: string): Promise<T> {
+/** Below this, a fallback call cannot finish in time and is not started. */
+const MIN_FALLBACK_MS = 6_000;
+
+async function chatJSON<T>(
+  system: string,
+  user: string,
+  options: { timeoutMs?: number } = {}
+): Promise<T> {
   const primary = primaryProvider();
   if (!primary) throw new Error("Primary AI provider is not configured");
+  const budget = options.timeoutMs ?? 60_000;
+  const started = Date.now();
 
   try {
-    return await requestJSON<T>(primary, system, user);
+    return await requestJSON<T>(primary, system, user, budget);
   } catch (error) {
     const fallback = fallbackProvider();
     if (!fallback || !isProviderFailure(error)) throw error;
+    const left = budget - (Date.now() - started);
+    // A timed-out primary has used the whole budget; retrying elsewhere would
+    // only push the route past its limit.
+    if (left < MIN_FALLBACK_MS) throw error;
 
     console.warn(
       "Atrion AI Pro primary provider failed; trying fallback",
       errorSummary(error)
     );
     try {
-      return await requestJSON<T>(fallback, system, user);
+      return await requestJSON<T>(fallback, system, user, left);
     } catch (fallbackError) {
       console.warn(
         "Atrion AI Pro fallback provider failed; using local fallback",
@@ -453,7 +468,7 @@ export async function generate3DInterview(prompt: string): Promise<InterviewQues
   try {
     const data = await chatJSON<{ questions: InterviewQuestion[] }>(
       `You are a 3D concept designer. Detected category: ${category}.
-Ask exactly 5 concise questions that fit THIS category (not buildings if category is character/room/product/animal).
+Ask exactly 5 concise questions that fit THIS category (not buildings if category is character/room/animal/vehicle/furniture/appliance).
 Examples:
 - character: pose, outfit, hair, style (anime/realistic), scale
 - room: size, style, furniture, lighting, purpose
@@ -522,7 +537,25 @@ function mock3DInterview(category = "product"): InterviewQuestion[] {
       { id: "detail", question: "Детали?", options: ["Простой силуэт", "Больше деталей", "С аксессуаром"] },
     ];
   }
-  if (["house", "school", "office", "hospital", "tower", "stadium", "bridge", "building"].includes(category)) {
+  if (category === "vehicle") {
+    return [
+      { id: "type", question: "Какой тип транспорта?", options: ["Легковой", "Грузовой", "Спортивный"] },
+      { id: "size", question: "Размер?", options: ["Компактный", "Средний", "Крупный"] },
+      { id: "style", question: "Стиль?", options: ["Современный", "Ретро", "Футуристичный"] },
+      { id: "color", question: "Основной цвет?", options: ["Красный", "Чёрный", "Белый"] },
+      { id: "detail", question: "Что важно показать?", options: ["Колёса и кузов", "Салон", "Максимум деталей"] },
+    ];
+  }
+  if (category === "furniture" || category === "appliance") {
+    return [
+      { id: "size", question: "Размер?", options: ["Компактный", "Стандартный", "Крупный"] },
+      { id: "material", question: "Материал?", options: ["Дерево", "Металл", "Пластик"] },
+      { id: "style", question: "Стиль?", options: ["Минимализм", "Классика", "Лофт"] },
+      { id: "color", question: "Цвет?", options: ["Светлый", "Тёмный", "Яркий"] },
+      { id: "detail", question: "Детали?", options: ["Простая форма", "С фурнитурой", "Максимум деталей"] },
+    ];
+  }
+  if (["building", "landmark", "house", "school", "office", "hospital", "tower", "stadium", "bridge"].includes(category)) {
     return [
       { id: "dimensions", question: "Какая основная длина объекта нужна?", options: ["12 м", "30 м", "60 м"] },
       { id: "floors", question: "Сколько этажей / уровней?", options: ["1–2", "3–5", "Высотное"] },
@@ -546,6 +579,12 @@ export type ConceptGeneration = {
   source: "ai" | "procedural";
   /** 0–1 coherence/detail score of the shipped geometry. */
   score: number;
+  /** 0–1 how well the shipped geometry matches the prompt (features + size). */
+  match: number;
+  /** 0–1 structure and match together — what the generator optimises. */
+  quality: number;
+  /** Requested features the shipped model does not have. */
+  missing: string[];
   /** Rendered primitive count after repeat and mirror expansion. */
   primitives: number;
   /** Human-readable notes about what happened, for the studio UI. */
@@ -553,30 +592,65 @@ export type ConceptGeneration = {
 };
 
 /**
+ * Total time the 3D route may spend on AI calls. The route itself is capped
+ * at 60 s on Vercel Hobby; this leaves room for auth, quota and the response.
+ */
+const GENERATION_BUDGET_MS = 50_000;
+
+/**
  * Text → geometry.
  *
  * Two independent attempts race for the result: a parametric generator seeded
  * from the prompt, and the model authoring primitives itself against the
- * geometry DSL. Both are validated and repaired, and the better one ships —
- * so a missing or failing AI provider degrades to a real model instead of an error.
+ * geometry DSL. Both are validated, judged against what the prompt asked for,
+ * and the better one ships. The metadata call runs alongside the geometry so
+ * the whole thing fits the route's time limit, and a missing or failing AI
+ * provider degrades to a real model instead of an error.
  */
 export async function generate3DModel(
   prompt: string,
   answers: { question: string; answer: string }[] = []
 ): Promise<ConceptGeneration> {
-  const category = detectCategory(prompt);
-  const baseline = withAnswers(buildFromPrompt(prompt), answers);
+  const deadline = Date.now() + GENERATION_BUDGET_MS;
+  const { blueprint: plan } = planFor(prompt);
+  const baseline = withAnswers(buildFromPlan(plan), answers);
   const notes: string[] = [];
 
   if (!hasKey()) {
+    const match = matchParts(plan, baseline.parts);
     return {
       concept: baseline,
       source: "procedural",
-      score: scoreParts(baseline.parts),
+      score: match.structure,
+      match: match.match,
+      quality: match.quality,
+      missing: match.missing,
       primitives: primitiveCount(baseline.parts),
       notes: ["Демо-режим: ключ AI не задан — параметрическая модель"],
     };
   }
+
+  // Metadata is a separate, cheaper call — geometry never depends on it, so it
+  // starts now and runs in parallel instead of after the geometry.
+  const metadata = chatJSON<unknown>(
+    `You are Atrion, an engineering assistant. Return ONLY JSON metadata for a 3D concept.
+The geometry already exists — do NOT return parts, structure or dimensions.
+Answer in the user's language.
+Fill: name, description, materials, equipment, requirements, assemblySteps,
+costEstimate (currency KGS), advantages, disadvantages, risks, engineeringNotes, disclaimer.
+Base the material quantities and costs on the stated dimensions.`,
+    `Object: ${baseline.name}
+Kind: ${plan.kind}
+Request: ${prompt}
+Dimensions: ${baseline.dimensions.width} × ${baseline.dimensions.depth} × ${baseline.dimensions.height} м
+Sections: ${(baseline.structure ?? []).map((group) => `${group.label} (${group.partIds.length})`).join(", ")}
+Clarifications:
+${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- нет"}`,
+    { timeoutMs: GENERATION_BUDGET_MS - 2_000 }
+  ).then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error })
+  );
 
   let geometry: Awaited<ReturnType<typeof generateAIGeometry>> = null;
   try {
@@ -584,70 +658,58 @@ export async function generate3DModel(
       prompt,
       answers,
       baseline,
-      category,
+      plan,
+      deadline,
       request: chatJSON,
     });
   } catch (error) {
     console.warn("AI geometry unavailable", errorSummary(error));
   }
 
-  const picked = pickBetterGeometry(baseline, geometry);
+  const picked = pickBetterGeometry(baseline, geometry, plan);
+  notes.push(picked.reason);
   if (geometry) {
-    notes.push(
-      picked.source === "ai"
-        ? `AI-геометрия принята (оценка ${geometry.score} против ${picked.baseScore} у шаблона, проходов: ${geometry.passes})`
-        : `AI-геометрия отклонена (оценка ${geometry.score} против ${picked.baseScore}) — оставлена параметрическая модель`
-    );
+    notes.push(`Проходов AI: ${geometry.passes}`);
     notes.push(...geometry.issues);
+  }
+  if (picked.match.missing.length) {
+    notes.push(`Не хватает: ${picked.match.missing.join(", ")}`);
   }
 
   let concept = picked.concept;
 
-  // Metadata is a separate, cheaper call — geometry never depends on it.
-  try {
-    const meta = normalize3DConcept(
-      await chatJSON<unknown>(
-        `You are Atrion, an engineering assistant. Return ONLY JSON metadata for a 3D concept.
-The geometry already exists — do NOT return parts, structure or dimensions.
-Answer in the user's language.
-Fill: name, description, materials, equipment, requirements, assemblySteps,
-costEstimate (currency KGS), advantages, disadvantages, risks, engineeringNotes, disclaimer.
-Base the material quantities and costs on the stated dimensions.`,
-        `Object: ${concept.name}
-Request: ${prompt}
-Dimensions: ${concept.dimensions.width} × ${concept.dimensions.depth} × ${concept.dimensions.height} м
-Sections: ${(concept.structure ?? []).map((group) => `${group.label} (${group.partIds.length})`).join(", ")}
-Clarifications:
-${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- нет"}`
-      )
-    );
-
+  const meta = await metadata;
+  if (meta.ok) {
+    const parsed = normalize3DConcept(meta.value);
     concept = {
       ...concept,
-      name: meta.name && meta.name !== "Untitled 3D Concept" ? meta.name : concept.name,
-      description: meta.description || concept.description,
-      materials: meta.materials.length ? meta.materials : concept.materials,
-      equipment: meta.equipment.length ? meta.equipment : concept.equipment,
-      requirements: meta.requirements.length ? meta.requirements : concept.requirements,
-      assemblySteps: meta.assemblySteps.length ? meta.assemblySteps : concept.assemblySteps,
-      costEstimate: meta.costEstimate.maximum ? meta.costEstimate : concept.costEstimate,
-      advantages: meta.advantages.length ? meta.advantages : concept.advantages,
-      disadvantages: meta.disadvantages.length ? meta.disadvantages : concept.disadvantages,
-      risks: meta.risks.length ? meta.risks : concept.risks,
-      engineeringNotes: meta.engineeringNotes.length
-        ? meta.engineeringNotes
+      name: parsed.name && parsed.name !== "Untitled 3D Concept" ? parsed.name : concept.name,
+      description: parsed.description || concept.description,
+      materials: parsed.materials.length ? parsed.materials : concept.materials,
+      equipment: parsed.equipment.length ? parsed.equipment : concept.equipment,
+      requirements: parsed.requirements.length ? parsed.requirements : concept.requirements,
+      assemblySteps: parsed.assemblySteps.length ? parsed.assemblySteps : concept.assemblySteps,
+      costEstimate: parsed.costEstimate.maximum ? parsed.costEstimate : concept.costEstimate,
+      advantages: parsed.advantages.length ? parsed.advantages : concept.advantages,
+      disadvantages: parsed.disadvantages.length ? parsed.disadvantages : concept.disadvantages,
+      risks: parsed.risks.length ? parsed.risks : concept.risks,
+      engineeringNotes: parsed.engineeringNotes.length
+        ? parsed.engineeringNotes
         : concept.engineeringNotes,
-      disclaimer: meta.disclaimer || concept.disclaimer,
+      disclaimer: parsed.disclaimer || concept.disclaimer,
     };
-  } catch (error) {
+  } else {
     notes.push("Метаданные сгенерированы локально");
-    console.warn("3D metadata unavailable", errorSummary(error));
+    console.warn("3D metadata unavailable", errorSummary(meta.error));
   }
 
   return {
     concept,
     source: picked.source,
-    score: picked.source === "ai" ? picked.aiScore : picked.baseScore,
+    score: picked.match.structure,
+    match: picked.match.match,
+    quality: picked.match.quality,
+    missing: picked.match.missing,
     primitives: primitiveCount(concept.parts),
     notes,
   };

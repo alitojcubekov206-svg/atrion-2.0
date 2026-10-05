@@ -209,8 +209,10 @@ function usePartGeometry(part: ModelPart): THREE.BufferGeometry {
 function CameraRig({ view, maxDimension }: { view: DrawingView; maxDimension: number }) {
   const { camera } = useThree();
   useEffect(() => {
-    const distance = Math.max(14, maxDimension * 1.55);
-    const lookY = Math.max(1.2, maxDimension * 0.22);
+    // Frame the model by its own size: a fixed 14 m minimum turned a desk lamp
+    // or a toaster into a speck in the middle of an empty grid.
+    const distance = Math.max(0.5, maxDimension * 1.75);
+    const lookY = maxDimension * 0.22;
     const positions: Record<DrawingView, [number, number, number]> = {
       perspective: [distance * 0.9, distance * 0.48, distance * 1.05],
       top: [0, distance * 1.35, 0.01],
@@ -223,7 +225,7 @@ function CameraRig({ view, maxDimension }: { view: DrawingView; maxDimension: nu
     if (view !== "perspective" && "zoom" in camera) {
       (camera as THREE.OrthographicCamera).zoom = Math.max(
         8,
-        Math.min(100, 420 / Math.max(1, maxDimension))
+        Math.min(4000, 420 / maxDimension)
       );
     }
     camera.updateProjectionMatrix();
@@ -432,16 +434,18 @@ export default function ConceptViewer({
         concept.dimensions.width,
         concept.dimensions.height,
         concept.dimensions.depth,
-        1
+        0.05
       ),
     [concept.dimensions]
   );
   /** Rendered primitives after repeat/mirror — drives the wireframe budget. */
   const totalInstances = useMemo(() => primitiveCount(concept.parts), [concept.parts]);
 
-  const fogNear = Math.max(18, maxDimension * 1.8);
-  const fogFar = Math.max(45, maxDimension * 4.5);
-  const groundY = -Math.max(1.2, maxDimension * 0.02);
+  const fogNear = Math.max(1.5, maxDimension * 1.8);
+  const fogFar = Math.max(4, maxDimension * 4.5);
+  // Models are grounded at y = 0; the floor sits just under them. A fixed 1.2 m
+  // gap left anything smaller than a car hovering high above its own shadow.
+  const groundY = -Math.max(0.005, maxDimension * 0.02);
   const orbitEnabled = view === "perspective" && cadTool === "select";
 
   return (
@@ -454,7 +458,7 @@ export default function ConceptViewer({
         dpr={[1, 1.6]}
         camera={
           view === "perspective"
-            ? { position: [14, 8, 16], fov: 40, near: 0.1, far: 500 }
+            ? { position: [14, 8, 16], fov: 40, near: 0.02, far: 500 }
             : { position: [0, 0, 20], zoom: 32, near: -400, far: 400 }
         }
         gl={{
@@ -500,7 +504,7 @@ export default function ConceptViewer({
             cadTool === "select"
           }
         >
-          <group position={[0, 0.05, 0]}>
+          <group>
             {concept.parts.map((part, index) => (
               <EditablePart
                 key={part.id}
@@ -538,9 +542,9 @@ export default function ConceptViewer({
             <ContactShadows
               position={[0, groundY + 0.02, 0]}
               opacity={0.45}
-              scale={Math.max(24, maxDimension * 2.5)}
+              scale={Math.max(1, maxDimension * 2.5)}
               blur={2.5}
-              far={Math.max(10, maxDimension)}
+              far={Math.max(0.5, maxDimension)}
             />
           </>
         )}
@@ -548,10 +552,10 @@ export default function ConceptViewer({
           makeDefault
           enabled={orbitEnabled}
           enablePan
-          minDistance={2}
-          maxDistance={Math.max(40, maxDimension * 3.5)}
+          minDistance={Math.max(0.1, maxDimension * 0.35)}
+          maxDistance={Math.max(3, maxDimension * 3.5)}
           maxPolarAngle={Math.PI * 0.495}
-          target={[0, Math.max(1, maxDimension * 0.2), 0]}
+          target={[0, maxDimension * 0.2, 0]}
         />
       </Canvas>
     </div>

@@ -2,14 +2,15 @@
  * Generation report — run the procedural pipeline over a spread of prompts and
  * print what each one actually produced. This is the debugging log required by
  * ТЗ 4.1: which category was detected, which parameters were parsed, how many
- * primitives were emitted and how coherent the result is.
+ * primitives were emitted, how coherent the result is, and whether it has
+ * what the prompt asked for (prompt-match).
  *
  *   npx tsx scripts/gen-report.ts
  *   npx tsx scripts/gen-report.ts "своя фраза"
  */
-import { buildFromPrompt, detectCategory, planFor } from "@/backend/procedural-3d";
+import { buildFromPlan, planFor } from "@/backend/procedural-3d";
 import { primitiveCount } from "@/shared/geometry";
-import { scoreParts } from "@/backend/gen/validate";
+import { matchParts } from "@/backend/gen/match";
 import type { ThreeDConcept } from "@/shared/types";
 
 const PROMPTS = [
@@ -66,13 +67,14 @@ function fingerprint(concept: ThreeDConcept): string {
 
 function report(prompt: string) {
   const started = Date.now();
-  const category = detectCategory(prompt);
-  const { summary } = planFor(prompt);
-  const concept = buildFromPrompt(prompt);
+  const { summary, blueprint } = planFor(prompt);
+  const category = blueprint.kind;
+  const concept = buildFromPlan(blueprint);
   const ms = Date.now() - started;
 
   const parsed = summary;
-  const score = scoreParts(concept.parts);
+  const verdict = matchParts(blueprint, concept.parts);
+  const score = verdict.structure;
   const groups = (concept.structure ?? []).map((g) => `${g.label}(${g.partIds.length})`).join(" ");
 
   return {
@@ -84,6 +86,9 @@ function report(prompt: string) {
     primitives: primitiveCount(concept.parts),
     dims: `${concept.dimensions.width}×${concept.dimensions.depth}×${concept.dimensions.height}`,
     score,
+    match: verdict.match,
+    quality: verdict.quality,
+    missing: verdict.missing,
     shapes: shapeMix(concept),
     groups,
     hash: fingerprint(concept),
@@ -100,6 +105,7 @@ for (const row of rows) {
   console.log(`  category   ${row.category}   →  «${row.name}»`);
   console.log(`  parsed     ${row.parsed}`);
   console.log(`  geometry   parts=${row.parts} primitives=${row.primitives} dims=${row.dims} score=${row.score} (${row.ms}ms)`);
+  console.log(`  prompt     match=${row.match} quality=${row.quality}${row.missing.length ? `  missing: ${row.missing.join(", ")}` : ""}`);
   console.log(`  shapes     ${row.shapes}`);
   console.log(`  groups     ${row.groups}`);
   console.log(`  hash       ${row.hash}`);
@@ -118,7 +124,10 @@ console.log(`avg parts      ${avg(rows.map((r) => r.parts))}`);
 console.log(`avg primitives ${avg(rows.map((r) => r.primitives))}`);
 console.log(`avg score      ${avg(rows.map((r) => r.score))}`);
 console.log(`min score      ${Math.min(...rows.map((r) => r.score))}`);
-console.log(`weakest        ${rows.slice().sort((a, b) => a.score - b.score).slice(0, 5).map((r) => `${r.score} ${r.category}`).join(", ")}`);
+console.log(`avg match      ${avg(rows.map((r) => r.match))}`);
+console.log(`avg quality    ${avg(rows.map((r) => r.quality))}`);
+console.log(`with missing   ${rows.filter((r) => r.missing.length).map((r) => `${r.prompt} [${r.missing.join(", ")}]`).join("; ") || "none"}`);
+console.log(`weakest        ${rows.slice().sort((a, b) => a.quality - b.quality).slice(0, 5).map((r) => `${r.quality} ${r.category}`).join(", ")}`);
 if (clashes.length) {
   console.log(`\n⚠ identical geometry for different prompts:`);
   for (const group of clashes) console.log(`  - ${group.join("  ||  ")}`);
