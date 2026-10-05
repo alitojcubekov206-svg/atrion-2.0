@@ -52,6 +52,8 @@ Rate limiting auth — в [rate-limit.ts](../src/backend/rate-limit.ts), зна�
 
 ## Ошибки и время
 
+`POST /api/house/generate` принимает `{prompt}` длиной 10–1500 символов. Требует `requireApiUser` через `designAuth`; резервирует одну суточную AI-квоту. Возвращает `{name, document: HouseDocument, warnings: string[], source: "ai"}`. Сохранение в аккаунте — отдельная операция design-documents. Разбор помещений и до двух вариантов плана входят в один запрос Atrion, но создают отдельные обращения к провайдеру. Ошибки: 400 `INVALID_HOUSE_PROMPT`, 503 `TEXT_AI_NOT_CONFIGURED`, 429 квота/частота, 422 `HOUSE_UNSUPPORTED`, 502 `INVALID_HOUSE_RESPONSE`/`HOUSE_GENERATION_FAILED`, 499 `HOUSE_CANCELLED`. Ошибка после резервирования возвращает квоту; неподходящий шаблон не выдаётся. Успешный ответ private/no-store. Проверяется формат, покрытие этажа, вход и граф дверных проходов, перечень извлечённых комнат/размеров; удобство планировки и корректность извлечения требований не гарантируются.
+
 401 — нет сессии; 403 / `EMAIL_NOT_VERIFIED` — требуется email; 403 / `LIMIT_REACHED` — проекты; 403 / `THREE_D_LIMIT_REACHED` — генерации; 429 / `AI_LIMIT_REACHED` — AI за UTC-день; 429 / `RATE_LIMITED` с `Retry-After` — auth limiter. Также встречаются 400 (вход), 404 (проект), 409 (конфликт/повреждённый blueprint), 502 (генерация), 503 (почта не настроена).
 
 Текстовые AI route handlers задают `maxDuration=60`; фактический предел исполнения зависит от хостинга. Общий browser helper по умолчанию прерывает ожидание через 45 секунд; вызовы генерации могут переопределять timeout. Прерывание браузером не гарантирует отмену серверной работы и возврат квоты. Image API имеет отдельные лимиты, описанные ниже.

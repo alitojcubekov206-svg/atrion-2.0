@@ -33,9 +33,10 @@ npm run db:push
 | Переменные | Назначение |
 | --- | --- |
 | `DATABASE_URL`, `AUTH_SECRET` | База и подпись session/share JWT |
-| `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` | Основной OpenAI-compatible AI; отсутствие ключа включает demo |
+| `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` | Основной OpenAI-compatible AI; при отсутствии ключей auto проверяет Cloudflare |
+| `AI_TEXT_PROVIDER`, `CLOUDFLARE_TEXT_MODEL` | auto / compatible / cloudflare / disabled; модель Workers AI для текста |
 | `CHARACTER_IMAGE_PROVIDER` | cloudflare по умолчанию либо openai; автоматического fallback нет |
-| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Аккаунт и токен Workers AI для Cloudflare + FLUX |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Аккаунт и токен Workers AI для рисунков и текстового AI |
 | `OPENAI_IMAGE_API_KEY`, `OPENAI_IMAGE_MODEL` | OpenAI Image API при явном выборе openai |
 | `AI_FALLBACK_API_KEY`, `AI_FALLBACK_BASE_URL`, `AI_FALLBACK_MODEL` | Резервный провайдер; одного fallback-ключа недостаточно для primary |
 | `EMAIL_VERIFICATION_ENABLED` | Обязательная проверка email; по умолчанию false |
@@ -44,7 +45,11 @@ npm run db:push
 | `APP_URL` | Абсолютные ссылки, metadata, sitemap |
 | `PAYMENT_WHATSAPP` | Номер для ручного контакта по оплате |
 
-Есть также legacy-алиасы `GROQ_API_KEY` и `AI_API_KEY` в `ai.ts`. Не добавляй ключи в клиентские переменные `NEXT_PUBLIC_*`. Доступность моделей, квоты и цены провайдеров нужно проверять отдельно; значения в примере не гарантируют доступ.
+Есть также legacy-алиасы `GROQ_API_KEY` и `AI_API_KEY` в `text-ai.ts`. Не добавляй ключи в клиентские переменные `NEXT_PUBLIC_*`. Доступность моделей, квоты и цены провайдеров нужно проверять отдельно; значения в примере не гарантируют доступ.
+
+Cloudflare для текста использует [официальный совместимый endpoint](https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/) и [JSON mode](https://developers.cloudflare.com/workers-ai/features/json-mode/). Автоматических повторов SDK и переключения Cloudflare на платный резерв нет. 3D и дом разделяют 50-секундный бюджет между внутренними запросами; вход/БД требуют отдельного времени. Модель по умолчанию — `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, максимальный ответ обычного текстового вызова — 8192 токена. Квоты самого Cloudflare и внутренние квоты Atrion независимы.
+
+`/dashboard/house` содержит форму текстовой планировки; `/api/house/generate` требует входа и расходует одну суточную AI-квоту. Первоначальный разбор помещений и до двух попыток плана входят в эту квоту. Ошибка возвращает резерв. Ручное редактирование дома и экспорт квоту не расходуют. В preview внешняя генерация отключена. Порядок проверки GLB в Unity: [UNITY_IMPORT.md](UNITY_IMPORT.md).
 
 ## Команды проверки
 

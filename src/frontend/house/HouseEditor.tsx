@@ -14,9 +14,10 @@ const input="w-full rounded-lg border border-white/20 bg-[#211f2e] px-2 py-2 tex
 type Saved={id:string;name:string;revision:number;data?:unknown};
 const uid=()=>`item_${crypto.randomUUID()}`;
 function NumberField({label,value,change}:{label:string;value:number;change:(value:number)=>void}) {
-  const [draft,setDraft]=useState(String(value));
-  useEffect(()=>setDraft(String(value)),[value]);
-  return <label className="text-xs text-white/65">{label}<input aria-label={label} className={`${input} mt-1`} type="number" step="0.1" value={draft} onChange={e=>setDraft(e.target.value)} onBlur={()=>{if(draft.trim()&&Number.isFinite(Number(draft))&&Number(draft)!==value)change(Number(draft));setDraft(String(value));}} onKeyDown={e=>{if(e.key==="Enter")e.currentTarget.blur();}}/></label>;
+  const formatted=String(Number(value.toFixed(4)));
+  const [draft,setDraft]=useState(formatted);
+  useEffect(()=>setDraft(formatted),[formatted]);
+  return <label className="text-xs text-white/65">{label}<input aria-label={label} className={`${input} mt-1`} type="number" step="0.1" value={draft} onChange={e=>setDraft(e.target.value)} onBlur={()=>{if(draft.trim()&&Number.isFinite(Number(draft))&&Math.abs(Number(draft)-value)>0.0001)change(Number(draft));setDraft(formatted);}} onKeyDown={e=>{if(e.key==="Enter")e.currentTarget.blur();}}/></label>;
 }
 
 export default function HouseEditor({preview=false}:{preview?:boolean}) {
@@ -25,6 +26,7 @@ export default function HouseEditor({preview=false}:{preview?:boolean}) {
   const [name,setName]=useState("Мой дом"),[error,setError]=useState(""),[notice,setNotice]=useState("");
   const [hideRoof,setHideRoof]=useState(true),[oneFloor,setOneFloor]=useState(true),[busy,setBusy]=useState(false),[ready,setReady]=useState(false);
   const [saved,setSaved]=useState<Saved|null>(null),[documents,setDocuments]=useState<Saved[]>([]),[openId,setOpenId]=useState("");
+  const [prompt,setPrompt]=useState("");
   const storageBlocked=useRef(false),initialized=useRef(false);
   const draftKey=`atrion:house-draft:${preview?"preview":"editor"}`;
   const floor=doc.floors.find(f=>f.id===floorId)??doc.floors[0],room=floor.rooms.find(r=>r.id===roomId)??floor.rooms[0];
@@ -46,12 +48,28 @@ export default function HouseEditor({preview=false}:{preview?:boolean}) {
   async function open(){setBusy(true);try{const r=await requestJson<{document:Saved}>(`/api/design-documents/${openId}`,{method:"GET"});if(!r.ok)throw new Error(r.data.error??"Не удалось открыть дом");const next=parseHouse(r.data.document.data);install(next);setSaved(r.data.document);setName(r.data.document.name);setNotice("Дом открыт. Предыдущее состояние доступно через отмену.");}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   async function importFile(file:File){setBusy(true);try{if(file.size>1048000)throw new Error("JSON должен быть меньше 1 MiB");const value=JSON.parse(await file.text()),next=parseHouse(value.document??value);install(next);setSaved(null);setName(typeof value.name==="string"?value.name.slice(0,120):"Импортированный дом");}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   async function exportGlb(){setBusy(true);try{downloadBlob("atrion-house.glb",await exportConceptGlb(houseConcept(doc)));setNotice("Экспортирован весь дом, включая крышу и все этажи.");}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  async function generate(){
+    setBusy(true);setError("");setNotice("AI составляет планировку…");
+    try{
+      const response=await requestJson<{name:string;document:HouseDocument;warnings:string[]}>("/api/house/generate",{body:{prompt},timeoutMs:60_000});
+      if(!response.ok)throw new Error(response.data.error??"Не удалось создать планировку");
+      const next=parseHouse(response.data.document);install(next);setSaved(null);setName(response.data.name);
+      setFloorId(next.floors[0].id);setRoomId(next.floors[0].rooms[0].id);
+      setNotice(`Планировка создана. Проверьте соответствие описанию; прежний план доступен через отмену. ${response.data.warnings.join(" ")}`);
+    }catch(e){setNotice("");setError((e as Error).message);}finally{setBusy(false);}
+  }
   function addOpening(kind:"door"|"window"){change(next=>next.floors.find(f=>f.id===floor.id)!.openings.push({id:uid(),roomId:room.id,side:"north",kind,offset:0.3,width:kind==="door"?0.9:1.2,bottom:kind==="door"?0:0.9,height:kind==="door"?2.1:1.2}));}
   return <main className="mx-auto max-w-[1600px] space-y-4 p-4 text-white md:p-6">
     <header className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-widest text-violet-300">Atrion · дизайн дома</p><h1 className="text-2xl font-semibold">Планировка и 3D</h1></div><Link className={button} href="/dashboard/design-engine">Design Engine ↗</Link></header>
     <p className="text-sm text-white/55">Редактируйте комнаты и проёмы — 3D обновляется сразу. Все размеры в метрах. Начальный план 12 × 9 м можно изменить.</p>
     {error&&<p role="alert" className="rounded-lg bg-red-400/10 p-3 text-sm text-red-200">{error}</p>}{notice&&<p role="status" className="text-sm text-violet-200">{notice}</p>}
     <fieldset disabled={busy||!ready} className="space-y-4 disabled:opacity-60">
+      <section className="space-y-2 rounded-2xl border border-white/10 p-4">
+        <label className="block text-sm" htmlFor="house-prompt">Создать планировку по описанию</label>
+        <textarea id="house-prompt" className={input} rows={2} maxLength={1500} value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Дом 12 × 9 м: две спальни, кухня-гостиная, санузел и прихожая. Плоская крыша, белые стены."/>
+        <button className={button} disabled={preview||prompt.trim().length<10} onClick={generate}>Создать дом</button>
+        <p className="text-xs text-white/50">{preview?"Генерация по тексту доступна после входа в аккаунт. ":"Используется один запрос из суточной AI-квоты. "}Новый план заменит текущий с возможностью отмены. Лестницы, мебель и инженерные системы пока не генерируются.</p>
+      </section>
       <div className="flex flex-wrap items-center gap-2"><input aria-label="Название дома" className={`${input} !w-48`} maxLength={120} value={name} onChange={e=>setName(e.target.value)}/><button className={button} disabled={!past.length} onClick={undo}>Отменить</button><button className={button} disabled={!future.length} onClick={redo}>Повторить</button><button className={button} disabled={preview||!name.trim()} onClick={save}>Сохранить в аккаунте</button><button className={button} onClick={()=>downloadBlob("atrion-house.json",new Blob([JSON.stringify({name,document:doc},null,2)],{type:"application/json"}))}>Скачать JSON</button><label className={`${button} cursor-pointer`}>Импорт JSON<input aria-label="Импорт дома" className="sr-only" type="file" accept=".json,application/json" onChange={e=>{const file=e.target.files?.[0];e.target.value="";if(file)void importFile(file);}}/></label><button className={button} onClick={exportGlb}>Экспорт GLB</button></div>
       <div className="grid gap-4 xl:grid-cols-[260px_1fr]">
         <aside className="space-y-4 rounded-2xl border border-white/10 p-4">
