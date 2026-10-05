@@ -74,7 +74,7 @@ export default function LegalPage() {
         <h2 className="display text-xl font-semibold text-fg">Возврат средств</h2>
         <p className="mt-3">
           План {PLANS.pro.name} стоит {PLANS.pro.price} за {PRO_DURATION_DAYS} дней доступа.
-          Если оплата прошла, но доступ Pro не активировался в течение часа, или вы передумали в
+          Если оплата прошла, но доступ Pro не активировался в течение дня, или вы передумали в
           течение 24 часов после оплаты и ещё не пользовались функциями Pro — мы вернём деньги
           в полном объёме.
         </p>

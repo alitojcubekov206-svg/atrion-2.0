@@ -97,7 +97,7 @@ export default async function PricingPage() {
                   Оплатить {PLANS.pro.price} - написать в WhatsApp
                 </a>
                 <p className="mt-3 text-center text-xs text-muted">
-                  Перевод через Mbank / O!Деньги / Элсом. Активация Pro в течение часа после оплаты.
+                  Перевод через Mbank / O!Деньги / Элсом. Активация Pro в течение дня после оплаты.
                 </p>
               </div>
             ) : (
