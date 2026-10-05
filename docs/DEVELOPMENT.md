@@ -32,6 +32,7 @@ npm run db:push
 | --- | --- |
 | `DATABASE_URL`, `AUTH_SECRET` | База и подпись session/share JWT |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` | Основной OpenAI-compatible AI; отсутствие ключа включает demo |
+| `OPENAI_IMAGE_API_KEY`, `OPENAI_IMAGE_MODEL` | Отдельный официальный OpenAI Image API для рисунка персонажа; без ключа генерация недоступна |
 | `AI_FALLBACK_API_KEY`, `AI_FALLBACK_BASE_URL`, `AI_FALLBACK_MODEL` | Резервный провайдер; одного fallback-ключа недостаточно для primary |
 | `EMAIL_VERIFICATION_ENABLED` | Обязательная проверка email; по умолчанию false |
 | `BREVO_API_KEY`, `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME` | Доставка кодов; сброс пароля требует настроенного отправителя |
@@ -62,3 +63,7 @@ git diff --check
 ## Выпуск
 
 CI описан в [.github/workflows/ci.yml](../.github/workflows/ci.yml). Автодеплой Vercel заявлен в прежней инструкции, но настройки GitHub/Vercel этим репозиторием не подтверждаются. Перед выпуском отдельно согласуй схему, резервную копию, переменные и способ отката. Не выполняй push или production-операции только ради проверки документации.
+
+## Рисунок персонажа через OpenAI
+
+Настройте `OPENAI_IMAGE_API_KEY` в локальном серверном окружении и development-базу для входа. Не меняйте для этого production-базу. Модель задаёт `OPENAI_IMAGE_MODEL`; примеры — в `.env.example`. Генерация расходует AI-квоту и обращается к платному API, поэтому тест без ключа проверяет только понятный отказ. В preview кнопка отключена; на авторизованной странице проверяйте рисунок, ошибку провайдера, отмену и скачивание. Перед Vercel-деплоем требуется проверка Fluid compute для маршрута на 180 секунд. Полный автоматический риг ещё не реализован.

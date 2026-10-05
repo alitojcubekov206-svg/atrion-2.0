@@ -8,6 +8,7 @@ import { evaluateRig2D, sample2DTrack, type Transform2D } from "@/shared/rigging
 import { evaluateRig3D } from "@/shared/rigging/rig3d";
 import { demo2D } from "./demo";
 import RigCanvas from "./RigCanvas";
+import CharacterGenerator from "./CharacterGenerator";
 import { requestJson } from "@/frontend/api";
 import { downloadBlob, exportConceptGlb } from "@/frontend/export-3d";
 
@@ -198,6 +199,7 @@ export default function RigEditor({initialMode="rig2d",preview=false}:{initialMo
       <div><p className="text-xs uppercase tracking-[0.25em] text-violet-300">Atrion · Character studio</p><h1 className="mt-2 text-3xl font-semibold">{mode==="rig2d"?"2D-риггинг":"3D-риггинг"}</h1><p className="mt-2 text-sm text-white/50">{mode==="rig2d"?"Слои → скелет → ключевые кадры → анимация":"Кости → привязка деталей → поза"}</p></div>
       <div className="flex flex-wrap gap-2"><button className={`${button} ${mode==="rig2d"?"border-violet-400 bg-violet-400/15":""}`} onClick={()=>switchMode("rig2d")}>2D-риггинг</button><button className={`${button} ${mode==="rig3d"?"border-violet-400 bg-violet-400/15":""}`} onClick={()=>switchMode("rig3d")}>3D-риггинг</button><Link href="/dashboard/design-engine" className={button}>Design Engine ↗</Link></div>
     </header>
+    <div hidden={mode!=="rig2d"}><CharacterGenerator preview={preview}/></div>
     {preview&&<p className="rounded-lg border border-amber-300/20 bg-amber-300/5 p-3 text-sm text-amber-200">Локальная проверка редактора. Вход и серверное хранение здесь не используются.</p>}
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
       <label className="sr-only" htmlFor="rig-name">Название рига</label><input id="rig-name" className={`${input} !w-52`} maxLength={120} value={name} onChange={(e)=>setName(e.target.value)}/>

@@ -180,7 +180,10 @@ export default function DesignEnginePage() {
   async function runGeneration(text: string, echoPrompt: boolean) {
     const cleaned = text.trim();
     if (is2DRiggingRequest(cleaned)) {
-      setError(CHARACTER_GENERATION_UNAVAILABLE);
+      try {
+        sessionStorage.setItem("atrion:character-prompt",cleaned);
+        router.push("/dashboard/rigging?mode=rig2d#character-generation");
+      } catch {setError(CHARACTER_GENERATION_UNAVAILABLE);}
       return;
     }
     if (cleaned.length < 10) {

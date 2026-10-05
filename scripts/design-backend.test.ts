@@ -7,6 +7,7 @@ import { parseDesignDocument, evaluateDesign } from "../src/backend/design/docum
 import { readDesignBody, MAX_DESIGN_BODY_BYTES } from "../src/backend/design/body";
 import { addBone2D, bindLayer, bindPart, blank2D, demo3D, parseRigDocument, posedConcept, removeBone, rigFromConcept } from "../src/shared/rigging/editor";
 import { is2DRiggingRequest } from "../src/shared/rigging/intent";
+import { createCharacterConcept, imageConfiguration, imageRequest, MAX_IMAGE_BYTES } from "../src/backend/characters/concept";
 import { DesignError } from "../src/backend/design/validation";
 import { createDesignStore } from "../src/backend/design/store";
 
@@ -318,4 +319,51 @@ test("3D detaching and deleting a posed bone retains every instance matrix",()=>
     assert.equal(candidate.kind,"rig3d");const after=evaluateRig3D(candidate as typeof doc).parts.filter((p)=>p.name==="Рука").map((p)=>p.matrix);
     assert.equal(after.length,before.length);before.forEach((m,index)=>m.forEach((n,i)=>near(after[index][i],n)));
   }
+});
+
+test("Image provider never reuses a third-party text API key",()=>{
+  assert.equal(imageConfiguration({OPENAI_API_KEY:"text-test",OPENAI_BASE_URL:"https://example.org/v1"}).apiKey,undefined);
+  assert.equal(imageConfiguration({OPENAI_API_KEY:"official-test"}).apiKey,"official-test");
+  assert.equal(imageConfiguration({OPENAI_IMAGE_API_KEY:"image-test",OPENAI_API_KEY:"text-test",OPENAI_BASE_URL:"https://example.org/v1"}).apiKey,"image-test");
+  assert.throws(()=>imageConfiguration({OPENAI_IMAGE_MODEL:"unsupported-model"}));
+});
+
+test("Character concept request asks for one transparent image, never a completed rig",()=>{
+  const request=imageRequest("персонаж в синей одежде","gpt-image-2.5-flare");
+  assert.equal(request.n,1);assert.equal(request.background,"transparent");
+  assert.equal(request.output_format,"webp");assert.equal(request.size,"1024x1536");
+  assert.match(request.prompt,/персонаж в синей одежде/);
+  assert.match(request.prompt,/not an already rigged model/);
+});
+
+test("Invalid prompts, missing provider and exhausted quota do not invoke paid generation",async()=>{
+  let reserved=0,generated=0,refunded=0;
+  const deps={configured:true,reserve:async()=>{reserved++;return {ok:true as const};},refund:async()=>{refunded++;},generate:async()=>{generated++;return undefined;}};
+  await assert.rejects(createCharacterConcept("short",deps));
+  await assert.rejects(createCharacterConcept("девушка в синем платье",{...deps,configured:false}));
+  assert.equal(reserved,0);
+  await assert.rejects(createCharacterConcept("девушка в синем платье",{...deps,reserve:async()=>({ok:false as const,error:"Лимит",code:"AI_LIMIT_REACHED"})}));
+  assert.equal(generated,0);assert.equal(refunded,0);
+});
+
+test("Image success keeps quota; invalid image/provider failure refunds exactly once",async()=>{
+  const webp=Buffer.concat([Buffer.from("RIFF"),Buffer.alloc(4),Buffer.from("WEBPVP8X"),Buffer.alloc(16)]).toString("base64");
+  let reserved=0,refunded=0;
+  const deps={configured:true,reserve:async()=>{reserved++;return {ok:true as const};},refund:async()=>{refunded++;},generate:async()=>webp};
+  const result=await createCharacterConcept("девушка в синем платье",deps);
+  assert.equal(result.rigReady,false);assert.equal(result.stage,"concept");assert.equal(refunded,0);
+  for(const bad of [undefined,"<svg>not image</svg>",Buffer.alloc(MAX_IMAGE_BYTES+1).toString("base64")]){
+    await assert.rejects(createCharacterConcept("девушка в синем платье",{...deps,generate:async()=>bad}));
+  }
+  await assert.rejects(createCharacterConcept("девушка в синем платье",{...deps,generate:async()=>{throw new Error("PRIVATE_PROVIDER_DETAILS");}}),error=>error instanceof Error&&!error.message.includes("PRIVATE_PROVIDER_DETAILS"));
+  assert.equal(reserved,5);assert.equal(refunded,4);
+});
+
+test("Cancelling character generation releases a reserved quota without returning artwork",async()=>{
+  const controller=new AbortController();let reserved=0,refunded=0;
+  const deps={configured:true,reserve:async()=>{reserved++;return {ok:true as const};},refund:async()=>{refunded++;},generate:async()=>{controller.abort();throw new Error("abort");}};
+  await assert.rejects(createCharacterConcept("девушка в синем платье",deps,controller.signal));
+  assert.equal(reserved,1);assert.equal(refunded,1);
+  await assert.rejects(createCharacterConcept("девушка в синем платье",deps,controller.signal));
+  assert.equal(reserved,1);assert.equal(refunded,1);
 });
