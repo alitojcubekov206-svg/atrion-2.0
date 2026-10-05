@@ -17,7 +17,8 @@ type Saved={id:string;name:string;kind:string;revision:number;data?:unknown};
 const button="rounded-lg border border-white/15 px-3 py-2 text-xs font-medium transition hover:border-violet-400 hover:bg-violet-400/10 disabled:opacity-35";
 const input="w-full rounded-lg border border-white/15 bg-[#201e2b] px-2 py-2 text-sm text-white focus:border-violet-400 focus:outline-none";
 const newId=(prefix:string)=>`${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;
-const boneName=(id:string)=>({body:"Корпус",head:"Голова",arm:"Рука",arm_left:"Левая рука",arm_right:"Правая рука",leg_left:"Левая нога",leg_right:"Правая нога",root:"Корень"}[id]??id.replace(/^bone_/,"Кость "));
+const boneLabels:Record<string,string>={body:"Корпус",head:"Голова",arm:"Рука",arm_left:"Левая рука",arm_right:"Правая рука",leg_left:"Левая нога",leg_right:"Правая нога",root:"Корень"};
+const boneName=(id:string)=>Object.hasOwn(boneLabels,id)?boneLabels[id]:id.replace(/^bone_/,"Кость ");
 const clone=<T,>(value:T):T=>structuredClone(value);
 const label="text-xs text-violet-200/70";
 const packed=(snapshot:Snapshot):RigDocument=>snapshot.doc.kind==="rig2d"?{...snapshot.doc,pose:snapshot.pose2D}:snapshot.doc;
@@ -122,11 +123,11 @@ export default function RigEditor({initialMode="rig2d",preview=false}:{initialMo
     if(doc.kind!=="rig2d")throw new Error("Требуется 2D");
     const selectedBone=doc.bones.find((item)=>item.id===bone.id)!;
     if(editBind)return selectedBone.bind;
-    if(state.pose2D[bone.id])return state.pose2D[bone.id];
+    if(Object.hasOwn(state.pose2D,bone.id))return state.pose2D[bone.id];
     const track=clip?.tracks.find((item)=>item.boneId===bone.id);
     return track?sample2DTrack(track,clip!.loop?time%clip!.duration:Math.min(time,clip!.duration)):selectedBone.bind;
   }
-  function transformValue() {return doc.kind==="rig2d"?active2DTransform():editBind?bone.bind:doc.pose?.[bone.id]??bone.bind;}
+  function transformValue() {return doc.kind==="rig2d"?active2DTransform():!editBind&&doc.pose&&Object.hasOwn(doc.pose,bone.id)?doc.pose[bone.id]:bone.bind;}
   const transform=transformValue();
   function setPosition(index:number,value:number){change((next)=>{
     const current=clone(transform);current.position[index]=value;
