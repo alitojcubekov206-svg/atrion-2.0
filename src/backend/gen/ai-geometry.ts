@@ -1,6 +1,6 @@
 import type { ModelPart, ThreeDConcept } from "@/shared/types";
 import { dimensionsOf, primitiveCount, structureFromGroups } from "@/shared/geometry";
-import { MAX_PARTS, scoreParts, validateAndRepair } from "@/backend/gen/validate";
+import { isSupportedPrimitive, MAX_PARTS, scoreParts, validateAndRepair } from "@/backend/gen/validate";
 import { parsePromptParams } from "@/backend/gen/prompt-params";
 
 /** Supplied by the AI layer so this module stays provider-agnostic. */
@@ -46,13 +46,20 @@ MATERIAL FIELDS (all optional, 0-1): opacity (glass ~0.4), metalness, roughness,
 
 HOW TO BUILD SOMETHING THAT LOOKS RIGHT
 1. Start from the main volume and its real proportions, then add sub-volumes, then details.
-2. Every part must touch or overlap another part. Nothing floats in the air.
-3. Details are what makes it read as a finished model: frames around glass, sills under windows,
-   an overhang on a roof, a ridge beam, handles on doors, trim lines, feet under furniture,
-   joints between limbs. Put a frame and a sill on every window; never a bare blue rectangle.
+2. Connect components where the object's construction requires it. Preserve intentional gaps,
+   separate objects, moving joints and exploded layouts when requested; do not glue them together.
+3. Choose details from the requested object and its function. Preserve its defining silhouette,
+   proportions, orientation and named components before adding detail. Architectural parts belong
+   only on objects that need them; vehicle classes do not imply wheels or a road-car chassis.
+   Do not add unrelated parts merely to reach a part-count target.
 4. Push detail parts slightly proud of the surface they sit on (2-5 cm) so they are visible.
 5. Vary colour between materials. Use shading for trim rather than one flat colour everywhere.
-6. Respect every measurement the user gave. Invent sensible ones for anything they did not say.
+6. Respect every measurement the user gave. Overall height includes base, body and top together;
+   do not give the body the full height and then add a top outside that height.
+7. Count requested components exactly. repeat.count includes the original instance.
+   repeat.step is linear translation, not a circular array; place radial components separately.
+8. Check that visible surfaces (windows, controls, trim) are not entirely hidden inside opaque volumes.
+   Main sub-volumes must meet at sensible joints; do not bury an entire nose or lid inside the body.
 
 OUTPUT — strict JSON, no prose, no markdown fence:
 {"name":"...","description":"...","category":"...","parts":[
@@ -64,8 +71,8 @@ OUTPUT — strict JSON, no prose, no markdown fence:
 - role: one of foundation, volume, roof, wall, window, door, detail, structure, furniture, limb, head, wheel, light.
 - group: the section of the structure tree this part belongs to.`;
 
-const EXAMPLE = `Worked example — a desk lamp, 0.45 m tall. Note the frame-plus-glass window pattern
-applied to the shade, the repeat used for the vents, and every part touching its neighbour:
+const EXAMPLE = `Schema example only — a desk lamp, 0.45 m tall. Its parts and proportions are specific to
+a lamp; do not transfer them to another requested object. Note the repeat and connected joints:
 {"name":"Настольная лампа","description":"Лампа на круглом основании с гибкой стойкой","category":"product",
 "parts":[
 {"id":"base","name":"Основание","shape":"cylinder","position":[0,0.015,0],"size":[0.18,0.03,0.18],"rotation":[0,0,0],"color":"#2e3238","material":"Металл","role":"foundation","group":"База","metalness":0.7,"roughness":0.35},
@@ -84,47 +91,12 @@ applied to the shade, the repeat used for the vents, and every part touching its
  * this never pushes the model toward a stock shape.
  */
 function detailTarget(category: string): { parts: string; note: string } {
-  switch (category) {
-    case "landmark":
-      return {
-        parts: "50-85",
-        note: "Foundation and bearing structure, stacked volumes, roof or crown with overhang and ridge, window units (frame + glass + sill) laid out with repeat and mirror, entrance with steps and canopy, gutters, downpipes, trim bands, railings.",
-      };
-    case "structure":
-      return {
-        parts: "45-75",
-        note: "Plinth, storey volumes with floor bands, roof with overhang and ridge, window units of frame + glass + sill via repeat and mirror, entrance with steps and canopy, downpipes, corner trim.",
-      };
-    case "vehicle":
-      return {
-        parts: "40-70",
-        note: "Chassis, cabin, front and rear volumes, wheels as torus tyre + cylinder rim + spokes with mirror, translucent glazing, lights with emissive, bumpers, mirrors, handles, shut lines.",
-      };
-    case "furniture":
-      return {
-        parts: "35-60",
-        note: "Main mass, joints and limbs or legs with feet, cushions or panels, edge trim, fasteners, and whatever the wording adds — every named feature gets its own parts.",
-      };
-    case "handheld":
-    case "micro":
-      return {
-        parts: "30-55",
-        note: "Main body, functional sub-volumes, seams and panel lines, controls, ports, feet or stand, screens or lenses with emissive, fasteners.",
-      };
-    default:
-      return {
-        parts: "35-60",
-        note: "Main volume, sub-volumes, then a layer of fine detail: seams, trim, joints, fasteners, and a distinct part for every feature the prompt names.",
-      };
-  }
-}
-
-function describeBaseline(baseline: ThreeDConcept): string {
-  const groups = (baseline.structure ?? structureFromGroups(baseline.parts))
-    .map((group) => `${group.label} (${group.partIds.length})`)
-    .join(", ");
-  return `A parametric baseline already exists for reference — beat it, do not copy it.
-Baseline: ${baseline.dimensions.width} x ${baseline.dimensions.depth} x ${baseline.dimensions.height} m, sections: ${groups}.`;
+  // Scale controls capacity, never the object's anatomy or required components.
+  const budgets:Record<string,string>={landmark:"up to 85",structure:"up to 75",vehicle:"up to 70",furniture:"up to 60",handheld:"up to 55",micro:"up to 55"};
+  return {
+    parts:Object.hasOwn(budgets,category)?budgets[category]:"up to 60",
+    note:"This is a suggested complexity budget, not a component list or an object type. Identify the requested object from the user's description and clarifications. Build its defining main forms and functional components first; add only relevant details. Use fewer parts when appropriate instead of inventing unrelated decoration.",
+  };
 }
 
 type RawGeometry = {
@@ -135,8 +107,7 @@ type RawGeometry = {
 
 /**
  * Ask the model to author the geometry itself, then validate and repair it.
- * Runs a second critique pass when the first attempt scores poorly, because a
- * single pass reliably produces floating or disconnected parts.
+ * Corrects reported validation issues, without ranking meaning by part count.
  */
 export async function generateAIGeometry(options: {
   prompt: string;
@@ -154,7 +125,7 @@ export async function generateAIGeometry(options: {
 
   const system = `${GEOMETRY_RULES}
 
-DETAIL BUDGET for a "${category}": author ${target.parts} parts. ${target.note}
+DETAIL BUDGET for scale class "${category}": approximately ${target.parts} parts. ${target.note}
 Repeat and mirror multiply those into more rendered instances — use them.
 Hard limit: ${MAX_PARTS} entries in "parts".
 
@@ -164,12 +135,6 @@ ${EXAMPLE}`;
     params.width ? `width ${params.width} m` : null,
     params.depth ? `depth ${params.depth} m` : null,
     params.height ? `height ${params.height} m` : null,
-    params.floors ? `${params.floors} floors` : null,
-    params.count ? `count ${params.count}` : null,
-    params.roof ? `roof ${params.roof}` : null,
-    params.material ? `material ${params.material}` : null,
-    params.color ? `main colour ${params.color}` : null,
-    params.features.size ? `features: ${[...params.features].join(", ")}` : null,
   ]
     .filter(Boolean)
     .join("; ");
@@ -178,7 +143,7 @@ ${EXAMPLE}`;
 
 ${measurements ? `Parsed from the request — honour these exactly: ${measurements}.` : "No explicit measurements were given; choose realistic ones."}
 ${answers.length ? `Clarifications:\n${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n")}` : ""}
-${describeBaseline(baseline)}
+The request and explicit measurements take priority. No template defines the requested object's parts.
 
 Return the JSON object now.`;
 
@@ -188,14 +153,14 @@ Return the JSON object now.`;
   try {
     const raw = await request<RawGeometry>(system, user);
     passes++;
-    best = toResult(raw, baseline, passes);
+    best = toResult(raw, baseline, passes, params);
   } catch (error) {
     console.warn("AI geometry pass 1 failed", error instanceof Error ? error.name : error);
     return null;
   }
 
   if (!best) return null;
-  if (options.singlePass || best.score >= 0.78) return best;
+  if (options.singlePass || !best.issues.length) return best;
 
   // Second pass: hand the model its own output plus the concrete defects.
   try {
@@ -204,9 +169,11 @@ Return the JSON object now.`;
       `${GEOMETRY_RULES}
 
 You are fixing geometry you already produced. Return the COMPLETE corrected parts list,
-not a patch. Keep everything that works, fix only what is listed as wrong, and add the
-missing detail. Never return fewer parts than you were given.`,
+not a patch. Keep the requested silhouette, dimensions, materials and intentional spacing.
+Fix only the reported validation issues. Remove redundant parts when necessary.
+Part count and primitive variety are not quality targets.`,
       `Original request: ${prompt}
+Clarifications: ${answers.map((item) => `${item.question}: ${item.answer}`).join("; ") || "none"}
 
 Your current model "${best.name}" has ${best.parts.length} parts (${best.primitives} rendered instances).
 Problems to fix:
@@ -218,48 +185,17 @@ ${JSON.stringify(best.parts.map(compactPart))}
 Return the corrected JSON object now.`
     );
     passes++;
-    const second = toResult(repaired, baseline, passes);
-    if (second && second.score > best.score) return second;
+    const second = toResult(repaired, baseline, passes, params);
+    if (second && second.issues.length < best.issues.length) return second;
   } catch (error) {
     console.warn("AI geometry repair pass failed", error instanceof Error ? error.name : error);
   }
 
-  return best;
+  return {...best, passes};
 }
 
 function buildCritique(result: AIGeometryResult): string {
-  const notes: string[] = [];
-  const dims = dimensionsOf(result.parts);
-  const span = Math.max(dims.width, dims.height, dims.depth);
-
-  if (result.issues.length) notes.push(...result.issues.map((issue) => `- ${issue}`));
-  if (result.score < 0.6) {
-    notes.push(
-      "- The parts do not read as one connected object. Move every part so it touches or overlaps a neighbour."
-    );
-  }
-  if (result.primitives < 30) {
-    notes.push(
-      `- Only ${result.primitives} rendered primitives — too plain. Add frames, sills, trim, joints, handles and seams, and use repeat for anything that occurs in a row.`
-    );
-  }
-  const shapes = new Set(result.parts.map((item) => item.shape));
-  if (shapes.size <= 2) {
-    notes.push(
-      `- The model uses only ${[...shapes].join(" and ")}. Use the other primitives where they fit — prism or pyramid for roofs, cylinder and capsule for round parts, tube for frames and railings.`
-    );
-  }
-  const oversized = result.parts.filter((item) => Math.max(...item.size) > span * 1.02);
-  if (oversized.length) {
-    notes.push(
-      `- These parts are as large as the whole model and swallow it: ${oversized
-        .slice(0, 5)
-        .map((item) => item.id)
-        .join(", ")}.`
-    );
-  }
-  if (!notes.length) notes.push("- Add another layer of fine detail and tighten the proportions.");
-  return notes.join("\n");
+  return result.issues.map((issue) => `- ${issue}`).join("\n");
 }
 
 /** Trim a part down to the fields worth spending tokens on in the repair pass. */
@@ -279,23 +215,46 @@ function compactPart(item: ModelPart) {
     ...(item.mirror ? { mirror: item.mirror } : {}),
     ...(item.opacity !== undefined ? { opacity: item.opacity } : {}),
     ...(item.emissive !== undefined ? { emissive: item.emissive } : {}),
+    ...(item.metalness !== undefined ? { metalness: item.metalness } : {}),
+    ...(item.roughness !== undefined ? { roughness: item.roughness } : {}),
   };
 }
 
 function toResult(
   raw: RawGeometry,
   baseline: ThreeDConcept,
-  passes: number
+  passes: number,
+  measurements: {width?:number;height?:number;depth?:number}
 ): AIGeometryResult | null {
   if (!raw || typeof raw !== "object") return null;
 
-  const targetMaxSize = Math.max(
-    baseline.dimensions.width,
-    baseline.dimensions.height,
-    baseline.dimensions.depth
-  );
-  const repaired = validateAndRepair(raw.parts, { targetMaxSize });
-  if (repaired.parts.length < 4) return null;
+  // A missing shape/size must not silently become a unit box. This boundary is
+  // deliberately stricter than the legacy saved-concept normalizer.
+  const vector = (value: unknown, positive = false, limit=400): boolean => Array.isArray(value) && value.length === 3 &&
+    value.every((n) => typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= limit && (!positive || n >= 0.01));
+  if (!Array.isArray(raw.parts) || !raw.parts.length || raw.parts.length > MAX_PARTS || raw.parts.some((part) =>
+    !part || typeof part !== "object" || !isSupportedPrimitive(part.shape) || !vector(part.size, true) ||
+    !vector(part.position) || (part.rotation !== undefined && !vector(part.rotation,false,Math.PI*4)) ||
+    (part.repeat!==undefined && (!part.repeat || !Number.isInteger(part.repeat.count) || part.repeat.count<1 || part.repeat.count>64 || !vector(part.repeat.step) ||
+      (part.repeat.rotationStep!==undefined&&!vector(part.repeat.rotationStep,false,Math.PI*2)))) ||
+    (part.mirror!==undefined && !["x","z","xz"].includes(part.mirror)))) return null;
+
+  // Baseline dimensions are estimates, not measurements. Do not shrink the AI
+  // model to them or merge separate requested objects by bounding-box proximity.
+  const repaired = validateAndRepair(raw.parts, { preserveLayout: true });
+  if (!repaired.parts.length) return null;
+  const actual = dimensionsOf(repaired.parts);
+  for(const part of repaired.parts){
+    if(part.repeat && part.repeat.count>1 && !part.repeat.step.some(Boolean) && !part.repeat.rotationStep?.some(Boolean)){
+      repaired.issues.push(`Деталь ${part.id}: повторения полностью совпадают. Задайте отдельные позиции для запрошенного числа деталей.`);
+    }
+  }
+  for (const axis of ["width", "height", "depth"] as const) {
+    const expected = measurements[axis];
+    if (expected && Math.abs(actual[axis] - expected) > Math.max(.005, expected * .01)) {
+      repaired.issues.push(`Габарит ${axis}: задано ${expected} м, получено ${actual[axis]} м. Исправьте общий размер, сохранив состав объекта.`);
+    }
+  }
 
   return {
     name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim().slice(0, 70) : baseline.name,
@@ -313,8 +272,8 @@ function toResult(
 
 /**
  * Choose between AI-authored geometry and the parametric baseline.
- * The AI follows the wording more closely, so it wins ties — but it never
- * ships when it is clearly the worse model.
+ * Validated AI output takes priority. Complexity scores cannot determine which
+ * geometry matches the prompt; the baseline is only a labelled failure fallback.
  */
 export function pickBetterGeometry(
   baseline: ThreeDConcept,
@@ -322,9 +281,6 @@ export function pickBetterGeometry(
 ): { concept: ThreeDConcept; source: "ai" | "procedural"; aiScore: number; baseScore: number } {
   const baseScore = scoreParts(baseline.parts);
   if (!ai) return { concept: baseline, source: "procedural", aiScore: 0, baseScore };
-
-  const wins = ai.score >= 0.45 && ai.score >= baseScore * 0.9;
-  if (!wins) return { concept: baseline, source: "procedural", aiScore: ai.score, baseScore };
 
   return {
     concept: {
