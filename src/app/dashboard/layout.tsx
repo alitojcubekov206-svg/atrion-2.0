@@ -9,6 +9,7 @@ import CommandPalette, { CommandPaletteTrigger } from "@/frontend/components/Com
 const NAV = [
   { href: "/dashboard", label: "Проекты", always: false },
   { href: "/dashboard/design-engine", label: "Design Engine", always: true },
+  { href: "/dashboard/rigging", label: "Риггинг", always: true },
   { href: "/dashboard/settings", label: "Настройки", always: false },
   { href: "/pricing", label: "Тарифы", always: false },
 ];

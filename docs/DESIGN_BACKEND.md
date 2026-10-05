@@ -1,6 +1,6 @@
 # Серверная часть риггинга и дома
 
-Реализована в `src/backend/design` без изменения фронтенда и существующих shared-файлов. Все маршруты используют `requireApiUser`, включая проверку email при включённом флаге. Вычисления детерминированные, без внешнего AI; суточная AI-квота и старый счётчик 3D-генераций не расходуются.
+Хранение реализовано в `src/backend/design`, чистые контракты/evaluators ригов — в `src/shared/rigging`, клиент — в `src/frontend/rigging`. Все маршруты используют `requireApiUser`, включая проверку email при включённом флаге. Вычисления детерминированные, без внешнего AI; суточная AI-квота и старый счётчик 3D-генераций не расходуются.
 
 ## API
 
@@ -21,13 +21,13 @@
 
 ## 2D
 
-`Rig2DDocument`: `kind:"rig2d"`, `schemaVersion:1`, `canvas:{width,height}`, `assets`, `layers`, `bones`, `attachments`, `clips`. Размеры — пиксели; +x вправо, +y вверх; rotation — радианы. Матрица `[a,b,c,d,tx,ty]` преобразует точку в `[a*x+c*y+tx, b*x+d*y+ty]`. Экранное отображение ещё не реализовано.
+`Rig2DDocument`: `kind:"rig2d"`, `schemaVersion:1`, `canvas:{width,height}`, `assets`, `layers`, `bones`, `attachments`, `clips`, optional `pose`. Размеры — пиксели; +x вправо, +y вверх; rotation — радианы. Матрица `[a,b,c,d,tx,ty]` преобразует точку в `[a*x+c*y+tx, b*x+d*y+ty]`. Canvas переводит +y вверх в экранные координаты.
 
 Transform: `{position:[x,y],rotation,scale:[sx,sy]}`. Scale положительный 0.01–100; affine-матрица сохраняет shear от неравномерного масштаба предков. Bone: `{id,parentId:null|id,length,bind:transform}`; кость направлена по локальной +x. Родитель задаёт локальное пространство потомка; порядок в массиве произвольный, циклы запрещены.
 
-Asset: `{id,uri,mime,width,height}`. URI — HTTPS без credentials; MIME — image/png или image/webp. Сервер не скачивает и не проверяет содержимое изображения. Это ссылки и заявленные метаданные, а не загрузчик ассетов. Layer: `{id,assetId,zIndex,visible,pivot:[x,y],transform}`. Pivot задан в локальных координатах изображения. Attachment: `{layerId,boneId,offset:transform}`; привязанный слой использует `boneWorld * offset`, непривязанный — `layer.transform`; затем вычитается pivot. При привязке `layer.transform` не складывается с offset.
+Asset: `{id,uri,mime,width,height}`. URI — HTTPS без credentials либо data URI PNG/WebP до 256 KiB декодированных байт. Сервер проверяет MIME и сигнатуру inline PNG/RIFF WebP, но не декодирует изображения; HTTPS не скачивает. Клиент декодирует локальные файлы до добавления. Отдельного object storage нет. Layer: `{id,assetId,zIndex,visible,pivot:[x,y],transform}`. Pivot задан в локальных координатах изображения. Attachment: `{layerId,boneId,offset:transform}`; привязанный слой использует `boneWorld * offset`, непривязанный — `layer.transform`; затем вычитается pivot. При привязке `layer.transform` не складывается с offset.
 
-Clip: `{id,duration,loop,tracks}`. Track: `{boneId,rotationMode:"shortest"|"unwrapped",keys}`. Key: `{time,transform,interpolation:"linear"|"step"}`; время в секундах строго возрастает и находится в пределах duration. Интерполяция задаётся начальным ключом сегмента; shortest вращает по кратчайшему пути, unwrapped сохраняет полные обороты. Loop использует modulo, без loop время ограничивается концом клипа; за крайними ключами сохраняется ближайший ключ. Options: `{clipId?,time?,pose?}`; pose — карта полных локальных transforms и перекрывает клип. Bind данные не меняются; пустые options возвращают bind pose.
+Clip: `{id,duration,loop,tracks}`. Track: `{boneId,rotationMode:"shortest"|"unwrapped",keys}`. Key: `{time,transform,interpolation:"linear"|"step"}`; время в секундах строго возрастает и находится в пределах duration. Интерполяция задаётся начальным ключом сегмента; shortest вращает по кратчайшему пути, unwrapped сохраняет полные обороты. Loop использует modulo, без loop время ограничивается концом клипа; за крайними ключами сохраняется ближайший ключ. Options: `{clipId?,time?,pose?}`; pose — карта полных локальных transforms и перекрывает клип. Bind данные не меняются. Без clip/options.pose используется optional document.pose; при выборе клипа document.pose не перекрывает его. Явный pose:{} возвращает bind pose без клипа.
 
 Максимумы: canvas 16384², asset 8192², по 256 assets/layers/bones/attachments, 32 clips, 512 keys на track и 8192 keys суммарно. Минимум одна кость. Пример скелета без изображений:
 
@@ -51,11 +51,11 @@ Clip: `{id,duration,loop,tracks}`. Track: `{boneId,rotationMode:"shortest"|"unwr
 
 ## 3D
 
-`Rig3DDocument`: `kind:"rig3d"`, `schemaVersion:1`, `units:"m"|"cm"|"mm"`, `bones`, `parts`, `bindings`. Bone содержит `id`, `parentId`, `length`, `bind:{position:[x,y,z],rotation:[rx,ry,rz]}`; направлен по локальной +y. Вращения XYZ в радианах, масштаба костей нет. Part использует существующий `ModelPart`: полные size до вращения, world position/rotation исходной bind pose; shape/color/name/id обязательны. Material по умолчанию «Не задан», quantity нормализуется из repeat/mirror. Binding: `{partId,boneId}`; вся часть со всеми экземплярами привязывается к одной кости.
+`Rig3DDocument`: `kind:"rig3d"`, `schemaVersion:1`, `units:"m"|"cm"|"mm"`, `bones`, `parts`, `bindings`, optional `pose`. Bone содержит `id`, `parentId`, `length`, `bind:{position:[x,y,z],rotation:[rx,ry,rz]}`; направлен по локальной +y. Вращения XYZ в радианах, масштаба костей нет. Part использует существующий `ModelPart`: полные size до вращения, world position/rotation исходной bind pose; shape/color/name/id обязательны. Material по умолчанию «Не задан», quantity нормализуется из repeat/mirror. Binding: `{partId,boneId}`; вся часть со всеми экземплярами привязывается к одной кости.
 
 Options: `{pose:{boneId:{position,rotation}}}`. Каждая часть сначала разворачивается через существующий `expandPart`, затем получает `poseBoneWorld * inverse(bindBoneWorld) * partBindWorld`. Возвращаются world position/rotation, matrix (Three.js column-major), size, `sourcePartId` и IDs экземпляров. Локальные mesh-вершины не переписываются; трансформация применяется один раз. Максимум 128 bones, 256 parts/bindings, 4096 экземпляров; mesh содержит до 90000 чисел position полных треугольников, опциональный normal той же длины.
 
-Это жёсткие привязки, без skinning/weights, IK и 3D animation clips. JSON-экспорт сохраняет исходный риг; переданные options/вычисленная поза в документ не сохраняются. Экспорт GLB со скелетом не добавлен.
+Это жёсткие привязки, без skinning/weights, IK и 3D animation clips. JSON-экспорт сохраняет исходный риг и optional document.pose; options запроса не записываются сами. Редактор сохраняет pose явно. GLB в UI — запечённая видимая статическая поза, без скелета/анимаций.
 
 ## Дом
 
@@ -73,4 +73,4 @@ Opening: `{id,roomId,side:"north"|"south"|"east"|"west",kind:"door"|"window",off
 
 DDL — [prisma/design-documents.sql](../prisma/design-documents.sql), схема — [schema.prisma](../prisma/schema.prisma). SQL подготовлен для ревью/отдельной staging-базы и не исполнялся на production. Это не история Prisma migrations. Перед включением хранения нужно проверить схему и CRUD на выделенной базе; `prisma generate` только обновляет клиент. Отсутствие таблицы не препятствует вычислению через `/api/design/evaluate`, но авторизация всё равно требует существующей базы User.
 
-Проверки: `npm run test:backend`, `npx tsc --noEmit`, `npm run build`. Unit-тесты хранения используют подменённый Prisma-клиент и проверяют ограничения запросов; они не доказывают блокировки/гонки в PostgreSQL. UI не подключён и визуально не тестировался.
+Проверки: `npm run test:backend`, `npx tsc --noEmit`, `npm run build`. Unit-тесты хранения используют подменённый Prisma-клиент и проверяют ограничения запросов; они не доказывают блокировки/гонки в PostgreSQL. UI подключён; выполненные проверки и ограничения перечислены в [PROJECT_STATUS.md](PROJECT_STATUS.md).

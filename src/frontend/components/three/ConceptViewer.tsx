@@ -6,6 +6,7 @@ import {
   Environment,
   Edges,
   Grid,
+  Line,
   OrbitControls,
   TransformControls,
 } from "@react-three/drei";
@@ -13,7 +14,7 @@ import { Suspense, useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { Group } from "three";
 import * as THREE from "three";
 import type { ModelPart, PartShape, ThreeDConcept } from "@/shared/types";
-import { expandPart, primitiveCount } from "@/shared/geometry";
+import { expandPart, primitiveCount, partsBounds } from "@/shared/geometry";
 import type { CadTool } from "@/frontend/components/CadToolbar";
 
 export type DrawingView = "perspective" | "top" | "front" | "side";
@@ -206,9 +207,17 @@ function usePartGeometry(part: ModelPart): THREE.BufferGeometry {
   return geometry;
 }
 
-function CameraRig({ view, maxDimension }: { view: DrawingView; maxDimension: number }) {
-  const { camera } = useThree();
+type ModelFrame={center:[number,number,number];radius:number};
+function CameraRig({ view, maxDimension, frame }: { view: DrawingView; maxDimension: number; frame?:ModelFrame }) {
+  const { camera, size } = useThree();
   useEffect(() => {
+    if(frame&&camera instanceof THREE.PerspectiveCamera){
+      const vertical=THREE.MathUtils.degToRad(camera.fov/2),horizontal=Math.atan(Math.tan(vertical)*size.width/size.height);
+      const distance=frame.radius/Math.sin(Math.min(vertical,horizontal))*1.2;
+      const target=new THREE.Vector3(...frame.center);
+      camera.position.copy(target).add(new THREE.Vector3(0.65,0.3,1).normalize().multiplyScalar(distance));
+      camera.near=Math.max(0.001,distance/1000);camera.far=Math.max(500,distance*10);camera.lookAt(target);camera.updateProjectionMatrix();return;
+    }
     const distance = Math.max(14, maxDimension * 1.55);
     const lookY = Math.max(1.2, maxDimension * 0.22);
     const positions: Record<DrawingView, [number, number, number]> = {
@@ -227,7 +236,7 @@ function CameraRig({ view, maxDimension }: { view: DrawingView; maxDimension: nu
       );
     }
     camera.updateProjectionMatrix();
-  }, [camera, maxDimension, view]);
+  }, [camera, maxDimension, view, frame, size.width, size.height]);
   return null;
 }
 
@@ -412,6 +421,10 @@ export default function ConceptViewer({
   snap = true,
   snapStep = 0.1,
   onPartChange,
+  rigBones,
+  selectedBoneId,
+  onBoneSelect,
+  fitModel = false,
 }: {
   concept: ThreeDConcept;
   selectedId: string | null;
@@ -425,6 +438,10 @@ export default function ConceptViewer({
   snap?: boolean;
   snapStep?: number;
   onPartChange?: (id: string, patch: Partial<ModelPart>) => void;
+  rigBones?: {id:string;head:number[];tail:number[]}[];
+  selectedBoneId?: string;
+  onBoneSelect?: (id:string)=>void;
+  fitModel?: boolean;
 }) {
   const maxDimension = useMemo(
     () =>
@@ -438,6 +455,13 @@ export default function ConceptViewer({
   );
   /** Rendered primitives after repeat/mirror — drives the wireframe budget. */
   const totalInstances = useMemo(() => primitiveCount(concept.parts), [concept.parts]);
+  const frame=useMemo<ModelFrame|undefined>(()=>{
+    if(!fitModel)return undefined;
+    const bounds=partsBounds(concept.parts),box=new THREE.Box3(new THREE.Vector3(...bounds.min),new THREE.Vector3(...bounds.max));
+    for(const bone of rigBones??[]){box.expandByPoint(new THREE.Vector3(...bone.head));box.expandByPoint(new THREE.Vector3(...bone.tail));}
+    const center=box.getCenter(new THREE.Vector3());center.y+=0.05;
+    return {center:center.toArray(),radius:Math.max(0.1,box.getSize(new THREE.Vector3()).length()/2)};
+  },[fitModel,concept.parts,rigBones]);
 
   const fogNear = Math.max(18, maxDimension * 1.8);
   const fogFar = Math.max(45, maxDimension * 4.5);
@@ -466,7 +490,7 @@ export default function ConceptViewer({
         }}
         onPointerMissed={() => onSelect(null)}
       >
-        <CameraRig view={view} maxDimension={maxDimension} />
+        <CameraRig view={view} maxDimension={maxDimension} frame={frame} />
         <color attach="background" args={["#32353c"]} />
         <fog attach="fog" args={["#32353c", fogNear, fogFar]} />
 
@@ -501,6 +525,14 @@ export default function ConceptViewer({
           }
         >
           <group position={[0, 0.05, 0]}>
+            {rigBones?.map((bone)=><group key={`bone-${bone.id}`}>
+              <Line points={[bone.head as [number,number,number],bone.tail as [number,number,number]]}
+                color={bone.id===selectedBoneId?"#f7cf72":"#9ff2dd"} lineWidth={bone.id===selectedBoneId?5:3}
+                depthTest={false} renderOrder={10} onClick={(event)=>{event.stopPropagation();onBoneSelect?.(bone.id);}}/>
+              <mesh position={bone.head as [number,number,number]} renderOrder={11} onClick={(event)=>{event.stopPropagation();onBoneSelect?.(bone.id);}}>
+                <sphereGeometry args={[maxDimension*0.012,12,12]}/><meshBasicMaterial color={bone.id===selectedBoneId?"#f7cf72":"#9ff2dd"} depthTest={false}/>
+              </mesh>
+            </group>)}
             {concept.parts.map((part, index) => (
               <EditablePart
                 key={part.id}
@@ -548,10 +580,10 @@ export default function ConceptViewer({
           makeDefault
           enabled={orbitEnabled}
           enablePan
-          minDistance={2}
+          minDistance={frame?frame.radius*0.2:2}
           maxDistance={Math.max(40, maxDimension * 3.5)}
           maxPolarAngle={Math.PI * 0.495}
-          target={[0, Math.max(1, maxDimension * 0.2), 0]}
+          target={frame?.center??[0, Math.max(1, maxDimension * 0.2), 0]}
         />
       </Canvas>
     </div>

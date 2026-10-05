@@ -22,6 +22,8 @@ npm run db:push
 
 Это изменение базы. Сначала проверь выбранное окружение. Новая таблица DesignDocument и DDL описаны в [DESIGN_BACKEND.md](DESIGN_BACKEND.md). В репозитории нет истории Prisma migrations, поэтому `prisma migrate dev` и старый `manual-production-migration.sql` не являются текущим способом запуска.
 
+Без БД можно проверить ручные риги в development: `/playground/rigging?mode=rig2d` и `?mode=rig3d`. В production этот маршрут закрыт через notFound. Это не генератор персонажа по тексту; серверное сохранение требует входа и таблицы DesignDocument.
+
 ## Переменные
 
 Все имена и безопасные примеры — в [.env.example](../.env.example). Содержимое настоящего `.env` не копируй в отчёты.

@@ -5,6 +5,8 @@ import { parseRig3D, evaluateRig3D } from "../src/backend/design/rig3d";
 import { parseHouse, buildHouse } from "../src/backend/design/house";
 import { parseDesignDocument, evaluateDesign } from "../src/backend/design/documents";
 import { readDesignBody, MAX_DESIGN_BODY_BYTES } from "../src/backend/design/body";
+import { addBone2D, bindLayer, bindPart, blank2D, demo3D, parseRigDocument, posedConcept, removeBone, rigFromConcept } from "../src/shared/rigging/editor";
+import { is2DRiggingRequest } from "../src/shared/rigging/intent";
 import { DesignError } from "../src/backend/design/validation";
 import { createDesignStore } from "../src/backend/design/store";
 
@@ -247,4 +249,73 @@ test("Persistence creates only after locking the user and enforcing storage cap"
     assert.deepEqual(sequence,["lock","count"]);sequence.length=0;count=99;
     await createDesignDocument("owner","Name",parseRig2D(rig2()));assert.deepEqual(sequence,["lock","count","create"]);
   } finally {t.mock.restoreAll();}
+});
+
+test("Editor persists 2D/3D poses while clip sampling keeps its own transforms",()=>{
+  const two=blank2D();two.pose={body:{position:[25,30],rotation:0,scale:[1,1]}};
+  const loaded=parseRigDocument(JSON.parse(JSON.stringify(two)));
+  assert.equal(loaded.kind,"rig2d");near(evaluateRig2D(loaded as typeof two).bones[0].head[0],25);
+  const three=demo3D();three.pose={arm:{position:[0.6,1,0],rotation:[0,0,Math.PI/2]}};
+  const round=parseRigDocument(JSON.parse(JSON.stringify(three)));
+  assert.equal(round.kind,"rig3d");const posed=posedConcept(round as typeof three);
+  near(posed.parts.find((part)=>part.name==="Рука")!.position[0],1);
+  assert.deepEqual(three.parts,demo3D().parts);
+});
+test("Editor rejects cyclic reparenting and removes bone references atomically",()=>{
+  const three=demo3D();three.pose={arm:{position:[0.6,1,0],rotation:[0,0,1]}};
+  assert.throws(()=>removeBone(three,"body"),/дочерние/);
+  const result=removeBone(three,"arm");assert.equal(result.kind,"rig3d");
+  if(result.kind==="rig3d"){assert.ok(!result.pose?.arm);assert.ok(!result.bindings.some((b)=>b.boneId==="arm"));}
+  assert.deepEqual(three.bones,demo3D().bones,"source is preserved");
+  const cycle=demo3D();cycle.bones[0].parentId="arm";assert.throws(()=>parseRigDocument(cycle),DesignError);
+  const two=blank2D(),removed=removeBone(two,"arm_right");
+  if(removed.kind==="rig2d")assert.ok(removed.clips.every((c)=>!c.tracks.some((t)=>t.boneId==="arm_right")));
+});
+test("Inline raster assets round trip and reject active payloads, MIME mismatch and excess size",()=>{
+  const input=rig2();input.assets[0].uri="data:image/png;base64,"+btoa("\x89PNG\r\n\x1a\n"+"raster");
+  assert.equal(parseRig2D(input).assets[0].uri,input.assets[0].uri);
+  input.assets[0].uri="data:image/svg+xml;base64,"+btoa("<svg onload='alert(1)'/>");invalid(input);
+  input.assets[0].uri="data:image/webp;base64,"+btoa("RIFFxxxxWEBP");invalid(input);
+  input.assets[0].uri="data:image/png;base64,"+btoa("\x89PNG\r\n\x1a\n"+"x".repeat(262144));invalid(input);
+});
+test("Design Engine explicit 2D rig requests do not produce 3D primitives",()=>{
+  for(const prompt of ["сделай девушку 2д ригинг","2D rigging character","создай 2 d персонажа","двумерный персонаж со скелетом","создай Live2D модель девушки","сделай vtuber персонажа","сделай витубера"])assert.equal(is2DRiggingRequest(prompt),true,prompt);
+  for(const prompt of ["девушка 3D модель","дом 12 на 9 метров","2d план дома","room2designer","robot 3d rigging"])assert.equal(is2DRiggingRequest(prompt),false,prompt);
+});
+test("Existing scene import materializes safe IDs and retains mesh/repeat/mirror",()=>{
+  const source=demo3D();source.parts[0].repeat={count:2,step:[1,0,0]};source.parts[0].mirror="x";
+  const result=rigFromConcept({parts:source.parts,units:"cm"});assert.equal(result.units,"cm");
+  assert.equal(result.parts[0].id,"part_1");assert.deepEqual(result.parts[0].repeat,source.parts[0].repeat);
+  assert.equal(evaluateRig3D(result).parts.length,6);assert.throws(()=>rigFromConcept({}),/деталей/);
+});
+
+test("Deleting and rebinding a 2D bone preserves each visible layer corner",()=>{
+  const doc=parseRig2D(rig2()),pose={root:{position:[25,40] as [number,number],rotation:Math.PI/3,scale:[1,1] as [number,number]}};
+  const before=evaluateRig2D(doc,{pose}).layers[0].matrix;
+  const detached=bindLayer(doc,"handLayer",null,pose);
+  const rebound=bindLayer(detached,"handLayer","root",pose);
+  for(const candidate of [detached,rebound,removeBone(doc,"child",pose)]) {
+    assert.equal(candidate.kind,"rig2d");const after=evaluateRig2D(candidate as typeof doc,{pose}).layers[0].matrix;
+    before.forEach((value,index)=>near(after[index],value));
+  }
+  assert.equal(doc.attachments.length,1);
+});
+test("Sheared rebind fails without changing the source document",()=>{
+  const doc=parseRig2D(rig2());doc.bones[0].bind.scale=[2,1];doc.bones[1].bind.rotation=Math.PI/4;
+  const before=JSON.stringify(doc);assert.throws(()=>bindLayer(doc,"handLayer",null),/неравномерного/);assert.equal(JSON.stringify(doc),before);
+});
+test("Drawing a bone uses world canvas endpoints under a rotated parent",()=>{
+  const doc=blank2D(),result=addBone2D(doc,"drawn","body",[50,60],[110,120]);
+  const bone=evaluateRig2D(result,{pose:{}}).bones.find((b)=>b.id==="drawn")!;
+  near(bone.head[0],50);near(bone.head[1],60);near(bone.tail[0],110);near(bone.tail[1],120);
+  assert.throws(()=>addBone2D(doc,"short","body",[0,0],[1,1]),/не меньше/);
+});
+test("3D detaching and deleting a posed bone retains every instance matrix",()=>{
+  const doc=demo3D();doc.parts[2].repeat={count:2,step:[0,0,1]};doc.parts[2].mirror="x";
+  doc.pose={arm:{position:[0.6,1,0],rotation:[0,0,Math.PI/2]}};
+  const before=evaluateRig3D(doc).parts.filter((p)=>p.sourcePartId==="arm_part").map((p)=>p.matrix);
+  for(const candidate of [bindPart(doc,"arm_part",null),bindPart(doc,"arm_part","body"),removeBone(doc,"arm")]){
+    assert.equal(candidate.kind,"rig3d");const after=evaluateRig3D(candidate as typeof doc).parts.filter((p)=>p.name==="Рука").map((p)=>p.matrix);
+    assert.equal(after.length,before.length);before.forEach((m,index)=>m.forEach((n,i)=>near(after[index][i],n)));
+  }
 });
