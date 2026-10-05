@@ -72,6 +72,7 @@ function transformFromMatrix(m:Matrix2D):Transform2D {
 export function bindLayer(document:Rig2DDocument,layerId:string,boneId:string|null,pose:Record<string,Transform2D>={}):Rig2DDocument {
   const next=structuredClone(document),layer=next.layers.find((item)=>item.id===layerId);
   check(layer,"Слой не найден");
+  check(!layer.skin,"Слой уже деформируется по весам нескольких костей");
   const visible=evaluateRig2D(document,{pose});
   const layerMatrix=visible.layers.find((item)=>item.id===layerId)!.matrix;
   const world=multiply2D(layerMatrix,[1,0,0,1,...layer.pivot]);
@@ -123,6 +124,7 @@ export function removeBone(document: RigDocument, boneId: string,pose2D:Record<s
   if (next.bones.some((bone)=>bone.parentId===boneId)) throw new Error("Сначала удалите или перепривяжите дочерние кости");
   if (next.bones.length===1) throw new Error("В риге должна остаться хотя бы одна кость");
   if (next.kind==="rig2d") {
+    check(!next.layers.some((layer)=>layer.skin?.weights.some((weights)=>weights.some((w)=>w.boneId===boneId))),"Кость используется в сетке. Пересоберите скелет через подготовку рисунка перед удалением.");
     for(const binding of next.attachments.filter((item)=>item.boneId===boneId))next=bindLayer(next,binding.layerId,null,pose2D);
     next.clips.forEach((clip)=>{clip.tracks=clip.tracks.filter((track)=>track.boneId!==boneId);});
     if(next.pose)delete next.pose[boneId];

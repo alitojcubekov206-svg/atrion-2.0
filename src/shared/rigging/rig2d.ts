@@ -3,10 +3,16 @@ import { DesignError, check, choice, finiteMatrix, hierarchy, id, integer, list,
 export type Transform2D = { position: [number, number]; rotation: number; scale: [number, number] };
 export type Matrix2D = [number, number, number, number, number, number];
 export type Bone2D = { id: string; parentId: string | null; length: number; bind: Transform2D };
+export type Skin2D = {
+  /** Texture coordinates in asset pixels, +y up; rest placement comes from the layer. */
+  vertices: [number, number][];
+  triangles: [number, number, number][];
+  weights: { boneId: string; weight: number }[][];
+};
 export type Rig2DDocument = {
   kind: "rig2d"; schemaVersion: 1; canvas: { width: number; height: number };
   assets: { id: string; uri: string; mime: "image/png" | "image/webp"; width: number; height: number }[];
-  layers: { id: string; assetId: string; zIndex: number; visible: boolean; pivot: [number, number]; transform: Transform2D }[];
+  layers: { id: string; assetId: string; zIndex: number; visible: boolean; pivot: [number, number]; transform: Transform2D; skin?: Skin2D }[];
   bones: Bone2D[];
   attachments: { layerId: string; boneId: string; offset: Transform2D }[];
   clips: { id: string; duration: number; loop: boolean; tracks: {
@@ -46,12 +52,39 @@ export function parseRig2D(input: unknown): Rig2DDocument {
       width: integer(asset.width, "asset.width", 1, 8192), height: integer(asset.height, "asset.height", 1, 8192) };
   });
   const assetMap = unique(assets, "assets");
+  let vertexCount=0,triangleCount=0;
   const layers = list(value.layers, "layers", 256).map((item) => {
     const layer = record(item, "layer");
     const assetId = id(layer.assetId, "assetId");
     check(assetMap.has(assetId), `Неизвестный asset ${assetId}`);
     check(typeof layer.visible === "boolean", "visible: ожидается boolean");
-    return { id: id(layer.id, "layer.id"), assetId, visible: layer.visible,
+    let skin:Skin2D|undefined;
+    if(layer.skin!==undefined){
+      const input=record(layer.skin,"skin"),asset=assetMap.get(assetId)!;
+      const vertices=list(input.vertices,"skin.vertices",4096,3).map((p)=>{
+        const point=vector2(p,"skin.vertex");
+        check(point[0]>=0&&point[0]<=asset.width&&point[1]>=0&&point[1]<=asset.height,"Вершина выходит за границы ассета");return point;
+      });
+      const triangles=list(input.triangles,"skin.triangles",8192,1).map((p):[number,number,number]=>{
+        check(Array.isArray(p)&&p.length===3,"Треугольник должен иметь три индекса");
+        const indices=p.map((i)=>integer(i,"skin.index",0,vertices.length-1)) as [number,number,number];
+        const [a,b,c]=indices.map((i)=>vertices[i]);
+        check(Math.abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]))>1e-6,"Вырожденный треугольник");return indices;
+      });
+      const weights=list(input.weights,"skin.weights",4096).map((entry)=>{
+        const seen=new Set<string>();const values=list(entry,"skin.influences",4,1).map((raw)=>{
+          const item=record(raw,"skin.influence"),boneId=id(item.boneId,"skin.boneId");
+          check(!seen.has(boneId),"Повторная кость в весах");seen.add(boneId);
+          return {boneId,weight:number(item.weight,"skin.weight",0.000001,1)};
+        });
+        check(Math.abs(values.reduce((sum,item)=>sum+item.weight,0)-1)<1e-6,"Сумма весов должна быть 1");return values;
+      });
+      check(weights.length===vertices.length,"Каждой вершине нужны веса");
+      vertexCount+=vertices.length;triangleCount+=triangles.length;
+      check(vertexCount<=8192&&triangleCount<=16384,"Превышен общий бюджет сеток");
+      skin={vertices,triangles,weights};
+    }
+    return { id: id(layer.id, "layer.id"), assetId, visible: layer.visible, ...(skin?{skin}:{}),
       zIndex: integer(layer.zIndex, "zIndex", -10000, 10000), pivot: vector2(layer.pivot, "pivot"), transform: transform2D(layer.transform) };
   });
   const layerMap = unique(layers, "layers");
@@ -61,12 +94,14 @@ export function parseRig2D(input: unknown): Rig2DDocument {
   });
   hierarchy(bones);
   const boneMap = unique(bones, "bones");
+  for(const layer of layers)for(const weights of layer.skin?.weights??[])for(const item of weights)check(boneMap.has(item.boneId),"Вес ссылается на неизвестную кость");
   const attached = new Set<string>();
   const attachments = list(value.attachments, "attachments", 256).map((item) => {
     const attachment = record(item, "attachment");
     const layerId = id(attachment.layerId, "layerId");
     const boneId = id(attachment.boneId, "boneId");
     check(layerMap.has(layerId) && boneMap.has(boneId), "Привязка ссылается на неизвестный слой/кость");
+    check(!layerMap.get(layerId)!.skin,"Слой с весами не допускает жёсткую привязку");
     check(!attached.has(layerId), "Слой уже привязан к кости");
     attached.add(layerId);
     return { layerId, boneId, offset: transform2D(attachment.offset) };
@@ -121,6 +156,14 @@ export function multiply2D(a: Matrix2D, b: Matrix2D): Matrix2D {
   return result;
 }
 
+export function inverseMatrix2D(m:Matrix2D):Matrix2D {
+  const det=m[0]*m[3]-m[1]*m[2];check(Math.abs(det)>1e-12,"Преобразование кости необратимо");
+  return [m[3]/det,-m[1]/det,-m[2]/det,m[0]/det,(m[2]*m[5]-m[3]*m[4])/det,(m[1]*m[4]-m[0]*m[5])/det];
+}
+export function point2D(m:Matrix2D,p:readonly number[]):[number,number] {
+  return [m[0]*p[0]+m[2]*p[1]+m[4],m[1]*p[0]+m[3]*p[1]+m[5]];
+}
+
 export function sample2DTrack(track: Rig2DDocument["clips"][number]["tracks"][number], time: number): Transform2D {
   const keys = track.keys;
   if (time <= keys[0].time) return keys[0].transform;
@@ -166,11 +209,26 @@ export function evaluateRig2D(document: Rig2DDocument, options: { clipId?: strin
     return { id: bone.id, matrix, head: [matrix[4],matrix[5]], tail: [matrix[4]+matrix[0]*bone.length,matrix[5]+matrix[1]*bone.length] };
   });
   const bindings = new Map(document.attachments.map((item) => [item.layerId,item]));
+  const deltas=new Map<string,Matrix2D>(),bindWorld=new Map<string,Matrix2D>();
+  if(document.layers.some((layer)=>layer.skin))for(const bone of hierarchy(document.bones)){
+    const local=matrix2D(bone.bind),bind=bone.parentId?multiply2D(bindWorld.get(bone.parentId)!,local):local;
+    bindWorld.set(bone.id,bind);deltas.set(bone.id,multiply2D(world.get(bone.id)!,inverseMatrix2D(bind)));
+  }
   const layers = document.layers.map((layer) => {
     const binding = bindings.get(layer.id);
     const model = binding ? multiply2D(world.get(binding.boneId)!,matrix2D(binding.offset)) : matrix2D(layer.transform);
     const matrix = multiply2D(model,[1,0,0,1,-layer.pivot[0],-layer.pivot[1]]);
-    return { id: layer.id, assetId: layer.assetId, visible: layer.visible, zIndex: layer.zIndex, matrix };
+    const skin=layer.skin?{
+      uv:layer.skin.vertices,triangles:layer.skin.triangles,
+      vertices:layer.skin.vertices.map((p,index):[number,number]=>{
+        const rest=point2D(matrix,p),point:[number,number]=[0,0];
+        for(const influence of layer.skin!.weights[index]){
+          const moved=point2D(deltas.get(influence.boneId)!,rest);point[0]+=moved[0]*influence.weight;point[1]+=moved[1]*influence.weight;
+        }
+        finiteMatrix(point);return point;
+      })
+    }:undefined;
+    return { id: layer.id, assetId: layer.assetId, visible: layer.visible, zIndex: layer.zIndex, matrix, ...(skin?{skin}:{}) };
   }).sort((a,b) => a.zIndex-b.zIndex);
   return { units: "px", coordinates: "x-right-y-up", bones, layers };
 }

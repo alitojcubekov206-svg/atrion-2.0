@@ -9,6 +9,7 @@ import { evaluateRig3D } from "@/shared/rigging/rig3d";
 import { demo2D } from "./demo";
 import RigCanvas from "./RigCanvas";
 import CharacterGenerator from "./CharacterGenerator";
+import PrepareCharacter from "./PrepareCharacter";
 import { requestJson } from "@/frontend/api";
 import { downloadBlob, exportConceptGlb } from "@/frontend/export-3d";
 
@@ -18,7 +19,7 @@ type Saved={id:string;name:string;kind:string;revision:number;data?:unknown};
 const button="rounded-lg border border-white/15 px-3 py-2 text-xs font-medium transition hover:border-violet-400 hover:bg-violet-400/10 disabled:opacity-35";
 const input="w-full rounded-lg border border-white/15 bg-[#201e2b] px-2 py-2 text-sm text-white focus:border-violet-400 focus:outline-none";
 const newId=(prefix:string)=>`${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;
-const boneLabels:Record<string,string>={body:"Корпус",head:"Голова",arm:"Рука",arm_left:"Левая рука",arm_right:"Правая рука",leg_left:"Левая нога",leg_right:"Правая нога",root:"Корень"};
+const boneLabels:Record<string,string>={body:"Корпус",head:"Голова",arm:"Рука",arm_left:"Левая рука",arm_right:"Правая рука",leg_left:"Левая нога",leg_right:"Правая нога",root:"Корень",upper_arm_l:"Плечо слева",forearm_l:"Предплечье слева",hand_l:"Кисть слева",upper_arm_r:"Плечо справа",forearm_r:"Предплечье справа",hand_r:"Кисть справа",thigh_l:"Бедро слева",shin_l:"Голень слева",foot_l:"Стопа слева",thigh_r:"Бедро справа",shin_r:"Голень справа",foot_r:"Стопа справа"};
 const boneName=(id:string)=>Object.hasOwn(boneLabels,id)?boneLabels[id]:id.replace(/^bone_/,"Кость ");
 const clone=<T,>(value:T):T=>structuredClone(value);
 const label="text-xs text-violet-200/70";
@@ -28,23 +29,25 @@ function NumberField({name,value,onChange,step=1,min,max}:{name:string;value:num
   return <label className={label}>{name}<input aria-label={name} className={`${input} mt-1`} type="number" step={step} min={min} max={max} value={Math.round(value*10000)/10000} onChange={(event)=>{if(event.target.value!==""){const n=Number(event.target.value);if(Number.isFinite(n))onChange(n);}}}/></label>;
 }
 
-export default function RigEditor({initialMode="rig2d",preview=false}:{initialMode?:"rig2d"|"rig3d";preview?:boolean}) {
-  const [state,setState]=useState<Snapshot>(()=>({doc:initialMode==="rig3d"?demo3D():blank2D(),pose2D:{}}));
+export default function RigEditor({initialMode="rig2d",preview=false,initialDocument,draftScope}:{initialMode?:"rig2d"|"rig3d";preview?:boolean;initialDocument?:RigDocument;draftScope?:string}) {
+  const [state,setState]=useState<Snapshot>(()=>({doc:initialDocument??(initialMode==="rig3d"?demo3D():blank2D()),pose2D:initialDocument?.kind==="rig2d"?clone(initialDocument.pose??{}):{}}));
   const [past,setPast]=useState<Snapshot[]>([]),[future,setFuture]=useState<Snapshot[]>([]);
-  const [name,setName]=useState("Учебный персонаж"),[selected,setSelected]=useState("body"),[layerId,setLayerId]=useState("");
+  const [name,setName]=useState(initialDocument?"Персонаж · полный рост":"Учебный персонаж"),[selected,setSelected]=useState("body"),[layerId,setLayerId]=useState("");
   const [clipId,setClipId]=useState("wave"),[time,setTime]=useState(0),[playing,setPlaying]=useState(false),[showBones,setShowBones]=useState(true);
   const [addingBone,setAddingBone]=useState(false);
+  const [artSource,setArtSource]=useState<Blob|null>(null);
+  const poseTransaction=useRef<Snapshot|null>(null);
   const [editBind,setEditBind]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
   const [saved,setSaved]=useState<Saved|null>(null),[documents,setDocuments]=useState<Saved[]>([]),[openId,setOpenId]=useState("");
   const [busy,setBusy]=useState(false),[baseline,setBaseline]=useState(""),[ready,setReady]=useState(false);
   const [interpolation,setInterpolation]=useState<"linear"|"step">("linear");
   const initialized=useRef(false), storageBlocked=useRef(false);
-  const draftKey=(kind:string)=>`atrion:rigging-draft:${preview?"preview":"editor"}:${kind}`;
+  const draftKey=(kind:string)=>`atrion:rigging-draft:${preview?"preview":"editor"}:${kind}${draftScope?`:${draftScope}`:""}`;
   const epoch=useRef(0),stateRef=useRef(state);stateRef.current=state;
   const doc=state.doc,mode=doc.kind;
   const clip=doc.kind==="rig2d"?doc.clips.find((item)=>item.id===clipId):undefined;
   const bone=doc.bones.find((item)=>item.id===selected)??doc.bones[0];
-  const digest=JSON.stringify({state,name});
+  const digest=useMemo(()=>JSON.stringify({state,name}),[state,name]);
   const digestRef=useRef(digest);digestRef.current=digest;
   const dirty=ready&&digest!==baseline;
 
@@ -67,7 +70,8 @@ export default function RigEditor({initialMode="rig2d",preview=false}:{initialMo
         if(cached) {
           const data=JSON.parse(cached),validated=parseRigDocument(data.document);
           install(validated,typeof data.name==="string"?data.name:"Восстановленный риг");setNotice("Восстановлен локальный черновик.");
-        } else install(chosen==="rig3d"?demo3D():demo2D(),chosen==="rig3d"?"Учебный 3D-риг":"Учебный персонаж");
+        } else if(initialDocument)install(initialDocument,"Персонаж · полный рост");
+        else install(chosen==="rig3d"?demo3D():demo2D(),chosen==="rig3d"?"Учебный 3D-риг":"Учебный персонаж");
       }
     } catch {storageBlocked.current=true;install(initialMode==="rig3d"?demo3D():demo2D(),"Учебный персонаж");setNotice("Локальный черновик не удалось прочитать; исходные данные в хранилище не удалены.");}
     setReady(true);
@@ -101,6 +105,17 @@ export default function RigEditor({initialMode="rig2d",preview=false}:{initialMo
       if(next.doc.kind==="rig2d")evaluateRig2D(next.doc,{pose:next.pose2D});else evaluateRig3D(next.doc);
       setPast((items)=>[...items.slice(-29),clone(stateRef.current)]);setFuture([]);setState(next);setError("");setNotice("");setPlaying(false);return true;
     } catch(e){setError(e instanceof Error?e.message:"Не удалось применить изменение");return false;}
+  }
+  function startPoseDrag(){poseTransaction.current=clone(stateRef.current);setPlaying(false);}
+  function dragPose(id:string,transform:Transform2D){
+    const next={...stateRef.current,pose2D:{...effectivePose2D(),[id]:transform}};
+    stateRef.current=next;setState(next);
+  }
+  function finishPoseDrag(cancel:boolean){
+    const before=poseTransaction.current;poseTransaction.current=null;if(!before)return;
+    if(cancel){stateRef.current=before;setState(before);return;}
+    if(JSON.stringify(before.pose2D)===JSON.stringify(stateRef.current.pose2D))return;
+    setPast((items)=>[...items.slice(-29),before]);setFuture([]);setError("");
   }
   function undo() {if(!past.length)return;setFuture([clone(state),...future]);setState(past[past.length-1]);setPast(past.slice(0,-1));setPlaying(false);setError("");}
   function redo() {if(!future.length)return;setPast([...past,clone(state)]);setState(future[0]);setFuture(future.slice(1));setPlaying(false);setError("");}
@@ -199,7 +214,13 @@ export default function RigEditor({initialMode="rig2d",preview=false}:{initialMo
       <div><p className="text-xs uppercase tracking-[0.25em] text-violet-300">Atrion · Character studio</p><h1 className="mt-2 text-3xl font-semibold">{mode==="rig2d"?"2D-риггинг":"3D-риггинг"}</h1><p className="mt-2 text-sm text-white/50">{mode==="rig2d"?"Слои → скелет → ключевые кадры → анимация":"Кости → привязка деталей → поза"}</p></div>
       <div className="flex flex-wrap gap-2"><button className={`${button} ${mode==="rig2d"?"border-violet-400 bg-violet-400/15":""}`} onClick={()=>switchMode("rig2d")}>2D-риггинг</button><button className={`${button} ${mode==="rig3d"?"border-violet-400 bg-violet-400/15":""}`} onClick={()=>switchMode("rig3d")}>3D-риггинг</button><Link href="/dashboard/design-engine" className={button}>Design Engine ↗</Link></div>
     </header>
-    <div hidden={mode!=="rig2d"}><CharacterGenerator preview={preview}/></div>
+    <details hidden={mode!=="rig2d"} open={doc.kind==="rig2d"&&!doc.layers.some((layer)=>layer.skin)} className="rounded-xl border border-white/10"><summary className="cursor-pointer px-4 py-3 text-sm text-violet-200">Создать нового персонажа по описанию</summary><CharacterGenerator preview={preview} onPrepare={setArtSource}/></details>
+    {mode==="rig2d"&&<div className="flex flex-wrap items-center gap-3"><label className={`${button} cursor-pointer border-teal-300/40 text-teal-100`}>Риг из рисунка в полный рост<input aria-label="Рисунок полного роста" type="file" accept="image/png,image/webp,image/jpeg" className="sr-only" onChange={(e)=>{const file=e.target.files?.[0];if(file)setArtSource(file);e.target.value="";}}/></label><p className="text-xs text-white/50">Загрузите рисунок или подготовьте результат генерации. Суставы можно поправить до сборки.</p></div>}
+    {mode==="rig2d"&&artSource&&<PrepareCharacter key={`${artSource.size}-${artSource instanceof File?artSource.name:"generated"}`} source={artSource} onClose={()=>setArtSource(null)} onCreate={(rig)=>{
+      if(!change((next)=>{next.doc=rig;next.pose2D={};}))return;
+      epoch.current++;setSaved(null);setName("Персонаж · полный рост");setSelected("body");setLayerId("character");setClipId("idle");setTime(0);setEditBind(false);setAddingBone(false);setArtSource(null);
+      setNotice("Риг собран. Выберите «Приветствие» или тяните кости на холсте. Предыдущий риг можно вернуть кнопкой «Отменить». Скачайте JSON, чтобы сохранить рисунок и анимацию.");
+    }}/>}
     {preview&&<p className="rounded-lg border border-amber-300/20 bg-amber-300/5 p-3 text-sm text-amber-200">Локальная проверка редактора. Вход и серверное хранение здесь не используются.</p>}
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
       <label className="sr-only" htmlFor="rig-name">Название рига</label><input id="rig-name" className={`${input} !w-52`} maxLength={120} value={name} onChange={(e)=>setName(e.target.value)}/>
@@ -224,9 +245,9 @@ export default function RigEditor({initialMode="rig2d",preview=false}:{initialMo
         <p className="text-xs leading-relaxed text-white/35">{editBind?"Изменения записываются в исходный скелет. Смена родителя сохраняет локальные координаты.":"Сейчас вы меняете позу; исходный скелет сохраняется."}</p>
       </aside>
       <div className="order-1 min-w-0 space-y-4 md:order-2">
-        {doc.kind==="rig2d"?<RigCanvas document={doc} pose={editBind?{}:state.pose2D} clipId={editBind?undefined:clip?.id} time={time} selected={bone.id} onSelect={setSelected} showBones={showBones} addingBone={addingBone} onDrawBone={drawBone}/>:<div className="h-[560px] overflow-hidden rounded-2xl border border-white/10"><ConceptViewer fitModel concept={three!.concept} selectedId={null} onSelect={(id)=>{if(id){const partId=id.replace(/_\d+$/,"");setLayerId(partId);const binding=doc.bindings.find((b)=>b.partId===partId);if(binding)setSelected(binding.boneId);}}} rigBones={showBones?three!.bones:undefined} selectedBoneId={bone.id} onBoneSelect={setSelected}/></div>}
+        {doc.kind==="rig2d"?<RigCanvas document={doc} pose={effectivePose2D()} time={time} selected={bone.id} onSelect={setSelected} showBones={showBones} addingBone={addingBone} onDrawBone={drawBone} canPose={!editBind} onPoseStart={startPoseDrag} onPose={dragPose} onPoseEnd={finishPoseDrag}/>:<div className="h-[560px] overflow-hidden rounded-2xl border border-white/10"><ConceptViewer fitModel concept={three!.concept} selectedId={null} onSelect={(id)=>{if(id){const partId=id.replace(/_\d+$/,"");setLayerId(partId);const binding=doc.bindings.find((b)=>b.partId===partId);if(binding)setSelected(binding.boneId);}}} rigBones={showBones?three!.bones:undefined} selectedBoneId={bone.id} onBoneSelect={setSelected}/></div>}
         {doc.kind==="rig2d"&&<div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.025] p-4">
-          <div className="flex flex-wrap items-center gap-2"><h2 className="mr-2 text-sm font-semibold">Анимация</h2><select aria-label="Клип" className={`${input} !w-40`} value={clip?.id??""} onChange={(e)=>{setClipId(e.target.value);setTime(0);setPlaying(false);setState({...state,pose2D:{}});}}><option value="">Исходная поза</option>{doc.clips.map((c)=><option key={c.id} value={c.id}>{c.id}</option>)}</select>
+          <div className="flex flex-wrap items-center gap-2"><h2 className="mr-2 text-sm font-semibold">Анимация</h2><select aria-label="Клип" className={`${input} !w-40`} value={clip?.id??""} onChange={(e)=>{setClipId(e.target.value);setTime(0);setPlaying(false);setState({...state,pose2D:{}});}}><option value="">Исходная поза</option>{doc.clips.map((c)=><option key={c.id} value={c.id}>{c.id==="idle"?"Дыхание":c.id==="greeting"?"Приветствие":c.id}</option>)}</select>
             <button className={button} onClick={()=>{const id=newId("clip");change((next)=>{if(next.doc.kind==="rig2d")next.doc.clips.push({id,duration:2,loop:true,tracks:[]});});setClipId(id);setTime(0);}}>+ Клип</button>
             <button className={button} disabled={!clip||editBind} onClick={()=>{setState({...state,pose2D:{}});if(time>=clip!.duration)setTime(0);setPlaying(!playing);}}>{playing?"Пауза":"Воспроизвести"}</button><button className={button} disabled={!clip||editBind} onClick={keyframe}>+ Ключ</button>
           </div>
@@ -251,7 +272,8 @@ export default function RigEditor({initialMode="rig2d",preview=false}:{initialMo
         <div className="space-y-3 border-t border-white/10 pt-4"><h2 className="text-sm font-semibold">{mode==="rig2d"?"Слои и привязки":"Детали и привязки"}</h2>
           <select aria-label={mode==="rig2d"?"Слой":"Деталь"} className={input} value={layerId} onChange={(e)=>setLayerId(e.target.value)}><option value="">Выберите {mode==="rig2d"?"слой":"деталь"}</option>{(doc.kind==="rig2d"?doc.layers:doc.parts).map((item)=><option key={item.id} value={item.id}>{"name" in item?item.name:item.id}</option>)}</select>
           {doc.kind==="rig2d"&&<label className={`${button} block cursor-pointer text-center`}>+ PNG / WebP<input type="file" aria-label="Загрузить слой" accept="image/png,image/webp" className="sr-only" onChange={(e)=>{void uploadLayer(e.target.files?.[0]);e.target.value="";}}/></label>}
-          {layerId&&<label className={label}>Привязка к кости<select aria-label="Привязка к кости" className={`${input} mt-1`} value={doc.kind==="rig2d"?attachment?.boneId??"":doc.bindings.find((b)=>b.partId===layerId)?.boneId??""} onChange={(e)=>change((next)=>{
+          {selectedLayer?.skin&&<p className="text-xs text-teal-200">Сетка: {selectedLayer.skin.vertices.length} вершин · {selectedLayer.skin.triangles.length} треугольников. Привязка по весам нескольких костей.</p>}
+          {layerId&&!selectedLayer?.skin&&<label className={label}>Привязка к кости<select aria-label="Привязка к кости" className={`${input} mt-1`} value={doc.kind==="rig2d"?attachment?.boneId??"":doc.bindings.find((b)=>b.partId===layerId)?.boneId??""} onChange={(e)=>change((next)=>{
             if(next.doc.kind==="rig2d")next.doc=bindLayer(next.doc,layerId,e.target.value||null,effectivePose2D());
             else next.doc=bindPart(next.doc,layerId,e.target.value||null,editBind?{}:next.doc.pose);
           })}><option value="">Без привязки</option>{doc.bones.map((b)=><option key={b.id} value={b.id}>{boneName(b.id)}</option>)}</select></label>}

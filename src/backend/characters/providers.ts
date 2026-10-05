@@ -33,7 +33,7 @@ export function characterImageStatus(config: ImageConfiguration) {
 
 export function cloudflareImageRequest(prompt: string) {
   // FLUX accepts at most 2048 characters including this prefix. User input is capped at 1500.
-  return {steps:4, prompt:`Detailed original character illustration. Full body, front view, centered, uncropped, relaxed A-pose, arms apart. Honor the appearance, clothing, colors and style in the brief. Plain neutral background. No text, labels, skeleton or multiple views. Character brief: ${prompt}`};
+  return {steps:4, prompt:`One original character, ENTIRE BODY from hair to soles inside frame, white margins above head and below feet. Front view, symmetrical A-pose, arms extended diagonally outward, visible elbows and open hands separated from torso. Legs apart, both feet visible. Figure fills 80% of canvas height. Detailed illustration, plain pure white background, no shadows, no text or props. Honor the brief: ${prompt}`};
 }
 
 async function readImageResponse(response: Response): Promise<unknown> {

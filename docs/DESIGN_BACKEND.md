@@ -29,6 +29,10 @@ Asset: `{id,uri,mime,width,height}`. URI — HTTPS без credentials либо d
 
 Clip: `{id,duration,loop,tracks}`. Track: `{boneId,rotationMode:"shortest"|"unwrapped",keys}`. Key: `{time,transform,interpolation:"linear"|"step"}`; время в секундах строго возрастает и находится в пределах duration. Интерполяция задаётся начальным ключом сегмента; shortest вращает по кратчайшему пути, unwrapped сохраняет полные обороты. Loop использует modulo, без loop время ограничивается концом клипа; за крайними ключами сохраняется ближайший ключ. Options: `{clipId?,time?,pose?}`; pose — карта полных локальных transforms и перекрывает клип. Bind данные не меняются. Без clip/options.pose используется optional document.pose; при выборе клипа document.pose не перекрывает его. Явный pose:{} возвращает bind pose без клипа.
 
+Layer допускает optional `skin:{vertices,triangles,weights}`. `vertices` — `[x,y]` в пикселях ассета, +y вверх; `triangles` — тройки индексов; `weights` — массив на каждую вершину с 1–4 `{boneId,weight}`. Веса положительные, сумма 1 с допуском 1e-6, повторные и неизвестные кости запрещены. Сетка не сочетается с attachment. Не более 4096 вершин и 8192 треугольников на слой; суммарно 8192/16384 на документ. UV в пределах ассета; вырожденные треугольники отклоняются.
+
+Evaluator вычисляет вершину как сумму `weight * poseBoneWorld * inverse(bindBoneWorld) * layerRestMatrix * vertex`, где layerRestMatrix учитывает pivot. В результате слоя `skin` содержит исходные `uv`, `triangles` и мировые `vertices`; `matrix` сохраняется для совместимости жёсткого пути, повторно к skin-вершинам не применяется. JSON-хранилище и экспорт сохраняют skin через общий parser. Старые документы без skin продолжают работать; старые версии приложения, не знающие skin, для таких документов не подходят.
+
 Максимумы: canvas 16384², asset 8192², по 256 assets/layers/bones/attachments, 32 clips, 512 keys на track и 8192 keys суммарно. Минимум одна кость. Пример скелета без изображений:
 
 ```json

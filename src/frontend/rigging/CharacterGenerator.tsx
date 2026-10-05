@@ -7,7 +7,7 @@ import { characterImageFormat, CHARACTER_PROVIDER_LABELS, MAX_CHARACTER_IMAGE_BY
 type Artwork = {url:string;blob:Blob;prompt:string};
 const draftKey = "atrion:character-prompt";
 
-export default function CharacterGenerator({preview}:{preview:boolean}) {
+export default function CharacterGenerator({preview,onPrepare}:{preview:boolean;onPrepare:(source:Blob)=>void}) {
   const [prompt,setPrompt] = useState("");
   const [configured,setConfigured] = useState<boolean|null>(null);
   const [provider,setProvider] = useState<CharacterImageProvider|null>(null);
@@ -85,7 +85,7 @@ export default function CharacterGenerator({preview}:{preview:boolean}) {
 
   return <section id="character-generation" className="space-y-4 rounded-2xl border border-violet-400/25 bg-violet-400/[0.04] p-5">
     <div><h2 className="text-lg font-semibold">Персонаж по описанию</h2>
-      <p className="mt-1 text-sm text-white/60">Первый этап — рисунок. Подготовка слоёв, деформация и автоматическая сборка рига ещё не реализованы.</p></div>
+      <p className="mt-1 text-sm text-white/60">Создайте рисунок в полный рост, затем совместите суставы и соберите риг с деформацией. Для движения рук нужны видимые локти и кисти, для ног — колени и стопы.</p></div>
     <label className="block text-sm text-violet-200">Описание персонажа
       <textarea aria-label="Описание персонажа" rows={3} maxLength={1500} value={prompt} disabled={busy}
         placeholder="Внешность, причёска, одежда, цвета и стиль рисунка…"
@@ -106,8 +106,8 @@ export default function CharacterGenerator({preview}:{preview:boolean}) {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={art.url} alt="Сгенерированный рисунок персонажа" className="max-h-[560px] w-full rounded-xl bg-[#262330] object-contain"/>
       <div className="space-y-3"><h3 className="font-medium">Рисунок готов</h3><p className="text-sm text-white/60">{art.prompt}</p>
-        <p className="text-sm text-white/60">Это цельная иллюстрация. Она ещё не разделена на части и не содержит рига. Скачайте результат: изображение не сохраняется в аккаунте.</p>
-        {artFormat?.mime==="image/jpeg"&&<p className="text-sm text-white/60">JPEG содержит фон. Удаление фона и подготовка прозрачных частей — следующий этап.</p>}
+        <p className="text-sm text-white/60">Проверьте, что персонаж помещается целиком и руки отделены от корпуса. В подготовке можно удалить белый фон и указать суставы. Рисунок не сохраняется в аккаунте автоматически.</p>
+        <button className="rounded-xl bg-teal-300 px-4 py-2 text-sm font-semibold text-slate-950" onClick={()=>onPrepare(art.blob)}>Подготовить риг полного роста</button>
         {artFormat&&<button className="rounded-xl border border-violet-400/40 px-4 py-2 text-sm" onClick={()=>{downloadBlob(`atrion-character-concept.${artFormat.extension}`,art.blob);setDownloaded(true);}}>Скачать рисунок {artFormat.label}</button>}
       </div>
     </div>}

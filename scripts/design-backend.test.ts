@@ -12,6 +12,57 @@ import { characterImageConfiguration, characterImageStatus, cloudflareImageGener
 import { characterImageFormat } from "../src/shared/characters";
 import { DesignError } from "../src/backend/design/validation";
 import { createDesignStore } from "../src/backend/design/store";
+import { defaultLandmarks, fullBodyRig } from "../src/shared/rigging/fullbody";
+import { removeWhiteBorder } from "../src/shared/rigging/cutout";
+
+test("weighted 2D skin preserves rest, blends two bones and round-trips",()=>{
+  const doc=parseRig2D(rig2());doc.attachments=[];doc.layers[0].pivot=[0,0];
+  doc.layers[0].skin={vertices:[[0,0],[20,0],[20,40]],triangles:[[0,1,2]],weights:[[{boneId:"root",weight:1}],[{boneId:"root",weight:.5},{boneId:"child",weight:.5}],[{boneId:"child",weight:1}]]};
+  const parsed=parseRig2D(JSON.parse(JSON.stringify(doc))),rest=evaluateRig2D(parsed,{pose:{}}).layers[0].skin!;
+  assert.deepEqual(rest.vertices,doc.layers[0].skin.vertices);
+  const pose={child:{position:[100,0],rotation:Math.PI/2,scale:[1,1]}};
+  const bent=evaluateRig2D(parsed,{pose}).layers[0].skin!;
+  near(bent.vertices[0][0],0);near(bent.vertices[1][0],60);near(bent.vertices[1][1],-40);
+  near(bent.vertices[2][0],60);near(bent.vertices[2][1],-80);
+  assert.deepEqual(evaluateRig2D(parsed,{pose:{}}).layers[0].skin!.vertices,rest.vertices);
+  assert.throws(()=>bindLayer(parsed,"handLayer","root"),DesignError);
+  assert.throws(()=>removeBone(parsed,"child"),DesignError);
+  const before=JSON.stringify(parsed);
+  for(const mutate of [
+    (d:typeof parsed)=>{d.layers[0].skin!.weights[0][0].weight=.7;},
+    (d:typeof parsed)=>{d.layers[0].skin!.weights[0][0].boneId="missing";},
+    (d:typeof parsed)=>{d.layers[0].skin!.triangles[0]=[0,0,1];},
+    (d:typeof parsed)=>{d.layers[0].skin!.triangles[0][2]=99;},
+    (d:typeof parsed)=>{d.attachments=[{layerId:"handLayer",boneId:"root",offset:{position:[0,0],rotation:0,scale:[1,1]}}];},
+  ]){const invalid=structuredClone(parsed);mutate(invalid);assert.throws(()=>parseRig2D(invalid),DesignError);}
+  assert.equal(JSON.stringify(parsed),before);
+});
+
+test("fullbody rig uses valid weights, bounds and deterministic clips after JSON export",()=>{
+  const asset={id:"art",uri:"https://example.invalid/art.webp",mime:"image/webp" as const,width:300,height:500},alpha=new Uint8Array(150000).fill(255);
+  const doc=fullBodyRig(asset,defaultLandmarks({left:0,right:300,top:0,bottom:500}),alpha);
+  assert.equal(doc.bones.length,14);assert.equal(doc.layers.length,1);
+  const restored=parseRig2D(JSON.parse(JSON.stringify(doc)));
+  const rest=evaluateRig2D(doc,{pose:{}}).layers[0].skin!,moved=evaluateRig2D(doc,{clipId:"greeting",time:.75}).layers[0].skin!;
+  rest.vertices.forEach((p,i)=>{near(p[0],doc.layers[0].skin!.vertices[i][0]-150);near(p[1],doc.layers[0].skin!.vertices[i][1]-250);});
+  assert(moved.vertices.some((p,i)=>Math.hypot(p[0]-rest.vertices[i][0],p[1]-rest.vertices[i][1])>10));
+  assert.deepEqual(evaluateRig2D(restored,{clipId:"greeting",time:.75}),evaluateRig2D(doc,{clipId:"greeting",time:.75}));
+  assert.deepEqual(evaluateRig2D(doc,{clipId:"greeting",time:3}),evaluateRig2D(doc,{clipId:"greeting",time:0}));
+  const shin=doc.bones.find((b)=>b.id==="shin_l")!;
+  const leg=evaluateRig2D(doc,{pose:{shin_l:{...shin.bind,rotation:shin.bind.rotation-.3}}}).layers[0].skin!;
+  doc.layers[0].skin!.vertices.forEach((p,i)=>{if(p[0]>150&&p[1]<200){near(leg.vertices[i][0],rest.vertices[i][0]);near(leg.vertices[i][1],rest.vertices[i][1]);}});
+  assert.throws(()=>fullBodyRig(asset,defaultLandmarks({left:0,right:300,top:0,bottom:500}),new Uint8Array(150000)),DesignError);
+});
+
+test("white-border removal preserves enclosed whites and source pixels",()=>{
+  const input=new Uint8ClampedArray(7*7*4).fill(255);
+  for(let y=1;y<6;y++)for(let x=1;x<6;x++)if(x===1||x===5||y===1||y===5){const i=(y*7+x)*4;input[i]=20;input[i+1]=80;input[i+2]=30;}
+  const before=input.slice(),output=removeWhiteBorder(input,7,7,24);
+  assert.equal(output[3],0);assert.equal(output[(3*7+3)*4+3],255);assert.equal(output[(1*7+1)*4+3],255);
+  const seeded=removeWhiteBorder(input,7,7,24,[[3,3]]);
+  assert.equal(seeded[(3*7+3)*4+3],0);assert.equal(seeded[(1*7+1)*4+3],255);
+  assert.deepEqual(input,before);assert.throws(()=>removeWhiteBorder(input,8,7,24));
+});
 
 const transform2 = (x=0,y=0,rotation=0) => ({position:[x,y],rotation,scale:[1,1]});
 const transform3 = (x=0,y=0,z=0,angle=0) => ({position:[x,y,z],rotation:[0,0,angle]});
