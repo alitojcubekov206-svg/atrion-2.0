@@ -5,10 +5,11 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { DrawingView } from "@/frontend/components/three/ConceptViewer";
+import type { RealisticStatus } from "@/frontend/realistic-3d";
 import type { InterviewQuestion, ModelPart, PartShape, ThreeDConcept } from "@/shared/types";
 import { download } from "@/frontend/export";
 import { loadSettings, speakText, stopSpeaking } from "@/frontend/settings";
-import { structureFromGroups } from "@/shared/geometry";
+import { interiorCutHeight, structureFromGroups } from "@/shared/geometry";
 import VoiceMode from "@/frontend/components/VoiceMode";
 import CadToolbar, { type CadTool } from "@/frontend/components/CadToolbar";
 import { describeCommand, parseVoiceCommand } from "@/frontend/voice-commands";
@@ -58,6 +59,18 @@ type Diagnostics = {
   parts?: number;
   notes?: string[];
 };
+/** Kinds the block generator can only caricature — they get a realistic mesh on their own. */
+const ORGANIC_KINDS = new Set(["character", "animal"]);
+
+type RealisticState = {
+  busy: boolean;
+  status: RealisticStatus | null;
+  error: string | null;
+  /** Today's free GPU allowance is spent — offer the Hugging Face token. */
+  quota: boolean;
+};
+const REALISTIC_IDLE: RealisticState = { busy: false, status: null, error: null, quota: false };
+
 type Measurement = {
   from: string;
   to: string;
@@ -75,6 +88,8 @@ export default function DesignEnginePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<DrawingView>("perspective");
   const [exploded, setExploded] = useState(false);
+  /** Section cut height in metres; null shows the whole model. */
+  const [sectionHeight, setSectionHeight] = useState<number | null>(null);
   const [assembling, setAssembling] = useState(false);
   const [revealKey, setRevealKey] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -97,6 +112,11 @@ export default function DesignEnginePage() {
   const [booleanBusy, setBooleanBusy] = useState(false);
   const [pendingBoolean, setPendingBoolean] = useState<BooleanOp | null>(null);
   const [booleanFirst, setBooleanFirst] = useState<string | null>(null);
+  const [realistic, setRealistic] = useState<RealisticState>(REALISTIC_IDLE);
+  const [hfTokenDraft, setHfTokenDraft] = useState("");
+  const realisticAbort = useRef<AbortController | null>(null);
+  /** The prompt and answers the current model was generated from. */
+  const lastRequest = useRef<{ prompt: string; answers: { question: string; answer: string }[] } | null>(null);
   const assembleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cadHistoryGate = useRef(false);
   const [chat, setChat] = useState<ChatMessage[]>([
@@ -117,6 +137,8 @@ export default function DesignEnginePage() {
   const selectedRef = useRef<string | null>(selectedId);
   selectedRef.current = selectedId;
 
+  useEffect(() => () => realisticAbort.current?.abort(), []);
+
   useEffect(() => {
     fetch("/api/3d/providers")
       .then((r) => r.json())
@@ -136,6 +158,9 @@ export default function DesignEnginePage() {
     setSelectedId(null);
     setCadTool("select");
     setConcept(next);
+    // A building with furniture inside opens up on its own — otherwise the
+    // rooms it was generated with are hidden behind the walls and roof.
+    setSectionHeight(interiorCutHeight(next));
     setAssembling(true);
     setRevealKey((key) => key + 1);
     assembleTimer.current = setTimeout(() => setAssembling(false), 3400);
@@ -160,6 +185,56 @@ export default function DesignEnginePage() {
       partIds,
     }));
   }, [concept]);
+
+  /**
+   * Free realistic mesh for the current model: a picture, then TRELLIS on the
+   * visitor's own free GPU allowance. The block model stays on screen (and in
+   * undo history) until the mesh is ready; any failure just leaves it there.
+   */
+  async function startRealistic(base: ThreeDConcept) {
+    const request = lastRequest.current ?? { prompt: prompt.trim() || base.name, answers: [] };
+    realisticAbort.current?.abort();
+    const controller = new AbortController();
+    realisticAbort.current = controller;
+    setRealistic({ busy: true, status: null, error: null, quota: false });
+
+    try {
+      const { generateRealisticConcept } = await import("@/frontend/realistic-3d");
+      const next = await generateRealisticConcept(request.prompt, base, {
+        answers: request.answers,
+        signal: controller.signal,
+        onStatus: (status) => {
+          if (!controller.signal.aborted) setRealistic((prev) => ({ ...prev, status }));
+        },
+      });
+      if (controller.signal.aborted) return;
+      const current = conceptRef.current;
+      if (current) pushHistory(current);
+      await playAssemble(next);
+      setRealistic(REALISTIC_IDLE);
+      setChat((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: "Готова реалистичная модель. Блочная версия осталась в истории — «Отменить» вернёт её.",
+        },
+      ]);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const quota = error instanceof Error && error.name === "RealisticQuotaError";
+      setRealistic({
+        busy: false,
+        status: null,
+        quota,
+        error: error instanceof Error ? error.message : "Не удалось построить реалистичную модель.",
+      });
+    }
+  }
+
+  function cancelRealistic() {
+    realisticAbort.current?.abort();
+    setRealistic(REALISTIC_IDLE);
+  }
 
   async function runPipelineVisual() {
     for (let i = 0; i < PIPELINE.length - 1; i++) {
@@ -188,6 +263,7 @@ export default function DesignEnginePage() {
     setLoading(true);
     setError(null);
     setLimitReached(false);
+    cancelRealistic();
     setConcept(null);
     setQuestions([]);
     setDiagnostics(null);
@@ -209,7 +285,14 @@ export default function DesignEnginePage() {
       if (result.ok && result.data.concept) {
         setPipelineStep(PIPELINE.length - 1);
         setDiagnostics(result.data.diagnostics ?? null);
+        lastRequest.current = {
+          prompt: cleaned,
+          answers: interviewAnswers.filter((item) => typeof item.answer === "string"),
+        };
         await playAssemble(result.data.concept);
+        if (ORGANIC_KINDS.has(result.data.diagnostics?.kind ?? "")) {
+          void startRealistic(result.data.concept);
+        }
         setChat((prev) => [
           ...prev,
           {
@@ -814,6 +897,7 @@ export default function DesignEnginePage() {
               view={view}
               exploded={exploded}
               assembling={assembling}
+              sectionHeight={sectionHeight}
               autoRotate={
                 !loading &&
                 !assembling &&
@@ -921,6 +1005,111 @@ export default function DesignEnginePage() {
           </div>
         )}
 
+        {concept && (realistic.busy || realistic.error) && (
+          <div className="absolute bottom-[7.5rem] left-1/2 z-20 w-[min(24rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-2xl border border-[#a78bfa]/25 bg-[#050507]/85 p-3 text-xs text-[#d8d3cb] shadow-lg shadow-black/40 backdrop-blur-xl">
+            {realistic.busy ? (
+              <div className="flex items-center gap-3">
+                {realistic.status?.imageUrl ? (
+                  <img
+                    src={realistic.status.imageUrl}
+                    alt="Референс для 3D"
+                    className="h-12 w-12 shrink-0 rounded-lg object-cover"
+                  />
+                ) : (
+                  <span className="thinking-dot h-2 w-2 shrink-0 rounded-full bg-[#a78bfa]" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[#a78bfa]">Реалистичная модель</p>
+                  <p className="truncate text-[#b8b2a8]">{realistic.status?.message ?? "Готовимся…"}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelRealistic}
+                  className="shrink-0 rounded-full px-2 py-1 text-[#8f8a82] hover:text-white"
+                >
+                  Отмена
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-amber-300/90">{realistic.error}</p>
+                {realistic.quota && (
+                  <>
+                    <p className="text-[#8f8a82]">
+                      С бесплатным аккаунтом Hugging Face лимит больше. Создайте токен (тип «Read») на{" "}
+                      <a
+                        href="https://huggingface.co/settings/tokens"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[#a78bfa] underline"
+                      >
+                        huggingface.co/settings/tokens
+                      </a>{" "}
+                      и вставьте сюда — он хранится только в этом браузере.
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        value={hfTokenDraft}
+                        onChange={(event) => setHfTokenDraft(event.target.value)}
+                        placeholder="hf_…"
+                        aria-label="Токен Hugging Face"
+                        className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-white outline-none focus:border-[#a78bfa]/60"
+                      />
+                      <button
+                        type="button"
+                        disabled={!hfTokenDraft.trim().startsWith("hf_")}
+                        onClick={async () => {
+                          const { saveHfToken } = await import("@/frontend/realistic-3d");
+                          saveHfToken(hfTokenDraft);
+                          setHfTokenDraft("");
+                          void startRealistic(concept);
+                        }}
+                        className="shrink-0 rounded-lg bg-[#a78bfa] px-3 py-1 text-black disabled:opacity-40"
+                      >
+                        Сохранить
+                      </button>
+                    </div>
+                  </>
+                )}
+                <div className="flex gap-2">
+                  {!realistic.quota && (
+                    <button
+                      type="button"
+                      onClick={() => void startRealistic(concept)}
+                      className="rounded-full px-2 py-1 text-[#a78bfa] hover:text-white"
+                    >
+                      Повторить
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setRealistic(REALISTIC_IDLE)}
+                    className="rounded-full px-2 py-1 text-[#8f8a82] hover:text-white"
+                  >
+                    Закрыть
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {concept && sectionHeight !== null && !exploded && (
+          <div className="absolute bottom-[4.25rem] left-1/2 z-20 flex w-[min(20rem,calc(100%-1.5rem))] -translate-x-1/2 items-center gap-3 rounded-full border border-[#a78bfa]/20 bg-[#050507]/80 px-4 py-2 text-xs text-[#b8b2a8] backdrop-blur-xl">
+            <span className="shrink-0">Разрез {sectionHeight.toFixed(1)} м</span>
+            <input
+              type="range"
+              min={0.2}
+              max={Math.max(0.3, concept.dimensions.height)}
+              step={0.05}
+              value={Math.min(sectionHeight, Math.max(0.3, concept.dimensions.height))}
+              onChange={(event) => setSectionHeight(Number(event.target.value))}
+              aria-label="Высота разреза"
+              className="min-w-0 flex-1 accent-[#a78bfa]"
+            />
+          </div>
+        )}
+
         {concept && (
           <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-full border border-[#a78bfa]/20 bg-[#050507]/80 px-2 py-1.5 shadow-lg shadow-black/40 backdrop-blur-xl">
             {(
@@ -960,6 +1149,35 @@ export default function DesignEnginePage() {
               }`}
             >
               {exploded ? "Assemble" : "Explode"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setExploded(false);
+                setSectionHeight((current) =>
+                  current !== null
+                    ? null
+                    : interiorCutHeight(concept) ??
+                      Math.round(concept.dimensions.height * 0.5 * 100) / 100
+                );
+              }}
+              title="Срезать модель по высоте, чтобы заглянуть внутрь"
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs ${
+                sectionHeight !== null ? "bg-[#a78bfa] text-black" : "text-[#a78bfa]"
+              }`}
+            >
+              Разрез
+            </button>
+            <button
+              type="button"
+              disabled={realistic.busy}
+              onClick={() => void startRealistic(concept)}
+              title="Бесплатная нейросеть TRELLIS: настоящая 3D-модель с текстурой вместо блоков (~1–2 мин)"
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs ${
+                realistic.busy ? "bg-[#a78bfa]/20 text-[#a78bfa]" : "text-[#a78bfa] hover:text-white"
+              }`}
+            >
+              {realistic.busy ? "Строим…" : "Реалистично"}
             </button>
             <button
               type="button"

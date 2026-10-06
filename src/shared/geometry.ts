@@ -249,6 +249,32 @@ export function translateParts(
   }));
 }
 
+const FURNITURE_WORDS =
+  /кроват|диван|стол|шкаф|кресл|стул|тумб|комод|ванн|унитаз|раковин|плит[аы]|холодильн|мебел|матрас|\bbed\b|sofa|couch|table|desk|chair|wardrobe|cabinet|furniture|bath|toilet|sink|stove|fridge/i;
+const COVER_WORDS = /крыш|кровл|потол|перекрыт|roof|ceiling/i;
+
+/**
+ * Height at which to cut a building open so its interior shows — about 1.5 m
+ * above the lowest furniture, the usual floor-plan cut. Null when there is
+ * nothing covered inside: a solid house, an open room diorama, a car.
+ */
+export function interiorCutHeight(concept: ThreeDConcept): number | null {
+  const parts = concept.parts ?? [];
+  const furniture = parts.filter(
+    (item) => item.role === "furniture" || FURNITURE_WORDS.test(`${item.name} ${item.group ?? ""}`)
+  );
+  if (furniture.length < 2) return null;
+  const covered = parts.some(
+    (item) => item.role === "roof" || COVER_WORDS.test(`${item.name} ${item.group ?? ""}`)
+  );
+  if (!covered) return null;
+
+  const height = partsBounds(parts).max[1];
+  const floor = Math.min(...furniture.map((item) => partsBounds([item]).min[1]));
+  if (!Number.isFinite(floor) || height - floor < 1.2) return null;
+  return round2(Math.min(height * 0.95, floor + 1.5));
+}
+
 /** Total rendered primitive count — the honest "detail" number. */
 export function primitiveCount(parts: ModelPart[]): number {
   return parts.reduce((total, item) => total + expandPart(item).length, 0);

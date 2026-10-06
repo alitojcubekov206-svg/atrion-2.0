@@ -654,6 +654,35 @@ export async function generate3DConcept(
   return (await generate3DModel(prompt, answers)).concept;
 }
 
+/**
+ * The subject of a 3D request as a short English description for an image
+ * model — FLUX reads English far better than Russian. Falls back to the
+ * request itself when no text provider is configured or it fails.
+ */
+export async function describeForImage(
+  prompt: string,
+  answers: { question: string; answer: string }[] = []
+): Promise<string> {
+  if (!hasKey()) return prompt;
+  try {
+    const data = await chatJSON<{ subject?: unknown }>(
+      `Rewrite a 3D model request as one English image description of the object itself.
+Keep every visual detail the user gave (colours, clothing, hair, materials, style, count).
+Do not add a background or scene. At most 40 words.
+Return JSON: {"subject":"..."}`,
+      `Request: ${prompt}
+${answers.map((item) => `${item.question}: ${item.answer}`).join("\n")}`,
+      { timeoutMs: 12_000, maxTokens: 200 }
+    );
+    return typeof data.subject === "string" && data.subject.trim()
+      ? data.subject.trim().slice(0, 400)
+      : prompt;
+  } catch (error) {
+    console.warn("Image prompt rewrite unavailable", errorSummary(error));
+    return prompt;
+  }
+}
+
 function withAnswers(
   concept: ThreeDConcept,
   answers: { question: string; answer: string }[]
@@ -816,7 +845,20 @@ ${JSON.stringify(
       concept.dimensions.height,
       concept.dimensions.depth
     );
-    const repaired = validateAndRepair(result?.parts, { targetMaxSize });
+    // Mesh vertices never go to the model (they would blow the prompt), so a
+    // returned mesh part gets its baked geometry back by id.
+    const meshes = new Map(
+      concept.parts.filter((item) => item.mesh).map((item) => [item.id, item.mesh])
+    );
+    const returned = Array.isArray(result?.parts)
+      ? result.parts.map((item) => {
+          const raw = item as { id?: unknown; mesh?: unknown } | null;
+          return raw && typeof raw.id === "string" && meshes.has(raw.id) && !raw.mesh
+            ? { ...raw, shape: "mesh", mesh: meshes.get(raw.id) }
+            : item;
+        })
+      : result?.parts;
+    const repaired = validateAndRepair(returned, { targetMaxSize });
 
     // An edit that shreds the model is worse than no edit at all.
     if (repaired.parts.length >= 4 && repaired.score >= scoreParts(concept.parts) * 0.8) {

@@ -130,10 +130,15 @@ function buildPartGeometry(
 
   switch (shape) {
     case "mesh": {
-      // Boolean result: already centred and at real size, so never scaled.
+      // Boolean result or a generated model: already centred and at real size,
+      // so never scaled.
       const geometry = new THREE.BufferGeometry();
       const positions = mesh?.position ?? [];
       geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      if (mesh?.index?.length) geometry.setIndex(mesh.index);
+      if (mesh?.uv?.length === (positions.length / 3) * 2) {
+        geometry.setAttribute("uv", new THREE.Float32BufferAttribute(mesh.uv, 2));
+      }
       if (mesh?.normal?.length === positions.length) {
         geometry.setAttribute("normal", new THREE.Float32BufferAttribute(mesh.normal, 3));
       } else {
@@ -206,7 +211,16 @@ function usePartGeometry(part: ModelPart): THREE.BufferGeometry {
   return geometry;
 }
 
-function CameraRig({ view, maxDimension }: { view: DrawingView; maxDimension: number }) {
+function CameraRig({
+  view,
+  maxDimension,
+  sectioned = false,
+}: {
+  view: DrawingView;
+  maxDimension: number;
+  /** Look down into a cut-open building instead of at its walls. */
+  sectioned?: boolean;
+}) {
   const { camera } = useThree();
   useEffect(() => {
     // Frame the model by its own size: a fixed 14 m minimum turned a desk lamp
@@ -214,7 +228,9 @@ function CameraRig({ view, maxDimension }: { view: DrawingView; maxDimension: nu
     const distance = Math.max(0.5, maxDimension * 1.75);
     const lookY = maxDimension * 0.22;
     const positions: Record<DrawingView, [number, number, number]> = {
-      perspective: [distance * 0.9, distance * 0.48, distance * 1.05],
+      perspective: sectioned
+        ? [distance * 0.62, distance * 1.05, distance * 0.78]
+        : [distance * 0.9, distance * 0.48, distance * 1.05],
       top: [0, distance * 1.35, 0.01],
       front: [0, lookY, distance * 1.2],
       side: [distance * 1.2, lookY, 0],
@@ -229,7 +245,22 @@ function CameraRig({ view, maxDimension }: { view: DrawingView; maxDimension: nu
       );
     }
     camera.updateProjectionMatrix();
-  }, [camera, maxDimension, view]);
+  }, [camera, maxDimension, view, sectioned]);
+  return null;
+}
+
+/**
+ * Section view: everything above `height` is clipped away so the rooms of a
+ * building can be seen from above, like a dollhouse with the lid off.
+ */
+function SectionClip({ height }: { height: number | null }) {
+  const { gl } = useThree();
+  useEffect(() => {
+    gl.clippingPlanes = height === null ? [] : [new THREE.Plane(new THREE.Vector3(0, -1, 0), height)];
+    return () => {
+      gl.clippingPlanes = [];
+    };
+  }, [gl, height]);
   return null;
 }
 
@@ -252,6 +283,7 @@ function EditablePart({
   cadTool,
   snap,
   snapStep,
+  sectioned,
   onSelect,
   onPartChange,
 }: {
@@ -264,6 +296,8 @@ function EditablePart({
   cadTool: CadTool;
   snap: boolean;
   snapStep: number;
+  /** Cut open: show inner faces, and let light into the rooms. */
+  sectioned: boolean;
   onSelect: () => void;
   onPartChange?: (id: string, patch: Partial<ModelPart>) => void;
 }) {
@@ -300,6 +334,17 @@ function EditablePart({
     }
   });
 
+  const textureUrl = part.mesh?.texture;
+  const texture = useMemo(() => {
+    if (!textureUrl) return null;
+    // glTF texture convention: the UVs were authored with flipY off.
+    const map = new THREE.TextureLoader().load(textureUrl);
+    map.flipY = false;
+    map.colorSpace = THREE.SRGBColorSpace;
+    return map;
+  }, [textureUrl]);
+  useEffect(() => () => texture?.dispose(), [texture]);
+
   const glass = /стекл|glass|витраж/i.test(part.material);
   const metal = /стал|металл|алюмин|metal|трос/i.test(part.material);
   const opacity = part.opacity ?? (glass ? 0.55 : 1);
@@ -308,7 +353,8 @@ function EditablePart({
   const roughness = part.roughness ?? (glass ? 0.12 : metal ? 0.35 : 0.62);
   const emissiveAmount = part.emissive ?? (glass ? 0.2 : 0);
   // Heavy scenes keep the wireframe only on the selected part.
-  const showEdges = totalInstances <= EDGE_INSTANCE_LIMIT || selected;
+  // A textured scan-like mesh turns into a wire tangle with edges on.
+  const showEdges = !texture && (totalInstances <= EDGE_INSTANCE_LIMIT || selected);
   const showGizmo = selected && cadTool !== "select" && !exploded && !assembling && onPartChange;
   const anchor = meshes.current[0] ?? null;
 
@@ -327,11 +373,16 @@ function EditablePart({
             event.stopPropagation();
             onSelect();
           }}
-          castShadow
+          castShadow={!sectioned}
           receiveShadow
         >
           <meshStandardMaterial
-            color={part.color}
+            // Double-sided lighting compiles a different shader, so the
+            // material is rebuilt rather than flipped in place.
+            key={sectioned ? "section" : "solid"}
+            side={sectioned ? THREE.DoubleSide : THREE.FrontSide}
+            map={texture}
+            color={texture ? "#ffffff" : part.color}
             emissive={selected ? "#a78bfa" : emissiveAmount > 0 ? part.color : "#000000"}
             emissiveIntensity={selected ? Math.max(0.35, emissiveAmount) : emissiveAmount}
             roughness={roughness}
@@ -413,6 +464,7 @@ export default function ConceptViewer({
   cadTool = "select",
   snap = true,
   snapStep = 0.1,
+  sectionHeight = null,
   onPartChange,
 }: {
   concept: ThreeDConcept;
@@ -426,8 +478,12 @@ export default function ConceptViewer({
   cadTool?: CadTool;
   snap?: boolean;
   snapStep?: number;
+  /** Cut height in metres for the section view; null shows the whole model. */
+  sectionHeight?: number | null;
   onPartChange?: (id: string, patch: Partial<ModelPart>) => void;
 }) {
+  // An exploded model flies apart upwards — cutting it would hide the pieces.
+  const section = exploded || assembling ? null : sectionHeight;
   const maxDimension = useMemo(
     () =>
       Math.max(
@@ -470,7 +526,8 @@ export default function ConceptViewer({
         }}
         onPointerMissed={() => onSelect(null)}
       >
-        <CameraRig view={view} maxDimension={maxDimension} />
+        <CameraRig view={view} maxDimension={maxDimension} sectioned={section !== null} />
+        <SectionClip height={section} />
         <color attach="background" args={["#32353c"]} />
         <fog attach="fog" args={["#32353c", fogNear, fogFar]} />
 
@@ -517,6 +574,7 @@ export default function ConceptViewer({
                 cadTool={cadTool}
                 snap={snap}
                 snapStep={snapStep}
+                sectioned={section !== null}
                 onSelect={() => onSelect(part.id)}
                 onPartChange={onPartChange}
               />

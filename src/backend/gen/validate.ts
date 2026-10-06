@@ -104,16 +104,35 @@ function normalizeShape(value: unknown): PartShape {
  */
 function normalizeMesh(value: unknown): ModelPart["mesh"] | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const raw = value as { position?: unknown; normal?: unknown };
+  const raw = value as { position?: unknown; normal?: unknown; index?: unknown; uv?: unknown; texture?: unknown };
   if (!Array.isArray(raw.position) || raw.position.length < 9) return undefined;
   const numbers = (input: unknown[]) =>
     input.filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry));
   const position = numbers(raw.position);
   if (position.length < 9) return undefined;
+  const vertices = Math.floor(position.length / 3);
   const normal = Array.isArray(raw.normal) ? numbers(raw.normal) : undefined;
+  // A generated model (image-to-3D) is indexed and textured; keep both as long
+  // as they still describe the same vertices.
+  const index = Array.isArray(raw.index) ? numbers(raw.index) : undefined;
+  const indexOk =
+    index !== undefined &&
+    index.length >= 3 &&
+    index.length % 3 === 0 &&
+    index.every((n) => Number.isInteger(n) && n >= 0 && n < vertices);
+  const uv = Array.isArray(raw.uv) ? numbers(raw.uv) : undefined;
+  const texture =
+    typeof raw.texture === "string" &&
+    /^data:image\/(jpeg|png|webp);base64,/.test(raw.texture) &&
+    raw.texture.length <= 4_000_000
+      ? raw.texture
+      : undefined;
   return {
     position,
     ...(normal && normal.length === position.length ? { normal } : {}),
+    ...(indexOk ? { index } : {}),
+    ...(uv && uv.length === vertices * 2 ? { uv } : {}),
+    ...(texture && uv && uv.length === vertices * 2 ? { texture } : {}),
   };
 }
 

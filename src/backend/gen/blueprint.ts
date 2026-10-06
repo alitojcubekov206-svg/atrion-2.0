@@ -963,7 +963,7 @@ function applySegment(b: Blueprint, segment: Segment, fullText: string, negated:
         rule.apply(b, count);
         b.matched.push(rule.label);
       }
-    } else if (b.kind === "room" && rule.furnishing) {
+    } else if ((b.kind === "room" || b.kind === "building") && rule.furnishing) {
       addFurnishing(b, rule, segment.text);
     } else if (rule.attach) {
       rule.attach(b, count);
@@ -1001,6 +1001,16 @@ export function planFromPrompt(prompt: string): Blueprint {
     // Nothing in the main phrase said what this is — let the rest decide.
     if (blueprint.kind === "product" && segment.mode === "attach") applySubject(blueprint, segment.text, text);
     else applySegment(blueprint, segment, text, negated);
+  }
+
+  // "дом с мебелью" / "с интерьером": a house you can look into.
+  if (
+    blueprint.kind === "building" &&
+    !blueprint.furnishings.length &&
+    /мебел|интерьер|обставлен|меблирован|обстановк|furnish|interior/i.test(text)
+  ) {
+    blueprint.furnishings.push("диван", "журнальный столик", "кровать", "шкаф");
+    blueprint.matched.push("интерьер");
   }
 
   if (blueprint.kind === "room" && !blueprint.furnishings.length) {

@@ -2,6 +2,8 @@
 
 CI использует Node.js 22 и зависимости из `package-lock.json`. Для запуска нужны development `DATABASE_URL` и `AUTH_SECRET`; локальный fallback AI не заменяет базу и сессии. Не копируйте секреты в Git. `npm ci` и `npm run build` выполняют только `prisma generate`, без изменения схемы БД.
 
+`CLOUDFLARE_ACCOUNT_ID` и `CLOUDFLARE_API_TOKEN` также используются `POST /api/3d/image` для референса реалистичного режима (FLUX.1 [schnell], бесплатные 10 000 нейронов в сутки на аккаунт). Без них браузер рисует референс в публичном Space FLUX на квоте посетителя. Проверить реалистичный режим без входа можно в `/playground/generator` (кнопка «Реалистично (TRELLIS)» и загрузка GLB по ссылке); каждый запуск тратит дневную квоту ZeroGPU вашей сети.
+
 Для текстового AI настройте серверные `AI_TEXT_PROVIDER`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` и при необходимости `CLOUDFLARE_TEXT_MODEL`. Значения Account ID и токена в `.env.example` пустые. `auto` сначала выбирает прежние OPENAI/GROQ/AI-ключи, затем Cloudflare; `cloudflare` выбирает только Workers AI; `disabled` отключает внешнюю генерацию. Ключи не должны иметь префикс `NEXT_PUBLIC_`.
 
 Провайдер использует [официальный OpenAI-compatible endpoint Cloudflare](https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/) и [JSON mode](https://developers.cloudflare.com/workers-ai/features/json-mode/). Модель по умолчанию — `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Внутренние квоты Atrion и лимиты аккаунта Cloudflare независимы. Настройки локальной машины не переносятся в Vercel автоматически.

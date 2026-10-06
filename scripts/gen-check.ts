@@ -8,6 +8,8 @@ import { buildFromPlan, planFor } from "@/backend/procedural-3d";
 import { matchParts } from "@/backend/gen/match";
 import { generateAIGeometry, pickBetterGeometry, type JsonRequester } from "@/backend/gen/ai-geometry";
 import type { Blueprint } from "@/backend/gen/blueprint";
+import { interiorCutHeight } from "@/shared/geometry";
+import { sanitizeParts } from "@/backend/gen/validate";
 
 let failures = 0;
 let passed = 0;
@@ -61,7 +63,37 @@ const CASES: Case[] = [
   { prompt: "Уютная спальня 4×5 м с кроватью и столом", kind: "room", plan: (b) => (b.furnishings.includes("кровать") && b.furnishings.includes("стол")) || `furnishings=${b.furnishings}`, dims: (d) => d.height > 2.2 || `room ${d.height} m tall` },
   { prompt: "Кухня 3 на 4 метра", kind: "room", plan: (b) => b.furnishings.includes("кухонный гарнитур") || `furnishings=${b.furnishings}` },
   { prompt: "Три деревянных стула", kind: "furniture", plan: (b) => b.copies === 3 || `copies=${b.copies}` },
+
+  // A house with furniture is hollow, so the section view has something to show.
+  { prompt: "Двухэтажный дом с мебелью", kind: "building", plan: (b) => b.furnishings.length >= 3 || `furnishings=${b.furnishings}` },
+  { prompt: "Дом с диваном, кроватью и столом", kind: "building", plan: (b) => (b.furnishings.includes("диван") && b.furnishings.includes("кровать")) || `furnishings=${b.furnishings}` },
 ];
+
+/* ---------------- generated meshes keep their texture through validation ---------------- */
+{
+  const tri = { position: [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], index: [0, 1, 2, 2, 1, 3], uv: [0, 0, 1, 0, 0, 1, 1, 1], texture: "data:image/jpeg;base64,AAAA" };
+  const [kept] = sanitizeParts([{ id: "scan", name: "Модель", shape: "mesh", position: [0, 0.5, 0], size: [1, 1, 0.01], mesh: tri }]);
+  check("mesh keeps its index", kept?.mesh?.index?.length === 6, JSON.stringify(kept?.mesh?.index));
+  check("mesh keeps uv and texture", kept?.mesh?.uv?.length === 8 && kept?.mesh?.texture === tri.texture);
+  const [broken] = sanitizeParts([{ id: "bad", name: "x", shape: "mesh", position: [0, 0, 0], size: [1, 1, 1], mesh: { ...tri, index: [0, 1, 9] } }]);
+  check("an out-of-range index is dropped", broken?.mesh?.index === undefined);
+}
+
+/* ---------------- section view opens covered interiors only ---------------- */
+for (const [prompt, expected] of [
+  ["Двухэтажный дом с мебелью", true],
+  ["Дом с диваном, кроватью и столом", true],
+  ["Двухэтажный дом 12×9 м", false],
+  ["Уютная спальня 4×5 м с кроватью и столом", false],
+  ["Красный спорткар", false],
+] as const) {
+  const cut = interiorCutHeight(buildFromPlan(planFor(prompt).blueprint));
+  check(
+    `${prompt}: section view ${expected ? "opens" : "stays off"}`,
+    expected ? cut !== null && cut > 1 && cut < 3 : cut === null,
+    String(cut)
+  );
+}
 
 for (const item of CASES) {
   const { blueprint } = planFor(item.prompt);

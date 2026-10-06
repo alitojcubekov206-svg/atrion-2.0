@@ -65,6 +65,8 @@ type Ctx = {
   cabin?: Cabin;
   /** Where a lamp's shade hangs, set by the radial mass. */
   lampHead?: { at: Vec3; tilt: number };
+  /** Free floor area inside a hollow building — where its furniture stands. */
+  interior?: { halfW: number; halfL: number; floorY: number };
   /** Top of the floor slab inside a room shell. */
   floorY?: number;
 };
@@ -175,7 +177,7 @@ function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
   if (bp.shelves > 0) addShelves(ctx);
   if (bp.drawers > 0) addDrawers(ctx);
   if (bp.pillows > 0) addPillows(ctx);
-  if (bp.furnishings.length && bp.massPlan === "shell") furnishRoom(ctx);
+  if (bp.furnishings.length && (bp.massPlan === "shell" || ctx.interior)) furnishRoom(ctx);
 
   // Hardware
   if (bp.screens > 0) addScreens(ctx);
@@ -292,6 +294,13 @@ function massStacked(ctx: Ctx) {
   const total = body.y1 - body.y0;
   const step = total / levels;
 
+  // A furnished house is built as slabs and walls instead of solid storeys, so
+  // the section view has rooms to show.
+  if (bp.kind === "building" && bp.furnishings.length && levels <= 3) {
+    massHollow(ctx, levels, step);
+    return;
+  }
+
   if (bp.floors > 0) {
     push(
       ctx,
@@ -406,6 +415,61 @@ function massStacked(ctx: Ctx) {
 
   body.halfW = (bp.width * profile[0]) / 2;
   body.halfL = (bp.length * profile[0]) / 2;
+}
+
+/** Storeys as floor slabs and four walls — the shell of a house with an interior. */
+function massHollow(ctx: Ctx, levels: number, step: number) {
+  const { bp, body } = ctx;
+  const wall = clamp(Math.min(bp.width, bp.length) * 0.025, 0.12, 0.3);
+  const slab = Math.max(0.12, step * 0.06);
+
+  for (let i = 0; i < levels; i++) {
+    const y0 = body.y0 + step * i;
+    const wallH = step - slab;
+    const wallY = y0 + slab + wallH / 2;
+    const tone = i % 2 === 0 ? bp.primary : shade(bp.primary, -0.05);
+    push(
+      ctx,
+      part(ctx.id(), i === 0 ? "Пол первого этажа" : `Перекрытие ${i + 1} этажа`, {
+        shape: "box",
+        role: i === 0 ? "foundation" : "structure",
+        group: "Перекрытия",
+        position: [0, y0 + slab / 2, 0],
+        size: [bp.width, slab, bp.length],
+        color: shade(bp.secondary, -0.08),
+        material: "Перекрытие",
+        roughness: 0.85,
+      }),
+      part(ctx.id(), `Стена фасада · этаж ${i + 1}`, {
+        shape: "box",
+        role: "wall",
+        group: "Стены",
+        position: [0, wallY, bp.length / 2 - wall / 2],
+        size: [bp.width, wallH, wall],
+        color: tone,
+        material: "Стена",
+        metalness: bp.metalness,
+        roughness: bp.roughness,
+        mirror: "z",
+      }),
+      part(ctx.id(), `Боковая стена · этаж ${i + 1}`, {
+        shape: "box",
+        role: "wall",
+        group: "Стены",
+        position: [bp.width / 2 - wall / 2, wallY, 0],
+        size: [wall, wallH, bp.length - wall * 2],
+        color: shade(tone, -0.03),
+        material: "Стена",
+        metalness: bp.metalness,
+        roughness: bp.roughness,
+        mirror: "x",
+      })
+    );
+  }
+
+  ctx.interior = { halfW: bp.width / 2 - wall, halfL: bp.length / 2 - wall, floorY: body.y0 + slab };
+  body.halfW = bp.width / 2;
+  body.halfL = bp.length / 2;
 }
 
 function massElongated(ctx: Ctx) {
@@ -3996,7 +4060,8 @@ const BIG_FURNITURE = new Set(["кровать", "диван", "шкаф", "ку
  */
 function furnishRoom(ctx: Ctx) {
   const { bp, body } = ctx;
-  const floor = ctx.floorY ?? body.y0;
+  const room = ctx.interior ?? { halfW: body.halfW, halfL: body.halfL, floorY: ctx.floorY ?? body.y0 };
+  const floor = room.floorY;
   const margin = 0.06;
 
   const pieces = bp.furnishings.slice(0, 6).map((word, index) => {
@@ -4017,11 +4082,11 @@ function furnishRoom(ctx: Ctx) {
   type Piece = (typeof pieces)[number];
   const placed: { piece: Piece; x: number; z: number }[] = [];
 
-  let cursor = -body.halfW + margin;
+  let cursor = -room.halfW + margin;
   const front: Piece[] = [];
   for (const piece of pieces) {
-    if (BIG_FURNITURE.has(piece.word) && cursor + piece.w <= body.halfW - margin) {
-      placed.push({ piece, x: cursor + piece.w / 2, z: -body.halfL + margin + piece.d / 2 });
+    if (BIG_FURNITURE.has(piece.word) && cursor + piece.w <= room.halfW - margin) {
+      placed.push({ piece, x: cursor + piece.w / 2, z: -room.halfL + margin + piece.d / 2 });
       cursor += piece.w + margin * 3;
     } else {
       front.push(piece);
@@ -4034,13 +4099,13 @@ function furnishRoom(ctx: Ctx) {
   const row = front.filter((piece) => piece !== chair);
   const walkway = chair ? chair.d + 0.25 : 0.55;
   const rowWidth = row.reduce((sum, piece) => sum + piece.w, 0) + margin * 4 * Math.max(0, row.length - 1);
-  let x = -Math.min(rowWidth, body.halfW * 2 - margin * 2) / 2;
+  let x = -Math.min(rowWidth, room.halfW * 2 - margin * 2) / 2;
 
   for (const piece of row) {
-    if (x + piece.w > body.halfW - margin) break;
+    if (x + piece.w > room.halfW - margin) break;
     const z = Math.min(
-      body.halfL - margin - piece.d / 2,
-      -body.halfL + margin + backDepth + walkway + piece.d / 2
+      room.halfL - margin - piece.d / 2,
+      -room.halfL + margin + backDepth + walkway + piece.d / 2
     );
     placed.push({ piece, x: x + piece.w / 2, z });
     if (piece === table && chair) {

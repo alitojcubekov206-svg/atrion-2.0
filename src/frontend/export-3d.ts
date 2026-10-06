@@ -151,6 +151,10 @@ export function geometryForPart(part: ModelPart): THREE.BufferGeometry {
       const geometry = new THREE.BufferGeometry();
       const positions = part.mesh?.position ?? [];
       geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      if (part.mesh?.index?.length) geometry.setIndex(part.mesh.index);
+      if (part.mesh?.uv?.length === (positions.length / 3) * 2) {
+        geometry.setAttribute("uv", new THREE.Float32BufferAttribute(part.mesh.uv, 2));
+      }
       if (part.mesh?.normal?.length === positions.length) {
         geometry.setAttribute("normal", new THREE.Float32BufferAttribute(part.mesh.normal, 3));
       } else {
@@ -258,7 +262,29 @@ function materialForPart(part: ModelPart): THREE.MeshStandardMaterial {
     material.emissive.copy(color).multiplyScalar(emissiveLevel);
     material.emissiveIntensity = 1;
   }
+  if (part.mesh?.texture && part.mesh.uv?.length) {
+    // A generated model's colours live in its texture; the GLB keeps it.
+    const image = new Image();
+    image.src = part.mesh.texture;
+    const map = new THREE.Texture(image);
+    map.flipY = false;
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.needsUpdate = true;
+    material.map = map;
+    material.color.set("#ffffff");
+  }
   return material;
+}
+
+/** GLTFExporter reads texture pixels synchronously, so wait for every image to decode. */
+async function texturesReady(scene: THREE.Object3D): Promise<void> {
+  const images: HTMLImageElement[] = [];
+  scene.traverse((node) => {
+    const material = (node as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+    const image = material?.map?.image as HTMLImageElement | undefined;
+    if (image && typeof image.decode === "function" && !images.includes(image)) images.push(image);
+  });
+  await Promise.all(images.map((image) => image.decode().catch(() => undefined)));
 }
 
 /* ---------------- scene ---------------- */
@@ -336,9 +362,10 @@ function disposeScene(root: THREE.Object3D): void {
 /* ---------------- exporters ---------------- */
 
 /** Binary glTF — the universal exchange format, keeps colours and names. */
-export function exportConceptGlb(concept: ThreeDConcept): Promise<Blob> {
+export async function exportConceptGlb(concept: ThreeDConcept): Promise<Blob> {
   requireParts(concept);
   const scene = buildConceptScene(concept);
+  await texturesReady(scene);
 
   return new Promise<Blob>((resolve, reject) => {
     const exporter = new GLTFExporter();

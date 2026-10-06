@@ -158,6 +158,12 @@ export interface ModelPart {
   mesh?: {
     position: number[];
     normal?: number[];
+    /** Triangle indices into `position`; absent means a plain triangle soup. */
+    index?: number[];
+    /** Texture coordinates, two per vertex (glTF convention, flipY = false). */
+    uv?: number[];
+    /** Base-colour texture as a `data:image/...;base64,` URL. */
+    texture?: string;
   };
 }
 
