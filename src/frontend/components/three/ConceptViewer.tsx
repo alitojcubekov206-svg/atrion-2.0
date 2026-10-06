@@ -239,6 +239,8 @@ function CameraRig({
       side: [distance * 1.2, lookY, 0],
     };
     camera.position.set(...positions[view]);
+    // A 400 m bridge puts the camera ~700 m away; a fixed far plane clipped it all.
+    if ("far" in camera) camera.far = Math.max(500, maxDimension * 8);
     camera.up.set(0, view === "top" ? 0 : 1, view === "top" ? -1 : 0);
     camera.lookAt(0, lookY * 0.7, 0);
     if (view !== "perspective" && "zoom" in camera) {

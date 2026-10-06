@@ -165,6 +165,9 @@ export type MatchReport = {
   expected: number;
 };
 
+/** Bridge surroundings that do not count towards the span's size. */
+const SURROUNDINGS = /подход|насып|окружени|река|вода|approach|embankment|ramp|river|water|terrain/i;
+
 /**
  * Judge parts against the blueprint. Size is checked on the largest dimension
  * and the height, not every axis: wings, tails and porches legitimately widen
@@ -183,13 +186,19 @@ export function matchParts(bp: Blueprint, parts: ModelPart[]): MatchReport {
   }
   const coverage = weight ? hit / weight : 1;
 
-  const { min, max } = partsBounds(parts);
+  // A bridge is measured without its surroundings: the approach embankments
+  // and the river below are not part of the span the prompt asked for.
+  const measured = bp.bridge
+    ? parts.filter((p) => !SURROUNDINGS.test(`${p.name} ${p.group ?? ""}`))
+    : parts;
+  const { min, max } = partsBounds(measured.length ? measured : parts);
   const dims = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
   const explicit = bp.explicitAxes.width || bp.explicitAxes.length || bp.explicitAxes.height;
   const tolerance = explicit ? 1.2 : 1.4;
   const targetMax = Math.max(bp.width, bp.length, bp.height) * Math.max(1, bp.copies);
-  const sizeFit =
-    (ratioFit(Math.max(...dims), targetMax, tolerance, 3) + ratioFit(dims[1], bp.height, tolerance, 3)) / 2;
+  const overall = ratioFit(Math.max(...dims), targetMax, tolerance, 3);
+  // A bridge's height comes from its type (pylons, towers, arch), not the plan.
+  const sizeFit = bp.bridge ? overall : (overall + ratioFit(dims[1], bp.height, tolerance, 3)) / 2;
 
   const structure = parts.length ? scoreParts(parts, { clusters: bp.copies }) : 0;
   const match = coverage * 0.7 + sizeFit * 0.3;

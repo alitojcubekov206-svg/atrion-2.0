@@ -96,10 +96,11 @@ a lamp; do not transfer them to another requested object. Note the repeat and co
  */
 function detailTarget(category: string): { parts: string; note: string } {
   // Scale controls capacity, never the object's anatomy or required components.
-  const budgets:Record<string,string>={landmark:"up to 85",structure:"up to 75",vehicle:"up to 70",furniture:"up to 60",handheld:"up to 55",micro:"up to 55"};
+  // A target range, not a ceiling: "up to N, use fewer" produced blockouts.
+  const budgets:Record<string,string>={landmark:"70-140",structure:"60-120",vehicle:"55-100",furniture:"40-80",handheld:"35-70",micro:"30-60"};
   return {
-    parts:Object.hasOwn(budgets,category)?budgets[category]:"up to 60",
-    note:"This is a suggested complexity budget, not a component list or an object type. Identify the requested object from the user's description and clarifications. Build its defining main forms and functional components first; add only relevant details. Use fewer parts when appropriate instead of inventing unrelated decoration.",
+    parts:Object.hasOwn(budgets,category)?budgets[category]:"45-90",
+    note:"This is a complexity target, not a component list or an object type. Identify the requested object from the user's description and clarifications. Deliver a finished, realistic model, not a blockout: get its real structure and proportions right, then model the secondary forms, joints, edges and functional elements that make it recognisable at a glance, each as its own part placed exactly where it belongs. Prefer several well-placed smaller parts over one large box, and use repeat and mirror for anything that occurs many times. Never invent components the object does not have.",
   };
 }
 

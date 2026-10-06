@@ -27,8 +27,8 @@ export function detectCategory(prompt: string): ConceptCategory {
  * model and different words change it. There are no object templates: the text
  * becomes a feature vector and one builder renders it.
  */
-export function buildFromPrompt(prompt: string): ThreeDConcept {
-  return buildFromPlan(planFromPrompt(prompt));
+export function buildFromPrompt(prompt: string, variant = ""): ThreeDConcept {
+  return buildFromPlan(planFromPrompt(prompt, variant));
 }
 
 /** Same as `buildFromPrompt`, for callers that already hold the blueprint. */
@@ -47,8 +47,9 @@ export function buildFromPlan(blueprint: Blueprint): ThreeDConcept {
 }
 
 /** The blueprint behind a prompt, for logging and for the AI geometry brief. */
-export function planFor(prompt: string) {
-  const blueprint = planFromPrompt(prompt);
+/** `variant` gives the same words a different take — each generation passes a fresh one. */
+export function planFor(prompt: string, variant = "") {
+  const blueprint = planFromPrompt(prompt, variant);
   return { blueprint, summary: describeBlueprint(blueprint) };
 }
 

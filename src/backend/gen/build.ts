@@ -122,6 +122,12 @@ function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
     upright: bp.legs === 2 || bp.massPlan === "stacked" || bp.massPlan === "shell",
   };
 
+  // A bridge has its own anatomy — deck, lanes, piers, pylons — not a body.
+  if (bp.bridge) {
+    buildBridge(ctx);
+    return ctx.parts;
+  }
+
   // A sword on its own is the whole object, not a detail on a body.
   if (bp.kind === "weapon" && bp.arms === 0) {
     addStandaloneBlade(ctx);
@@ -3839,6 +3845,548 @@ function addMast(ctx: Ctx) {
       roughness: 0.95,
     })
   );
+}
+
+/* ================= bridges ================= */
+
+/**
+ * A straight member between two points — a cable, a hanger, a strut. Cylinders
+ * are authored along +y; this finds the XYZ euler that points them along
+ * `to - from` (Rz first, then Rx, with no yaw needed).
+ */
+function strut(
+  ctx: Ctx,
+  name: string,
+  from: Vec3,
+  to: Vec3,
+  thickness: number,
+  style: { group: string; color: string; material: string; role?: string; metalness?: number; roughness?: number }
+): ModelPart {
+  const d: Vec3 = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+  const length = Math.hypot(d[0], d[1], d[2]) || 1e-3;
+  const [dx, dy, dz] = [d[0] / length, d[1] / length, d[2] / length];
+  const gamma = -Math.asin(clamp(dx, -1, 1));
+  const alpha = Math.atan2(dz, dy);
+  return part(ctx.id(), name, {
+    shape: "cylinder",
+    role: style.role ?? "structure",
+    group: style.group,
+    position: [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2, (from[2] + to[2]) / 2],
+    size: [thickness, length, thickness],
+    rotation: [alpha, 0, gamma],
+    sides: 8,
+    color: style.color,
+    material: style.material,
+    metalness: style.metalness ?? 0.7,
+    roughness: style.roughness ?? 0.35,
+  });
+}
+
+/** Evenly spaced positions along a length, kept under the repeat cap. */
+function spacing(length: number, wanted: number, cap = 60): { count: number; step: number; start: number } {
+  const count = clamp(Math.round(length / wanted), 1, cap);
+  const step = length / count;
+  return { count, step, start: -length / 2 + step / 2 };
+}
+
+/**
+ * A bridge people and cars can actually use: a road deck with lanes and
+ * markings, sidewalks with kerbs and railings, street lamps, piers on
+ * footings, abutments with approach embankments — and, by type, pylons with
+ * stay cables, towers with main cables and hangers, or an arch.
+ */
+function buildBridge(ctx: Ctx) {
+  const { bp, rng } = ctx;
+  const type = bp.bridge ?? "beam";
+  const foot = type === "foot";
+  const L = bp.length;
+  const W = foot ? Math.min(bp.width, bp.params.width ?? 4) : bp.width;
+  const deckTop = bp.explicitAxes.height && type === "beam"
+    ? bp.height
+    : clamp(L * (foot ? 0.03 : 0.045), foot ? 3 : 6, 30);
+  const girder = clamp(L * 0.008, foot ? 0.4 : 0.9, 3.5);
+  const deckBottom = deckTop - 0.1 - girder;
+  const sidewalk = foot ? 0 : clamp(W * 0.14, 1.5, 3);
+  const carriage = W - sidewalk * 2;
+  // 3–3.5 m per lane, as on real roads.
+  const lanes = foot ? 0 : carriage >= 12 ? 4 : 2;
+
+  const concrete = rng.pick(["#b9b6ae", "#a9aaa5", "#c4bfb4"]);
+  const steel = rng.pick(["#c94b3c", "#8f9aa6", "#d8d4cb", "#3f6fa8"]);
+  const asphalt = "#2f3136";
+  const deckColor = foot && /дерев|wood/i.test(bp.prompt) ? "#8a6a4a" : concrete;
+  const cable = { group: "Ванты", color: "#c9ced6", material: "Стальной канат", metalness: 0.85, roughness: 0.3 };
+
+  // Deck, road surface, sidewalks.
+  push(
+    ctx,
+    part(ctx.id(), "Пролётное строение", {
+      shape: "box",
+      role: "structure",
+      group: "Пролёт",
+      position: [0, deckBottom + girder / 2, 0],
+      size: [W, girder, L],
+      color: deckColor,
+      material: foot ? "Настил" : "Железобетонная балка",
+      roughness: 0.85,
+    }),
+    part(ctx.id(), foot ? "Настил" : "Проезжая часть", {
+      shape: "box",
+      role: "foundation",
+      group: "Дорога",
+      position: [0, deckTop - 0.05, 0],
+      size: [foot ? W : carriage, 0.1, L],
+      color: foot ? shade(deckColor, 0.08) : asphalt,
+      material: foot ? "Настил" : "Асфальт",
+      roughness: 0.95,
+    })
+  );
+  if (!foot) {
+    push(
+      ctx,
+      part(ctx.id(), "Тротуар", {
+        shape: "box",
+        role: "foundation",
+        group: "Тротуары",
+        position: [W / 2 - sidewalk / 2, deckTop + 0.1, 0],
+        size: [sidewalk, 0.3, L],
+        color: shade(concrete, 0.08),
+        material: "Тротуарная плитка",
+        roughness: 0.9,
+        mirror: "x",
+      }),
+      part(ctx.id(), "Бордюр", {
+        shape: "box",
+        role: "detail",
+        group: "Тротуары",
+        position: [carriage / 2 + 0.1, deckTop + 0.12, 0],
+        size: [0.2, 0.34, L],
+        color: "#d8d4cb",
+        material: "Бордюрный камень",
+        mirror: "x",
+      }),
+      part(ctx.id(), "Краевая разметка", {
+        shape: "box",
+        role: "detail",
+        group: "Разметка",
+        position: [carriage / 2 - 0.35, deckTop + 0.005, 0],
+        size: [0.15, 0.02, L],
+        color: "#f2f0e8",
+        material: "Разметка",
+        mirror: "x",
+      })
+    );
+    const dashes = spacing(L, 9);
+    for (let k = 1; k < lanes; k++) {
+      const x = -carriage / 2 + (carriage / lanes) * k;
+      const centre = Math.abs(x) < 0.01;
+      push(
+        ctx,
+        part(ctx.id(), centre ? "Осевая разметка" : `Разделительная разметка ${k}`, {
+          shape: "box",
+          role: "detail",
+          group: "Разметка",
+          position: [x, deckTop + 0.005, centre ? 0 : dashes.start],
+          size: centre ? [0.15, 0.02, L] : [0.15, 0.02, 3],
+          color: centre ? "#e8c547" : "#f2f0e8",
+          material: "Разметка",
+          ...(centre ? {} : { repeat: { count: dashes.count, step: [0, 0, dashes.step] as Vec3 } }),
+        })
+      );
+    }
+  }
+
+  // Railings on both edges.
+  const posts = spacing(L, 2.5);
+  const railX = W / 2 - 0.08;
+  const railBase = deckTop + (foot ? 0 : 0.25);
+  push(
+    ctx,
+    part(ctx.id(), "Стойка ограждения", {
+      shape: "box",
+      role: "structure",
+      group: "Ограждение",
+      position: [railX, railBase + 0.55, posts.start],
+      size: [0.1, 1.1, 0.1],
+      color: steel,
+      material: "Сталь",
+      metalness: 0.6,
+      mirror: "x",
+      repeat: { count: posts.count, step: [0, 0, posts.step] },
+    }),
+    part(ctx.id(), "Поручень", {
+      shape: "box",
+      role: "structure",
+      group: "Ограждение",
+      position: [railX, railBase + 1.1, 0],
+      size: [0.12, 0.1, L],
+      color: steel,
+      material: "Сталь",
+      metalness: 0.6,
+      mirror: "x",
+    }),
+    part(ctx.id(), "Средний ригель", {
+      shape: "box",
+      role: "detail",
+      group: "Ограждение",
+      position: [railX, railBase + 0.55, 0],
+      size: [0.06, 0.06, L],
+      color: shade(steel, -0.1),
+      material: "Сталь",
+      metalness: 0.6,
+      mirror: "x",
+    })
+  );
+
+  // Street lamps along the sidewalks.
+  const lamps = spacing(L, foot ? 15 : 30, 24);
+  const poleH = foot ? 3.5 : 8;
+  push(
+    ctx,
+    part(ctx.id(), "Опора освещения", {
+      shape: "cylinder",
+      role: "structure",
+      group: "Освещение",
+      // On a footbridge the pole stands in the railing line, off the walkway.
+      position: [foot ? railX : W / 2 - 0.4, railBase + poleH / 2, lamps.start],
+      size: [0.18, poleH, 0.18],
+      sides: 10,
+      color: "#4a4f57",
+      material: "Сталь",
+      metalness: 0.7,
+      mirror: "x",
+      repeat: { count: lamps.count, step: [0, 0, lamps.step] },
+    }),
+    part(ctx.id(), "Фонарь", {
+      shape: "box",
+      role: "light",
+      group: "Освещение",
+      position: [W / 2 - (foot ? 0.6 : 1.4), railBase + poleH, lamps.start],
+      size: [foot ? 0.5 : 2, 0.2, 0.45],
+      color: "#fff3cf",
+      material: "Светильник",
+      emissive: 0.85,
+      mirror: "x",
+      repeat: { count: lamps.count, step: [0, 0, lamps.step] },
+    })
+  );
+
+  // Abutments and approach embankments, so the road meets the ground.
+  const ramp = Math.max(deckTop * 3, 12);
+  push(
+    ctx,
+    part(ctx.id(), "Устой", {
+      shape: "box",
+      role: "foundation",
+      group: "Опоры",
+      position: [0, deckBottom / 2, L / 2 + 2],
+      size: [W * 1.08, deckBottom, 4],
+      color: shade(concrete, -0.08),
+      material: "Бетон",
+      roughness: 0.9,
+      mirror: "z",
+    }),
+    part(ctx.id(), "Подходная насыпь", {
+      shape: "wedge",
+      role: "foundation",
+      group: "Подходы",
+      position: [0, deckTop / 2, L / 2 + 4 + ramp / 2],
+      size: [ramp, deckTop, W],
+      rotation: [0, Math.PI / 2, 0],
+      color: "#6f7a5e",
+      material: "Насыпь",
+      roughness: 0.95,
+      mirror: "z",
+    })
+  );
+
+  // Piers under the deck; pylons and towers stand on their own footings.
+  const reserved: number[] = [];
+  const towers = buildBridgeTowers(ctx, type, { L, W, carriage, deckTop, deckBottom, steel, concrete, cable, reserved });
+  // Real girders span 25–50 m between piers; a long viaduct gets many.
+  const spans = clamp(Math.round(L / (foot ? 25 : 45)), 1, 60);
+  const step = L / spans;
+  // Consecutive piers become one repeated row, broken where a pylon or an
+  // arch already carries the deck.
+  const rows: { z: number; count: number }[] = [];
+  for (let k = 1; k < spans; k++) {
+    const z = -L / 2 + step * k;
+    if (reserved.some((r) => Math.abs(r - z) < step / 2)) continue;
+    const last = rows[rows.length - 1];
+    if (last && Math.abs(last.z + last.count * step - z) < 1e-6) last.count++;
+    else rows.push({ z, count: 1 });
+  }
+  const pierD = clamp(L * 0.006, foot ? 0.35 : 1.1, 3);
+  for (const { z, count } of rows) {
+    const repeat = count > 1 ? { repeat: { count, step: [0, 0, step] as Vec3 } } : {};
+    push(
+      ctx,
+      part(ctx.id(), "Столб опоры", {
+        shape: "cylinder",
+        role: "structure",
+        group: "Опоры",
+        position: [W * 0.3, deckBottom / 2, z],
+        size: [pierD, deckBottom, pierD],
+        sides: 16,
+        color: concrete,
+        material: "Бетон",
+        roughness: 0.85,
+        mirror: "x",
+        ...repeat,
+      }),
+      part(ctx.id(), "Ригель опоры", {
+        shape: "box",
+        role: "structure",
+        group: "Опоры",
+        position: [0, deckBottom - pierD * 0.4, z],
+        size: [W * 0.92, pierD * 0.8, pierD * 1.3],
+        color: shade(concrete, -0.05),
+        material: "Бетон",
+        roughness: 0.85,
+        ...repeat,
+      }),
+      part(ctx.id(), "Фундамент опоры", {
+        shape: "box",
+        role: "foundation",
+        group: "Опоры",
+        position: [0, 0.4, z],
+        size: [W * 0.85, 0.8, pierD * 2.6],
+        color: shade(concrete, -0.15),
+        material: "Бетон",
+        roughness: 0.9,
+        ...repeat,
+      })
+    );
+  }
+
+  if (bp.water) {
+    push(
+      ctx,
+      part(ctx.id(), "Река", {
+        shape: "box",
+        role: "detail",
+        group: "Окружение",
+        position: [0, 0.05, 0],
+        size: [Math.max(W * 8, L * 0.4), 0.1, L * 0.75],
+        color: "#3f7fa8",
+        material: "Вода",
+        opacity: 0.8,
+        roughness: 0.1,
+      })
+    );
+  }
+  void towers;
+}
+
+/** Pylons and stay cables, suspension towers and main cables, or an arch. */
+function buildBridgeTowers(
+  ctx: Ctx,
+  type: NonNullable<Blueprint["bridge"]>,
+  g: {
+    L: number;
+    W: number;
+    carriage: number;
+    deckTop: number;
+    deckBottom: number;
+    steel: string;
+    concrete: string;
+    cable: { group: string; color: string; material: string; metalness: number; roughness: number };
+    reserved: number[];
+  }
+): number {
+  const { rng } = ctx;
+  const { L, W, carriage, deckTop, deckBottom, steel, concrete, cable, reserved } = g;
+
+  if (type === "cable") {
+    const count = L > 180 ? 2 : 1;
+    const zs = count === 1 ? [0] : [-L * 0.22, L * 0.22];
+    const half = count === 1 ? L / 2 : L * 0.22;
+    const aShape = rng.chance(0.4);
+    const stays = rng.int(7, 11);
+    let height = clamp(half * 0.45, 15, 140);
+    if (aShape) {
+      // Stays from an A-pylon's apex cross the outer lane on their way to the
+      // deck edge, so the pylon must be tall enough for its lowest stay to
+      // pass over a 4.5 m truck there.
+      const edge = W / 2 - 0.25;
+      const slack = (edge - carriage / 2 - 0.2) / (edge - 0.4);
+      const lowest = 1 - 0.04 - (0.28 * (stays - 1)) / stays;
+      height = clamp(Math.max(height, (4.5 / Math.max(slack, 0.05) + 0.3) / lowest), 15, 140);
+    }
+    const top = deckTop + height;
+    const legX = W / 2 + 0.9;
+    const leg = clamp(height * 0.05, 1.2, 4);
+    for (const z of zs) {
+      reserved.push(z);
+      if (aShape) {
+        const knee = deckTop + 3;
+        const style = { group: "Пилоны", color: concrete, material: "Бетон", metalness: 0.05, roughness: 0.85 };
+        push(
+          ctx,
+          part(ctx.id(), "Нижняя стойка пилона", {
+            shape: "box",
+            role: "structure",
+            group: "Пилоны",
+            position: [legX, knee / 2, z],
+            size: [leg, knee, leg * 1.4],
+            color: concrete,
+            material: "Бетон",
+            roughness: 0.85,
+            mirror: "x",
+          }),
+          { ...strut(ctx, "Верхняя нога пилона", [legX, knee, z], [0.6, top, z], leg, style), mirror: "x" },
+          part(ctx.id(), "Ригель под настилом", {
+            shape: "box",
+            role: "structure",
+            group: "Пилоны",
+            position: [0, deckBottom - leg * 0.4, z],
+            size: [legX * 2 + leg, leg * 0.8, leg],
+            color: shade(concrete, -0.05),
+            material: "Бетон",
+          })
+        );
+      } else {
+        push(
+          ctx,
+          part(ctx.id(), "Стойка пилона", {
+            shape: "box",
+            role: "structure",
+            group: "Пилоны",
+            position: [legX, top / 2, z],
+            size: [leg, top, leg * 1.4],
+            color: concrete,
+            material: "Бетон",
+            roughness: 0.85,
+            mirror: "x",
+          }),
+          part(ctx.id(), "Ригель пилона", {
+            shape: "box",
+            role: "structure",
+            group: "Пилоны",
+            position: [0, top - height * 0.08, z],
+            size: [legX * 2 + leg, leg * 0.8, leg],
+            color: shade(concrete, -0.05),
+            material: "Бетон",
+          }),
+          part(ctx.id(), "Ригель под настилом", {
+            shape: "box",
+            role: "structure",
+            group: "Пилоны",
+            position: [0, deckBottom - leg * 0.4, z],
+            size: [legX * 2 + leg, leg * 0.8, leg],
+            color: shade(concrete, -0.05),
+            material: "Бетон",
+          })
+        );
+      }
+      // Fan of stays from the pylon head to the deck edges, both directions.
+      const reach = half * 0.92;
+      for (let k = 1; k <= stays; k++) {
+        const anchorY = top - height * 0.04 - (height * 0.28 * (k - 1)) / stays;
+        const along = (reach * k) / stays;
+        for (const dir of [1, -1]) {
+          const from: Vec3 = aShape ? [0.4, anchorY, z] : [legX - leg * 0.3, anchorY, z];
+          const to: Vec3 = [W / 2 - 0.25, deckTop + 0.3, z + dir * along];
+          const stay = strut(ctx, "Вант", from, to, clamp(L * 0.0006, 0.08, 0.3), cable);
+          push(ctx, { ...stay, mirror: "x" });
+        }
+      }
+    }
+    return count;
+  }
+
+  if (type === "suspension") {
+    const zs = [-L * 0.3, L * 0.3];
+    const main = L * 0.6;
+    const height = clamp(main * 0.12, 18, 160);
+    const top = deckTop + height;
+    const legX = W / 2 + 1;
+    const leg = clamp(height * 0.06, 1.2, 5);
+    const sagLow = deckTop + 2;
+    for (const z of zs) {
+      reserved.push(z);
+      push(
+        ctx,
+        part(ctx.id(), "Стойка башни", {
+          shape: "box",
+          role: "structure",
+          group: "Башни",
+          position: [legX, top / 2, z],
+          size: [leg, top, leg * 1.5],
+          color: steel,
+          material: "Окрашенная сталь",
+          metalness: 0.5,
+          mirror: "x",
+        }),
+        part(ctx.id(), "Портал башни", {
+          shape: "box",
+          role: "structure",
+          group: "Башни",
+          position: [0, top - height * 0.1, z],
+          size: [legX * 2 + leg, leg, leg],
+          color: steel,
+          material: "Окрашенная сталь",
+          metalness: 0.5,
+          repeat: { count: 2, step: [0, -height * 0.4, 0] },
+        })
+      );
+    }
+    // Main cables: a parabola across the main span, backstays to the ends.
+    const segments = 16;
+    const cableAt = (t: number): Vec3 => {
+      const z = -main / 2 + main * t;
+      const y = sagLow + (top - sagLow) * (2 * t - 1) ** 2;
+      return [legX, y, z];
+    };
+    for (let s = 0; s < segments; s++) {
+      push(ctx, { ...strut(ctx, "Несущий кабель", cableAt(s / segments), cableAt((s + 1) / segments), 0.6, cable), mirror: "x" });
+    }
+    for (const dir of [1, -1]) {
+      push(
+        ctx,
+        { ...strut(ctx, "Оттяжка кабеля", [legX, top, (dir * main) / 2], [legX, deckTop, (dir * L) / 2], 0.6, cable), mirror: "x" }
+      );
+    }
+    const hangers = 14;
+    for (let h = 1; h < hangers; h++) {
+      const [x, y, z] = cableAt(h / hangers);
+      push(ctx, { ...strut(ctx, "Подвеска", [x, y, z], [W / 2 - 0.2, deckTop, z], 0.12, cable), mirror: "x" });
+    }
+    return 2;
+  }
+
+  if (type === "arch") {
+    const span = L > 120 ? L * 0.6 : L * 0.85;
+    const rise = span * 0.2;
+    const segments = 18;
+    const ribX = W / 2 - 0.2;
+    const ribAt = (t: number): Vec3 => [ribX, deckTop + Math.sin(Math.PI * t) * rise, -span / 2 + span * t];
+    for (let s = 0; s < segments; s++) {
+      push(ctx, { ...strut(ctx, "Арка", ribAt(s / segments), ribAt((s + 1) / segments), clamp(span * 0.012, 0.5, 2.5), { ...cable, group: "Арка", color: steel, material: "Окрашенная сталь" }), mirror: "x" });
+    }
+    const hangers = 12;
+    for (let h = 1; h < hangers; h++) {
+      const [x, y, z] = ribAt(h / hangers);
+      push(ctx, { ...strut(ctx, "Подвеска", [x, y, z], [x, deckTop, z], 0.12, cable), mirror: "x" });
+    }
+    push(
+      ctx,
+      part(ctx.id(), "Связь арки", {
+        shape: "box",
+        role: "structure",
+        group: "Арка",
+        position: [0, deckTop + rise * 0.95, -span * 0.12],
+        size: [ribX * 2, 0.5, 0.5],
+        color: steel,
+        material: "Окрашенная сталь",
+        repeat: { count: 3, step: [0, 0, span * 0.12] },
+      })
+    );
+    reserved.push(-span / 2, span / 2);
+    return 1;
+  }
+
+  return 0;
 }
 
 /* ================= vehicles ================= */

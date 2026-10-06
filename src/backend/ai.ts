@@ -526,9 +526,10 @@ const METADATA_GRACE_MS = 6_000;
  */
 export async function generate3DModel(
   prompt: string,
-  answers: { question: string; answer: string }[] = []
+  answers: { question: string; answer: string }[] = [],
+  options: { variant?: string } = {}
 ): Promise<ConceptGeneration> {
-  const { blueprint: plan } = planFor(prompt);
+  const { blueprint: plan } = planFor(prompt, options.variant);
   const baseline = withAnswers(buildFromPlan(plan), answers);
   const notes: string[] = [];
 

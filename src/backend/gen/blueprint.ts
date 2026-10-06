@@ -172,6 +172,10 @@ export type Blueprint = {
   cushions: number;
   pillows: number;
 
+  /** Bridge structure, when the object is a bridge. */
+  bridge: "beam" | "cable" | "suspension" | "arch" | "foot" | null;
+  /** A river or water under the object (bridges). */
+  water: boolean;
   /** Extra copies of the whole object arranged in a row, e.g. "три стула". */
   copies: number;
   /** Pieces a room is furnished with, each built as its own object. */
@@ -226,6 +230,17 @@ const E = `(?![${B}])`;
 const w = (body: string) => new RegExp(`${S}(?:${body})`, "i");
 
 /* ---------------- lexicon ---------------- */
+
+/** Bridge structure from the wording; plain "мост" gets a random but sensible type. */
+function bridgeType(raw: string, rng: Rng): NonNullable<Blueprint["bridge"]> {
+  const text = raw.toLowerCase();
+  if (/пешеход|пеш(ий|ая)|footbridge|pedestrian/.test(text)) return "foot";
+  if (/вант|cable.?stayed/.test(text)) return "cable";
+  if (/подвес|висяч|suspension|золотые ворота|golden gate/.test(text)) return "suspension";
+  if (/арк|арочн|arch/.test(text)) return "arch";
+  if (/балоч|эстакад|виадук|путепровод|beam|girder|viaduct/.test(text)) return "beam";
+  return rng.pick(["beam", "beam", "cable", "suspension", "arch"] as const);
+}
 
 const BIG_WHEELS = /(больш|огромн|крупн)\S*\s+(колёс|колес)|(big|large|huge) wheels/i;
 
@@ -418,7 +433,7 @@ const RULES: Rule[] = [
     },
   },
   { label: "башня", kind: "landmark", attach: (b, n) => { b.towers = n ?? Math.max(b.towers, 1); b.spire = true; }, re: w("башн|tower|небоскрёб|небоскреб|skyscraper|высотк|телебашн|минарет|маяк|колокольн|донжон"), counter: /башн|tower/i, apply: (b, n) => { b.towers = n ?? Math.max(b.towers, 1); b.massPlan = "stacked"; b.sizeClass = "landmark"; b.floors = Math.max(b.floors, 8); b.spire = true; b.height = Math.max(b.height, 34); b.width = Math.max(b.width, 13); b.length = Math.max(b.length, 13); b.windows = Math.max(b.windows, 32); } },
-  { label: "мост", kind: "landmark", re: w("мост|bridge|эстакад|виадук|путепровод|переправ"), apply: (b) => { b.massPlan = "platform"; b.sizeClass = "landmark"; b.columns = Math.max(b.columns, 4); b.railings = true; b.cables = Math.max(b.cables, 12); b.length = Math.max(b.length, 60); b.width = Math.max(b.width, 9); b.height = Math.max(b.height, 14); b.roof = "none"; b.windows = 0; } },
+  { label: "мост", kind: "landmark", re: w("мост|bridge|эстакад|виадук|путепровод|переправ"), apply: (b) => { b.bridge = bridgeType(b.params.raw, b.rng); b.water = /рек[аиуе]|речк|river|вод[аыуе]|залив|канал|пруд|озер/i.test(b.params.raw); if (b.bridge === "foot") b.width = b.params.width ?? 3.5; else if (!b.params.width) b.width = Math.max(b.width, b.rng.pick([12, 16, 20])); b.massPlan = "platform"; b.sizeClass = "landmark"; b.columns = Math.max(b.columns, 4); b.railings = true; b.cables = Math.max(b.cables, 12); b.length = Math.max(b.length, 60); b.width = Math.max(b.width, 9); b.height = Math.max(b.height, 14); b.roof = "none"; b.windows = 0; } },
   { label: "стадион", kind: "landmark", re: w("стадион|stadium|арен[аыу]|спорткомплекс|манеж|ипподром|амфитеатр"), apply: (b) => { b.massPlan = "shell"; b.hollow = true; b.sizeClass = "landmark"; b.columns = Math.max(b.columns, 16); b.roof = "flat"; b.length = Math.max(b.length, 90); b.width = Math.max(b.width, 70); b.height = Math.max(b.height, 22); } },
   { label: "комната", kind: "room", re: w(`комнат|спальн|кухн|гостин|ванн|санузел|интерьер|interior|\\broom\\b|bedroom|kitchen|кабинет|квартир|студи[яю]|аудитори|класс${E}|прихож|коридор|лоджи`), apply: (b) => { b.massPlan = "shell"; b.hollow = true; b.sizeClass = "structure"; b.roof = "none"; b.windows = Math.max(b.windows, 1); b.doors = Math.max(b.doors, 1); b.height = 2.8; b.width = Math.max(b.width, 4.2); b.length = Math.max(b.length, 3.6); b.floors = 1; b.detail += 0.3; } },
   { label: "этажи", re: w("этаж|floor|storey|story|уровн|ярус"), counter: /этаж|floor|storey|story|уровн|ярус/i, apply: (b, n) => { if (n) { b.floors = n; b.massPlan = "stacked"; } } },
@@ -567,10 +582,10 @@ const SIZE_DEFAULTS: Record<SizeClass, { length: number; width: number; height: 
   landmark: { length: 40, width: 30, height: 40 },
 };
 
-function baseBlueprint(prompt: string): Blueprint {
+function baseBlueprint(prompt: string, variant = ""): Blueprint {
   const params = parsePromptParams(prompt);
-  const rng = new Rng(hashString(`${prompt}::blueprint`));
-  const palette = PALETTES[hashString(prompt) % PALETTES.length];
+  const rng = new Rng(hashString(`${prompt}::blueprint${variant ? `::${variant}` : ""}`));
+  const palette = PALETTES[hashString(`${prompt}${variant}`) % PALETTES.length];
 
   return {
     prompt,
@@ -681,6 +696,8 @@ function baseBlueprint(prompt: string): Blueprint {
 
     copies: 1,
     furnishings: [],
+    bridge: null,
+    water: false,
 
     primary: palette.primary,
     secondary: palette.secondary,
@@ -989,8 +1006,8 @@ const ROOM_DEFAULTS: [RegExp, string[]][] = [
  * another feature onto the same object, which is what lets an unseen
  * combination of words produce an unseen model.
  */
-export function planFromPrompt(prompt: string): Blueprint {
-  const blueprint = baseBlueprint(prompt);
+export function planFromPrompt(prompt: string, variant = ""): Blueprint {
+  const blueprint = baseBlueprint(prompt, variant);
   const text = normalizeCounts(prompt.toLowerCase());
   const { subject, segments } = splitPrompt(text);
   const { rng, params } = blueprint;
@@ -1073,6 +1090,30 @@ export function planFromPrompt(prompt: string): Blueprint {
   if (params.width) blueprint.width = params.width;
   if (params.depth) blueprint.length = params.depth;
   if (params.height) blueprint.height = params.height;
+  // A lone "200 метров" is the longest side: a bridge's span, a tower's height.
+  // Buildings, bridges, rooms and furniture keep their working width and height
+  // (a table stays 75 cm tall); a cat or a mug grows whole.
+  if (params.size) {
+    const axis =
+      blueprint.height >= blueprint.length && blueprint.height >= blueprint.width
+        ? "height"
+        : blueprint.length >= blueprint.width
+          ? "length"
+          : "width";
+    const fixedShape =
+      blueprint.sizeClass === "structure" ||
+      blueprint.sizeClass === "landmark" ||
+      blueprint.kind === "room" ||
+      blueprint.kind === "furniture";
+    if (!fixedShape) {
+      const factor = params.size / Math.max(blueprint[axis], 1e-6);
+      blueprint.length *= factor;
+      blueprint.width *= factor;
+      blueprint.height *= factor;
+    }
+    blueprint[axis] = params.size;
+    blueprint.explicitAxes[axis] = true;
+  }
   if (params.floors) {
     blueprint.floors = params.floors;
     blueprint.massPlan = "stacked";

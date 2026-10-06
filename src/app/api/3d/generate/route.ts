@@ -89,8 +89,10 @@ export async function POST(req: Request) {
       : [];
 
     const cleanPrompt = prompt.trim();
-    const generationPlan = planFor(cleanPrompt);
-    const result = await generate3DModel(cleanPrompt, safeAnswers);
+    // A fresh variant per request: asking again gives a new model, not the same one.
+    const variant = crypto.randomUUID().slice(0, 8);
+    const generationPlan = planFor(cleanPrompt, variant);
+    const result = await generate3DModel(cleanPrompt, safeAnswers, { variant });
 
     // ТЗ 4.1: the generation must be traceable - what was read out of the text,
     // which geometry won, and how detailed the result is.

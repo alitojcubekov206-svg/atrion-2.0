@@ -22,6 +22,8 @@ export type PromptParams = {
   width?: number;
   depth?: number;
   height?: number;
+  /** A lone measurement with no axis named ("мост 200 метров") — the object's main extent. */
+  size?: number;
   floors?: number;
   /** Explicit count, e.g. "4 колонны", "6 окон". */
   count?: number;
@@ -174,6 +176,28 @@ export function parsePromptParams(prompt: string): PromptParams {
   const heightMatch = labelled("высот|высотой|height|ростом|рост");
   if (heightMatch) height = toMetres(normalizeNumber(heightMatch[1]), heightMatch[2]);
 
+  // "мост 200 метров", "башня 80 м": a measurement that names no axis. Only a
+  // single one counts — "12 м и 9 м" says nothing about which side is which.
+  let size: number | undefined;
+  if (!pair && !width && !depth && !height) {
+    const lone = [
+      ...text.matchAll(
+        /(\d+(?:[.,]\d+)?)\s*(километр[а-яё]*|км|сантиметр[а-яё]*|см|миллиметр[а-яё]*|мм|метр[а-яё]*|м|(?:kilo|centi|milli)?met(?:er|re)s?|km|cm|mm|m)(?![а-яёa-z])/gi
+      ),
+    ];
+    if (lone.length === 1) {
+      const word = lone[0][2];
+      const unit = /^(км|килом|kilo|km)/i.test(word)
+        ? "км"
+        : /^(см|сантим|centi|cm)/i.test(word)
+          ? "см"
+          : /^(мм|миллим|milli|mm)/i.test(word)
+            ? "мм"
+            : undefined;
+      size = toMetres(normalizeNumber(lone[0][1]), unit);
+    }
+  }
+
   // "4 этажа", "четырёхэтажный", "2-этажный", "3 floors", "5 storey"
   let floors: number | undefined;
   const floorsMatch =
@@ -230,6 +254,7 @@ export function parsePromptParams(prompt: string): PromptParams {
     width,
     depth,
     height,
+    size,
     floors,
     count,
     roof,
@@ -238,7 +263,7 @@ export function parsePromptParams(prompt: string): PromptParams {
     color,
     scale,
     features,
-    hasExplicitSize: Boolean(width || depth || height),
+    hasExplicitSize: Boolean(width || depth || height || size),
   };
 }
 

@@ -3,6 +3,7 @@ import { requireApiUser } from "@/backend/api-auth";
 import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
 import { describeForImage } from "@/backend/ai";
 import { rateLimit, rateLimitedResponse } from "@/backend/rate-limit";
+import { detectCategory } from "@/backend/procedural-3d";
 
 export const maxDuration = 30;
 
@@ -60,10 +61,13 @@ export async function POST(req: Request) {
   try {
     // The picture model reads English; the 3D model follows the picture.
     const subject = (await describeForImage(prompt.trim(), safeAnswers)).slice(0, 600);
+    // People and animals get a straight front reference and a projected texture.
+    const kind = detectCategory(prompt);
+    const mode = kind === "character" || kind === "animal" ? "figure" : "object";
     const res = await fetch(`${endpoint.url}/jobs`, {
       method: "POST",
       headers: { Authorization: `Bearer ${endpoint.secret}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: subject, seed: Math.floor(Math.random() * 2_000_000_000) }),
+      body: JSON.stringify({ prompt: subject, seed: Math.floor(Math.random() * 2_000_000_000), mode }),
       signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) throw new Error(`Modal responded ${res.status}`);

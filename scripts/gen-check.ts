@@ -69,6 +69,86 @@ const CASES: Case[] = [
   { prompt: "Дом с диваном, кроватью и столом", kind: "building", plan: (b) => (b.furnishings.includes("диван") && b.furnishings.includes("кровать")) || `furnishings=${b.furnishings}` },
 ];
 
+/* ---------------- bridges are roads, and a new request is a new model ---------------- */
+{
+  const names = (prompt: string, variant = "") =>
+    buildFromPlan(planFor(prompt, variant).blueprint).parts.map((item) => `${item.name} ${item.group ?? ""}`).join(" | ");
+  for (const prompt of ["сделай мост", "Вантовый мост длиной 400 метров", "Подвесной мост", "Арочный мост"]) {
+    const all = names(prompt);
+    for (const piece of ["Проезжая часть", "Тротуар", "Разметка", "Ограждение", "Подходная насыпь"]) {
+      check(`${prompt}: has ${piece}`, all.includes(piece));
+    }
+  }
+  check("cable-stayed bridge has pylons and stays", /Пилоны/.test(names("Вантовый мост")) && /Вант/.test(names("Вантовый мост")));
+  check("suspension bridge has towers and main cables", /Башни/.test(names("Подвесной мост")) && /Несущий кабель/.test(names("Подвесной мост")));
+  check("arch bridge has an arch", /Арка/.test(names("Арочный мост")));
+  check("footbridge has no car lanes", !/Проезжая часть/.test(names("Пешеходный мост")));
+
+  // No stay cable may run down the middle of the road.
+  const stays = buildFromPlan(planFor("Вантовый мост длиной 300 метров").blueprint).parts.filter((item) => item.name === "Вант");
+  const plan = planFor("Вантовый мост длиной 300 метров").blueprint;
+  const deckAnchors = stays.every((item) => Math.abs(item.position[0]) > plan.width * 0.15);
+  check("stay cables land at the deck edges", stays.length > 0 && deckAnchors, String(stays.length));
+
+  // A truck (4.5 m) in the outer lane must clear every stay, on every variant —
+  // a short A-pylon used to drop its lowest stays across the lane.
+  // A strut's long axis for rotation [α, 0, γ] (see `strut` in build.ts).
+  const axis = ([a, , c]: number[]) => [-Math.sin(c), Math.cos(c) * Math.cos(a), Math.cos(c) * Math.sin(a)];
+  let crossings = 0;
+  for (let v = 0; v < 40; v++) {
+    const parts = buildFromPlan(planFor("Вантовый мост 60 метров", `clear-${v}`).blueprint).parts;
+    const road = parts.find((item) => item.name === "Проезжая часть");
+    if (!road) continue;
+    const deckTop = road.position[1] + road.size[1] / 2;
+    for (const item of parts.filter((p) => p.name === "Вант")) {
+      const d = axis(item.rotation);
+      for (let s = 0; s <= 40; s++) {
+        const t = (s / 40 - 0.5) * item.size[1];
+        const x = item.position[0] + d[0] * t;
+        const y = item.position[1] + d[1] * t;
+        if (Math.abs(x) < road.size[0] / 2 && y > deckTop && y < deckTop + 4.5) crossings++;
+      }
+    }
+  }
+  check("stays clear a truck in every lane (40 variants)", crossings === 0, `${crossings} points in the lane`);
+
+  const foot = buildFromPlan(planFor("Пешеходный мост").blueprint).parts;
+  const poles = foot.filter((item) => item.name === "Опора освещения");
+  const walk = foot.find((item) => item.name === "Пролётное строение")?.size[0] ?? 0;
+  check("footbridge lamp posts stand off the walkway", poles.length > 0 && poles.every((p) => p.position[0] >= walk / 2 - 0.3));
+
+  // A long viaduct keeps realistic spans, as repeated pier rows.
+  const viaduct = buildFromPlan(planFor("Балочный мост 1,5 км").blueprint).parts;
+  const pierZ = viaduct
+    .filter((item) => item.name === "Ригель опоры")
+    .flatMap((item) => Array.from({ length: item.repeat?.count ?? 1 }, (_, k) => item.position[2] + (item.repeat?.step[2] ?? 0) * k))
+    .concat([-750, 750])
+    .sort((p, q) => p - q);
+  const widest = Math.max(...pierZ.slice(1).map((z, k) => z - pierZ[k]));
+  check("a 1.5 km viaduct has piers at most 50 m apart", widest <= 50, `${widest.toFixed(0)} m`);
+  check("approach ramps do not count against a bridge's size", matchParts(planFor("Подвесной мост через реку", "x").blueprint, buildFromPlan(planFor("Подвесной мост через реку", "x").blueprint).parts).sizeFit > 0.95);
+
+  const a = JSON.stringify(buildFromPlan(planFor("сделай мост", "one").blueprint).parts.map((p) => p.position));
+  const b = JSON.stringify(buildFromPlan(planFor("сделай мост", "two").blueprint).parts.map((p) => p.position));
+  check("a new request gives a new bridge", a !== b);
+  const c = JSON.stringify(buildFromPlan(planFor("сделай мост", "one").blueprint).parts.map((p) => p.position));
+  check("the same variant is reproducible", a === c);
+}
+
+/* ---------------- a bare "200 метров" is the object's main size ---------------- */
+{
+  const plan = (prompt: string) => planFor(prompt, "size").blueprint;
+  check("«мост через реку 200 метров» is 200 m long", plan("Автомобильный мост через реку 200 метров").length === 200);
+  check("«мост 1,5 км» is 1500 m long", plan("мост 1,5 км").length === 1500);
+  check("«башня 80 м» is 80 m tall", plan("башня 80 м").height === 80);
+  const giraffe = plan("жираф 5 метров");
+  check("a 5 m animal grows whole, not into a stick", giraffe.length === 5 && giraffe.height > 1.5, `${giraffe.height.toFixed(2)} m tall`);
+  const table = plan("стол 120 см");
+  check("a 120 cm table stays table height", table.width === 1.2 && table.height > 0.6 && table.height < 0.9, `${table.height.toFixed(2)} m`);
+  check("two bare sizes stay ambiguous", plan("комната 4 м и 5 м").params.size === undefined);
+  check("«16 дюймов» is not read as metres", plan("ноутбук 16 дюймов").params.size === undefined);
+}
+
 /* ---------------- generated meshes keep their texture through validation ---------------- */
 {
   const tri = { position: [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], index: [0, 1, 2, 2, 1, 3], uv: [0, 0, 1, 0, 0, 1, 1, 1], texture: "data:image/jpeg;base64,AAAA" };
