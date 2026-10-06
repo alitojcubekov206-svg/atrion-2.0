@@ -66,10 +66,8 @@ type RealisticState = {
   busy: boolean;
   status: RealisticStatus | null;
   error: string | null;
-  /** Today's free GPU allowance is spent — offer the Hugging Face token. */
-  quota: boolean;
 };
-const REALISTIC_IDLE: RealisticState = { busy: false, status: null, error: null, quota: false };
+const REALISTIC_IDLE: RealisticState = { busy: false, status: null, error: null };
 
 type Measurement = {
   from: string;
@@ -113,7 +111,6 @@ export default function DesignEnginePage() {
   const [pendingBoolean, setPendingBoolean] = useState<BooleanOp | null>(null);
   const [booleanFirst, setBooleanFirst] = useState<string | null>(null);
   const [realistic, setRealistic] = useState<RealisticState>(REALISTIC_IDLE);
-  const [hfTokenDraft, setHfTokenDraft] = useState("");
   const realisticAbort = useRef<AbortController | null>(null);
   /** The prompt and answers the current model was generated from. */
   const lastRequest = useRef<{ prompt: string; answers: { question: string; answer: string }[] } | null>(null);
@@ -187,16 +184,16 @@ export default function DesignEnginePage() {
   }, [concept]);
 
   /**
-   * Free realistic mesh for the current model: a picture, then TRELLIS on the
-   * visitor's own free GPU allowance. The block model stays on screen (and in
-   * undo history) until the mesh is ready; any failure just leaves it there.
+   * Realistic mesh for the current model, built on Atrion's Modal app (TRELLIS
+   * on a GPU). The block model stays on screen (and in undo history) until the
+   * mesh is ready; any failure just leaves it there.
    */
   async function startRealistic(base: ThreeDConcept) {
     const request = lastRequest.current ?? { prompt: prompt.trim() || base.name, answers: [] };
     realisticAbort.current?.abort();
     const controller = new AbortController();
     realisticAbort.current = controller;
-    setRealistic({ busy: true, status: null, error: null, quota: false });
+    setRealistic({ busy: true, status: null, error: null });
 
     try {
       const { generateRealisticConcept } = await import("@/frontend/realistic-3d");
@@ -221,11 +218,9 @@ export default function DesignEnginePage() {
       ]);
     } catch (error) {
       if (controller.signal.aborted) return;
-      const quota = error instanceof Error && error.name === "RealisticQuotaError";
       setRealistic({
         busy: false,
         status: null,
-        quota,
         error: error instanceof Error ? error.message : "Не удалось построить реалистичную модель.",
       });
     }
@@ -1033,54 +1028,14 @@ export default function DesignEnginePage() {
             ) : (
               <div className="space-y-2">
                 <p className="text-amber-300/90">{realistic.error}</p>
-                {realistic.quota && (
-                  <>
-                    <p className="text-[#8f8a82]">
-                      С бесплатным аккаунтом Hugging Face лимит больше. Создайте токен (тип «Read») на{" "}
-                      <a
-                        href="https://huggingface.co/settings/tokens"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[#a78bfa] underline"
-                      >
-                        huggingface.co/settings/tokens
-                      </a>{" "}
-                      и вставьте сюда — он хранится только в этом браузере.
-                    </p>
-                    <div className="flex gap-2">
-                      <input
-                        value={hfTokenDraft}
-                        onChange={(event) => setHfTokenDraft(event.target.value)}
-                        placeholder="hf_…"
-                        aria-label="Токен Hugging Face"
-                        className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-white outline-none focus:border-[#a78bfa]/60"
-                      />
-                      <button
-                        type="button"
-                        disabled={!hfTokenDraft.trim().startsWith("hf_")}
-                        onClick={async () => {
-                          const { saveHfToken } = await import("@/frontend/realistic-3d");
-                          saveHfToken(hfTokenDraft);
-                          setHfTokenDraft("");
-                          void startRealistic(concept);
-                        }}
-                        className="shrink-0 rounded-lg bg-[#a78bfa] px-3 py-1 text-black disabled:opacity-40"
-                      >
-                        Сохранить
-                      </button>
-                    </div>
-                  </>
-                )}
                 <div className="flex gap-2">
-                  {!realistic.quota && (
-                    <button
-                      type="button"
-                      onClick={() => void startRealistic(concept)}
-                      className="rounded-full px-2 py-1 text-[#a78bfa] hover:text-white"
-                    >
-                      Повторить
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => void startRealistic(concept)}
+                    className="rounded-full px-2 py-1 text-[#a78bfa] hover:text-white"
+                  >
+                    Повторить
+                  </button>
                   <button
                     type="button"
                     onClick={() => setRealistic(REALISTIC_IDLE)}
@@ -1172,7 +1127,7 @@ export default function DesignEnginePage() {
               type="button"
               disabled={realistic.busy}
               onClick={() => void startRealistic(concept)}
-              title="Бесплатная нейросеть TRELLIS: настоящая 3D-модель с текстурой вместо блоков (~1–2 мин)"
+              title="Нейросеть TRELLIS: настоящая 3D-модель с цветом вместо блоков (~1–2 мин)"
               className={`shrink-0 rounded-full px-3 py-1.5 text-xs ${
                 realistic.busy ? "bg-[#a78bfa]/20 text-[#a78bfa]" : "text-[#a78bfa] hover:text-white"
               }`}

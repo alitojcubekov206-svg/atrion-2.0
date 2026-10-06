@@ -104,7 +104,14 @@ function normalizeShape(value: unknown): PartShape {
  */
 function normalizeMesh(value: unknown): ModelPart["mesh"] | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const raw = value as { position?: unknown; normal?: unknown; index?: unknown; uv?: unknown; texture?: unknown };
+  const raw = value as {
+    position?: unknown;
+    normal?: unknown;
+    index?: unknown;
+    uv?: unknown;
+    texture?: unknown;
+    color?: unknown;
+  };
   if (!Array.isArray(raw.position) || raw.position.length < 9) return undefined;
   const numbers = (input: unknown[]) =>
     input.filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry));
@@ -127,9 +134,11 @@ function normalizeMesh(value: unknown): ModelPart["mesh"] | undefined {
     raw.texture.length <= 4_000_000
       ? raw.texture
       : undefined;
+  const color = Array.isArray(raw.color) ? numbers(raw.color) : undefined;
   return {
     position,
     ...(normal && normal.length === position.length ? { normal } : {}),
+    ...(color && color.length === position.length && color.every((n) => n >= 0 && n <= 1) ? { color } : {}),
     ...(indexOk ? { index } : {}),
     ...(uv && uv.length === vertices * 2 ? { uv } : {}),
     ...(texture && uv && uv.length === vertices * 2 ? { texture } : {}),

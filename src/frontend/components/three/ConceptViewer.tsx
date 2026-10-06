@@ -136,6 +136,9 @@ function buildPartGeometry(
       const positions = mesh?.position ?? [];
       geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
       if (mesh?.index?.length) geometry.setIndex(mesh.index);
+      if (mesh?.color?.length === positions.length) {
+        geometry.setAttribute("color", new THREE.Float32BufferAttribute(mesh.color, 3));
+      }
       if (mesh?.uv?.length === (positions.length / 3) * 2) {
         geometry.setAttribute("uv", new THREE.Float32BufferAttribute(mesh.uv, 2));
       }
@@ -353,8 +356,9 @@ function EditablePart({
   const roughness = part.roughness ?? (glass ? 0.12 : metal ? 0.35 : 0.62);
   const emissiveAmount = part.emissive ?? (glass ? 0.2 : 0);
   // Heavy scenes keep the wireframe only on the selected part.
-  // A textured scan-like mesh turns into a wire tangle with edges on.
-  const showEdges = !texture && (totalInstances <= EDGE_INSTANCE_LIMIT || selected);
+  const vertexColors = Boolean(part.mesh?.color?.length);
+  // A generated, scan-like mesh turns into a wire tangle with edges on.
+  const showEdges = !texture && !vertexColors && (totalInstances <= EDGE_INSTANCE_LIMIT || selected);
   const showGizmo = selected && cadTool !== "select" && !exploded && !assembling && onPartChange;
   const anchor = meshes.current[0] ?? null;
 
@@ -379,10 +383,11 @@ function EditablePart({
           <meshStandardMaterial
             // Double-sided lighting compiles a different shader, so the
             // material is rebuilt rather than flipped in place.
-            key={sectioned ? "section" : "solid"}
+            key={`${sectioned ? "section" : "solid"}-${vertexColors ? "vc" : "flat"}`}
             side={sectioned ? THREE.DoubleSide : THREE.FrontSide}
             map={texture}
-            color={texture ? "#ffffff" : part.color}
+            vertexColors={vertexColors}
+            color={texture || vertexColors ? "#ffffff" : part.color}
             emissive={selected ? "#a78bfa" : emissiveAmount > 0 ? part.color : "#000000"}
             emissiveIntensity={selected ? Math.max(0.35, emissiveAmount) : emissiveAmount}
             roughness={roughness}

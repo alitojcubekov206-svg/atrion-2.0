@@ -1,192 +1,106 @@
 /**
- * Free "realistic" 3D: text → picture → textured mesh, run from the visitor's
- * browser.
+ * Realistic 3D: text → picture → coloured mesh, on Atrion's own Modal app
+ * (infra/modal_realistic.py).
  *
  * The block generator draws everything with primitives, which cannot express a
- * face, hair or a dress. Here the picture comes from our server (Cloudflare's
- * free image model) or, failing that, from the public FLUX demo on Hugging
- * Face; the mesh comes from the public TRELLIS demo there. Both demos run on
- * ZeroGPU, and because the browser calls it directly, every visitor spends
- * their own free daily GPU allowance (about one model a day without a Hugging
- * Face account) — nothing is billed to Atrion.
+ * face, hair or a dress. Here our server starts a job on Modal (TRELLIS on a
+ * GPU, paid from the account's free monthly credit) and the browser polls the
+ * job until the GLB is ready, then turns it into a studio mesh part. Users need
+ * no account, token or quota of their own.
  *
  * Browser only: import it lazily from a client component.
  */
 import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { Client, handle_file } from "@gradio/client";
 import { dimensionsOf, groundParts, structureFromGroups } from "@/shared/geometry";
 import type { ModelPart, ThreeDConcept } from "@/shared/types";
 
-/** One TRELLIS call: background-free picture in, GLB out, 120 s of GPU requested. */
-const TRELLIS_SPACE = "trellis-community/TRELLIS";
-/** Picture fallback when our server has none; a few seconds of the visitor's GPU time. */
-const FLUX_SPACE = "black-forest-labs/FLUX.1-schnell";
-const HF_TOKEN_KEY = "atrion_hf_token";
-/** Texture edge in the saved model — enough for a figure, small enough to store. */
-const TEXTURE_SIZE = 1024;
+/** A GPU job rarely needs more than two minutes, cold start included. */
+const JOB_TIMEOUT_MS = 8 * 60_000;
+const POLL_MS = 3_000;
 
 export type RealisticStatus = {
-  stage: "image" | "queue" | "model" | "convert";
+  stage: "start" | "work" | "convert";
   message: string;
-  /** The picture the model is being built from, once it exists. */
+  /** The picture the model was built from, once it is known. */
   imageUrl?: string;
 };
 
-/** The free GPU allowance for today is spent. */
-export class RealisticQuotaError extends Error {
-  constructor(message: string) {
+/** Human-readable failure; `code` mirrors the API error codes. */
+export class RealisticError extends Error {
+  constructor(
+    message: string,
+    readonly code: string = "REALISTIC_FAILED"
+  ) {
     super(message);
-    this.name = "RealisticQuotaError";
+    this.name = "RealisticError";
   }
 }
 
-/* ---------------- optional Hugging Face token ---------------- */
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      },
+      { once: true }
+    );
+  });
 
-/**
- * A free Hugging Face account raises the daily allowance (to ~5 GPU minutes).
- * The token stays in this browser and only goes to Hugging Face.
- */
-export function savedHfToken(): `hf_${string}` | null {
-  try {
-    const value = window.localStorage.getItem(HF_TOKEN_KEY)?.trim();
-    return value && value.startsWith("hf_") ? (value as `hf_${string}`) : null;
-  } catch {
-    return null;
-  }
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
-export function saveHfToken(token: string | null): void {
-  try {
-    if (token && token.trim().startsWith("hf_")) window.localStorage.setItem(HF_TOKEN_KEY, token.trim());
-    else window.localStorage.removeItem(HF_TOKEN_KEY);
-  } catch {
-    // Private mode or blocked storage: the token just isn't remembered.
-  }
+/** What to tell the user while the GPU works — the job reports no progress of its own. */
+function progressMessage(elapsedMs: number): string {
+  if (elapsedMs < 25_000) return "Запускаем GPU… (первый запуск после паузы — до минуты)";
+  if (elapsedMs < 60_000) return "Рисуем референс и строим 3D-модель…";
+  if (elapsedMs < 120_000) return "Почти готово: собираем поверхность и цвета…";
+  return "Ещё немного — очередь или холодный старт GPU…";
 }
 
-/* ---------------- text → picture ---------------- */
+/* ---------------- job on Modal ---------------- */
 
-/** A picture to build from: bytes we hold, or a file already on a Space. */
-type Picture = { input: Blob | string; previewUrl: string };
-
-function token(): { hf_token: `hf_${string}` } | Record<string, never> {
-  const saved = savedHfToken();
-  return saved ? { hf_token: saved } : {};
-}
-
-function quotaError(text: string): RealisticQuotaError | null {
-  return /quota/i.test(text) ? new RealisticQuotaError(quotaMessage(text)) : null;
-}
-
-async function referencePicture(
+async function runJob(
   prompt: string,
   answers: { question: string; answer: string }[],
-  signal?: AbortSignal
-): Promise<Picture> {
-  // 1. Our server: the request rewritten into English, and a picture from
-  //    Cloudflare's free allocation when it is configured.
-  let subject = prompt;
-  try {
-    const res = await fetch("/api/3d/image", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, answers }),
-      signal,
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { subject?: string; image?: string | null };
-      if (data.subject) subject = data.subject;
-      if (data.image?.startsWith("data:image/")) {
-        const blob = await (await fetch(data.image)).blob();
-        return { input: blob, previewUrl: URL.createObjectURL(blob) };
-      }
-    }
-  } catch (error) {
-    if (signal?.aborted) throw error;
-  }
-
-  // 2. The public FLUX demo, on the visitor's own free GPU allowance.
-  const client = await Client.connect(FLUX_SPACE, token());
-  try {
-    const result = await client.predict<[{ url?: string } | null, number]>("/infer", {
-      prompt: `${subject}, single subject, full body, whole object in frame, centered, plain white background, 3D render, soft studio lighting, no text`,
-      seed: 0,
-      randomize_seed: true,
-      width: 768,
-      height: 768,
-      num_inference_steps: 4,
-    });
-    const url = result.data?.[0]?.url;
-    if (!url) throw new Error("Демо FLUX не вернуло изображение");
-    // TRELLIS downloads the file itself, so no cross-origin fetch is needed here.
-    return { input: url, previewUrl: url };
-  } catch (error) {
-    const text = error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? error);
-    throw quotaError(text) ?? (error instanceof Error ? error : new Error(text));
-  }
-}
-
-/* ---------------- picture → GLB on the free GPU ---------------- */
-
-function quotaMessage(text: string): string {
-  const wait = text.match(/(\d+):(\d+):(\d+)/);
-  const when = wait ? ` Попробуйте через ${Number(wait[1])} ч ${Number(wait[2])} мин.` : "";
-  return `Бесплатный лимит реалистичных моделей на сегодня исчерпан.${when}`;
-}
-
-async function imageTo3D(
-  image: Blob | string,
-  options: { signal?: AbortSignal; onStatus: (status: RealisticStatus) => void; imageUrl: string }
-): Promise<ArrayBuffer> {
-  const client = await Client.connect(TRELLIS_SPACE, { ...token(), events: ["data", "status"] });
-
-  // The demo keeps per-visitor files in a session folder created on page load.
-  await client.predict("/start_session", {}).catch(() => undefined);
-  // Background removal runs on CPU and costs no GPU allowance.
-  const prepared = await client.predict<unknown[]>("/preprocess_image", { image: handle_file(image) });
-  const preparedImage = prepared.data?.[0];
-  if (!preparedImage) throw new Error("Демо не приняло изображение");
-
-  const job = client.submit("/generate_and_extract_glb", {
-    image: preparedImage,
-    multiimages: [],
-    seed: Math.floor(Math.random() * 100_000),
-    ss_guidance_strength: 7.5,
-    ss_sampling_steps: 12,
-    slat_guidance_strength: 3,
-    slat_sampling_steps: 12,
-    multiimage_algo: "stochastic",
-    mesh_simplify: 0.95,
-    texture_size: TEXTURE_SIZE,
+  options: { signal?: AbortSignal; onStatus: (status: RealisticStatus) => void }
+): Promise<{ glb: ArrayBuffer; imageUrl: string }> {
+  options.onStatus({ stage: "start", message: "Отправляем задание…" });
+  const res = await fetch("/api/3d/realistic", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, answers }),
+    signal: options.signal,
   });
-  options.signal?.addEventListener("abort", () => void job.cancel(), { once: true });
+  const started = (await res.json().catch(() => ({}))) as { pollUrl?: string; error?: string; code?: string };
+  if (!res.ok || !started.pollUrl) {
+    throw new RealisticError(started.error ?? "Не удалось запустить реалистичную модель.", started.code);
+  }
 
-  for await (const message of job) {
-    if (message.type === "status") {
-      if (message.stage === "pending") {
-        const position = typeof message.position === "number" ? message.position + 1 : null;
-        options.onStatus({
-          stage: "queue",
-          imageUrl: options.imageUrl,
-          message: position ? `В очереди бесплатного GPU: место ${position}` : "Ждём бесплатный GPU…",
-        });
-      } else if (message.stage === "generating") {
-        options.onStatus({ stage: "model", imageUrl: options.imageUrl, message: "Строим 3D-модель… (около минуты)" });
-      } else if (message.stage === "error") {
-        const text = `${message.title ?? ""} ${typeof message.message === "string" ? message.message : ""}`;
-        throw quotaError(text) ?? new Error(text.trim() || "Демо вернуло ошибку");
-      }
-    } else if (message.type === "data") {
-      const outputs = message.data as ({ url?: string } | null)[];
-      const glb = outputs?.[1]?.url ?? outputs?.[2]?.url;
-      if (!glb) throw new Error("Демо не вернуло GLB");
-      const res = await fetch(glb, { signal: options.signal });
-      if (!res.ok) throw new Error(`Не удалось скачать модель (${res.status})`);
-      return await res.arrayBuffer();
+  const begin = Date.now();
+  while (Date.now() - begin < JOB_TIMEOUT_MS) {
+    options.onStatus({ stage: "work", message: progressMessage(Date.now() - begin) });
+    await sleep(POLL_MS, options.signal);
+    const poll = await fetch(started.pollUrl, { signal: options.signal }).catch(() => null);
+    if (!poll?.ok) continue; // a dropped poll is retried, the job keeps running
+    const data = (await poll.json()) as { status?: string; glb?: string; image?: string; error?: string };
+    if (data.status === "done" && data.glb) {
+      const imageUrl = data.image ? `data:image/jpeg;base64,${data.image}` : "";
+      return { glb: base64ToBytes(data.glb).buffer as ArrayBuffer, imageUrl };
+    }
+    if (data.status === "error") {
+      console.warn("Realistic job failed", data.error);
+      throw new RealisticError("GPU не смог построить модель. Попробуйте переформулировать или повторить.");
     }
   }
-  throw new Error("Демо закрыло соединение без результата");
+  throw new RealisticError("GPU слишком долго не отвечает. Попробуйте ещё раз чуть позже.");
 }
 
 /* ---------------- GLB → studio parts ---------------- */
@@ -231,7 +145,7 @@ async function textureDataUrl(blob: Blob): Promise<string> {
     const image = new Image();
     image.src = url;
     await image.decode();
-    const size = Math.min(TEXTURE_SIZE, image.naturalWidth || TEXTURE_SIZE);
+    const size = Math.min(1024, image.naturalWidth || 1024);
     const canvas = document.createElement("canvas");
     canvas.width = size;
     canvas.height = Math.round((size * (image.naturalHeight || size)) / (image.naturalWidth || size));
@@ -248,8 +162,9 @@ const round = (digits: number) => {
 };
 
 /**
- * Turn the GLB into mesh parts: world transforms baked in, scaled so its
- * largest side matches `targetSize` metres, standing on y = 0.
+ * Turn a GLB into mesh parts: world transforms baked in, scaled so its
+ * largest side matches `targetSize` metres, standing on y = 0. Keeps vertex
+ * colours and a base-colour texture when the file has them.
  */
 export async function glbToParts(buffer: ArrayBuffer, targetSize: number): Promise<ModelPart[]> {
   const gltf: GLTF = await new GLTFLoader().parseAsync(buffer, "");
@@ -280,6 +195,21 @@ export async function glbToParts(buffer: ArrayBuffer, targetSize: number): Promi
     const uvAttr = geometry.getAttribute("uv");
     const uv = uvAttr ? Array.from(uvAttr.array as ArrayLike<number>, p4) : undefined;
     const index = geometry.getIndex() ? Array.from(geometry.getIndex()!.array as ArrayLike<number>) : undefined;
+
+    // getX/Y/Z undo glTF's normalised integer encoding of COLOR_0. Generated
+    // models store display (sRGB) colours there, while three.js and the glTF
+    // spec treat vertex colours as linear — left as-is they render washed out.
+    const colorAttr = geometry.getAttribute("color") as THREE.BufferAttribute | undefined;
+    let color: number[] | undefined;
+    if (colorAttr && colorAttr.count * 3 === position.length) {
+      const linear = (c: number) => p3(c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+      color = new Array(colorAttr.count * 3);
+      for (let v = 0; v < colorAttr.count; v++) {
+        color[v * 3] = linear(colorAttr.getX(v));
+        color[v * 3 + 1] = linear(colorAttr.getY(v));
+        color[v * 3 + 2] = linear(colorAttr.getZ(v));
+      }
+    }
 
     const material = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as THREE.MeshStandardMaterial;
     let texture: string | undefined;
@@ -313,12 +243,13 @@ export async function glbToParts(buffer: ArrayBuffer, targetSize: number): Promi
       quantity: 1,
       role: "volume",
       group: "Модель",
-      roughness: 0.7,
-      metalness: 0.05,
+      roughness: 0.75,
+      metalness: 0.02,
       mesh: {
         position,
         normal,
         ...(index ? { index } : {}),
+        ...(color ? { color } : {}),
         ...(uv && texture ? { uv, texture } : {}),
       },
     });
@@ -331,9 +262,8 @@ export async function glbToParts(buffer: ArrayBuffer, targetSize: number): Promi
 
 /**
  * Build a realistic model for `prompt` and return it as a concept that keeps
- * the block model's name, sizes and metadata. Throws `RealisticQuotaError`
- * when today's free allowance is spent; any other failure leaves the caller's
- * block model in place.
+ * the block model's name, sizes and metadata. Throws `RealisticError` with a
+ * user-facing message; the caller's block model stays as it is.
  */
 export async function generateRealisticConcept(
   prompt: string,
@@ -344,12 +274,7 @@ export async function generateRealisticConcept(
     onStatus: (status: RealisticStatus) => void;
   }
 ): Promise<ThreeDConcept> {
-  options.onStatus({ stage: "image", message: "Рисуем референс для 3D…" });
-  const picture = await referencePicture(prompt, options.answers ?? [], options.signal);
-  const imageUrl = picture.previewUrl;
-  options.onStatus({ stage: "queue", imageUrl, message: "Подключаемся к бесплатному GPU…" });
-
-  const glb = await imageTo3D(picture.input, { signal: options.signal, onStatus: options.onStatus, imageUrl });
+  const { glb, imageUrl } = await runJob(prompt, options.answers ?? [], options);
   options.onStatus({ stage: "convert", imageUrl, message: "Переносим модель в студию…" });
 
   const target = Math.max(base.dimensions.width, base.dimensions.height, base.dimensions.depth, 0.1);
@@ -360,6 +285,6 @@ export async function generateRealisticConcept(
     structure: structureFromGroups(parts),
     dimensions: dimensionsOf(parts),
     source: "ai",
-    description: `${base.description} Реалистичная модель построена бесплатной нейросетью TRELLIS по сгенерированному изображению.`,
+    description: `${base.description} Реалистичная модель построена нейросетью TRELLIS по сгенерированному изображению.`,
   };
 }

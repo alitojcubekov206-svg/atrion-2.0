@@ -77,6 +77,9 @@ const CASES: Case[] = [
   check("mesh keeps uv and texture", kept?.mesh?.uv?.length === 8 && kept?.mesh?.texture === tri.texture);
   const [broken] = sanitizeParts([{ id: "bad", name: "x", shape: "mesh", position: [0, 0, 0], size: [1, 1, 1], mesh: { ...tri, index: [0, 1, 9] } }]);
   check("an out-of-range index is dropped", broken?.mesh?.index === undefined);
+  const coloured = { position: tri.position, index: tri.index, color: [1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1] };
+  const [painted] = sanitizeParts([{ id: "vc", name: "Модель", shape: "mesh", position: [0, 0.5, 0], size: [1, 1, 0.01], mesh: coloured }]);
+  check("mesh keeps its vertex colours", painted?.mesh?.color?.length === 12, JSON.stringify(painted?.mesh?.color));
 }
 
 /* ---------------- section view opens covered interiors only ---------------- */

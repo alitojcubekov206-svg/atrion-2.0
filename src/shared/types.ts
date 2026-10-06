@@ -164,6 +164,8 @@ export interface ModelPart {
     uv?: number[];
     /** Base-colour texture as a `data:image/...;base64,` URL. */
     texture?: string;
+    /** Per-vertex RGB in 0–1, three per vertex (generated meshes). */
+    color?: number[];
   };
 }
 

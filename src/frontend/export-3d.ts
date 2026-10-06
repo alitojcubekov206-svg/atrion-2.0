@@ -152,6 +152,9 @@ export function geometryForPart(part: ModelPart): THREE.BufferGeometry {
       const positions = part.mesh?.position ?? [];
       geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
       if (part.mesh?.index?.length) geometry.setIndex(part.mesh.index);
+      if (part.mesh?.color?.length === positions.length) {
+        geometry.setAttribute("color", new THREE.Float32BufferAttribute(part.mesh.color, 3));
+      }
       if (part.mesh?.uv?.length === (positions.length / 3) * 2) {
         geometry.setAttribute("uv", new THREE.Float32BufferAttribute(part.mesh.uv, 2));
       }
@@ -261,6 +264,10 @@ function materialForPart(part: ModelPart): THREE.MeshStandardMaterial {
   if (emissiveLevel > 0) {
     material.emissive.copy(color).multiplyScalar(emissiveLevel);
     material.emissiveIntensity = 1;
+  }
+  if (part.mesh?.color?.length) {
+    material.vertexColors = true;
+    material.color.set("#ffffff");
   }
   if (part.mesh?.texture && part.mesh.uv?.length) {
     // A generated model's colours live in its texture; the GLB keeps it.
