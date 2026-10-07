@@ -9,7 +9,7 @@ import type {
   ThreeDConcept,
 } from "@/shared/types";
 import { buildFromPlan, buildFromPrompt, detectCategory, planFor } from "@/backend/procedural-3d";
-import { generateAIGeometry, pickBetterGeometry } from "@/backend/gen/ai-geometry";
+import { builderOwnsGeometry, generateAIGeometry, pickBetterGeometry } from "@/backend/gen/ai-geometry";
 import { matchParts } from "@/backend/gen/match";
 import { dimensionsOf, primitiveCount, structureFromGroups } from "@/shared/geometry";
 import { sanitizeParts, scoreParts, validateAndRepair } from "@/backend/gen/validate";
@@ -571,23 +571,29 @@ ${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- �
     (error: unknown) => ({ ok: false as const, error })
   );
 
+  // Bridges ship from their dedicated builder; the AI still writes the metadata.
+  const builderOwned = builderOwnsGeometry(plan);
   let geometry: Awaited<ReturnType<typeof generateAIGeometry>> = null;
-  try {
-    geometry = await generateAIGeometry({
-      prompt,
-      answers,
-      baseline,
-      category: plan.sizeClass,
-      plan,
-      request,
-    });
-  } catch (error) {
-    console.warn("AI geometry unavailable", errorSummary(error));
+  if (!builderOwned) {
+    try {
+      geometry = await generateAIGeometry({
+        prompt,
+        answers,
+        baseline,
+        category: plan.sizeClass,
+        plan,
+        request,
+      });
+    } catch (error) {
+      console.warn("AI geometry unavailable", errorSummary(error));
+    }
   }
 
   const picked = pickBetterGeometry(baseline, geometry, plan);
   const report = picked.match ?? matchParts(plan, picked.concept.parts);
-  if(!geometry)notes.push("AI не вернул пригодную геометрию; показана процедурная модель, соответствие запросу не подтверждено.");
+  if (builderOwned) {
+    notes.push("Мост собран специальным построителем: полосы с разметкой, тротуары, ограждения, опоры и свободный габарит под вантами.");
+  } else if(!geometry)notes.push("AI не вернул пригодную геометрию; показана процедурная модель, соответствие запросу не подтверждено.");
   if (geometry) {
     notes.push(
       picked.source === "ai"

@@ -6,7 +6,7 @@
  */
 import { buildFromPlan, planFor } from "@/backend/procedural-3d";
 import { matchParts } from "@/backend/gen/match";
-import { generateAIGeometry, pickBetterGeometry, type JsonRequester } from "@/backend/gen/ai-geometry";
+import { builderOwnsGeometry, generateAIGeometry, pickBetterGeometry, type JsonRequester } from "@/backend/gen/ai-geometry";
 import type { Blueprint } from "@/backend/gen/blueprint";
 import { interiorCutHeight } from "@/shared/geometry";
 import { sanitizeParts } from "@/backend/gen/validate";
@@ -133,6 +133,18 @@ const CASES: Case[] = [
   check("a new request gives a new bridge", a !== b);
   const c = JSON.stringify(buildFromPlan(planFor("сделай мост", "one").blueprint).parts.map((p) => p.position));
   check("the same variant is reproducible", a === c);
+}
+
+/* ---------------- bridges ship from their builder, everything else from the AI ---------------- */
+{
+  const owns = (prompt: string) => builderOwnsGeometry(planFor(prompt, "owner").blueprint);
+  for (const prompt of ["сделай мост", "Мост через реку", "мостик через ручей", "виадук", "эстакада", "пешеходный мост", "Golden Gate bridge"]) {
+    check(`«${prompt}» is built by the bridge builder`, owns(prompt));
+  }
+  for (const prompt of ["мостовой кран", "дом у моста", "капитанский мостик корабля", "кот на мосту", "дом", "машина"]) {
+    check(`«${prompt}» is left to the AI`, !owns(prompt));
+  }
+  check("«мостовой кран» is not planned as a bridge", planFor("мостовой кран", "x").blueprint.bridge === null);
 }
 
 /* ---------------- a bare "200 метров" is the object's main size ---------------- */

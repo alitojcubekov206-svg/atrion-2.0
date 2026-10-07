@@ -293,6 +293,21 @@ function toResult(
 }
 
 /**
+ * Kinds whose geometry comes from a dedicated builder rather than the AI.
+ * Bridges are built to road rules (lanes, sidewalks, railings, 4.5 m under
+ * every cable), checked by scripts/gen-check.ts; AI-drawn bridges came out
+ * without a usable road and with parts in odd places, and since valid AI
+ * output always ships, users never saw the builder's bridge.
+ */
+export function builderOwnsGeometry(plan: Blueprint): boolean {
+  // Only when the bridge is the object itself: "дом у моста" is a house.
+  return Boolean(plan.bridge) && BRIDGE_HEAD.test(plan.prompt);
+}
+
+/** "мост", "мостик", "виадук", "эстакаду", "bridge" — not "моста", "мосту". */
+const BRIDGE_HEAD = /(?:^|[^а-яё])(?:мост|мостик|мосты|виадук|путепровод|эстакад[ау])(?![а-яё])|\bbridges?\b/i;
+
+/**
  * Choose between AI-authored geometry and the parametric baseline.
  * Validated AI output takes priority. Complexity scores cannot determine which
  * geometry matches the prompt; the baseline is only a labelled failure fallback.
