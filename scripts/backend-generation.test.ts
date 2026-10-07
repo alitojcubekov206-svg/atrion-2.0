@@ -120,7 +120,7 @@ test("text schema uses the provider-specific official envelope",async()=>{
 test("text AI selects Cloudflare only without existing text credentials or by explicit selection",()=>{
   const cf=primaryTextProvider(textEnv)!;assert.equal(cf.kind,"cloudflare");assert.equal(cf.model,CLOUDFLARE_TEXT_MODEL);
   assert.equal(new URL(cf.baseURL!).hostname,"api.cloudflare.com");
-  const legacy=primaryTextProvider({...textEnv,GROQ_API_KEY:"test-groq-token"})!;assert.equal(legacy.kind,"compatible");assert.equal(legacy.apiKey,"test-groq-token");
+  const legacy=primaryTextProvider({...textEnv,GROQ_API_KEY:"test-groq-token"})!;assert.equal(legacy.kind,"compatible");assert.equal(legacy.apiKey,"test-groq-token");assert.equal(legacy.model,"openai/gpt-oss-120b");
   assert.equal(primaryTextProvider({...textEnv,AI_TEXT_PROVIDER:"cloudflare",OPENAI_API_KEY:"test-openai-token",OPENAI_BASE_URL:"https://other.invalid"})!.baseURL,cf.baseURL);
   assert.equal(primaryTextProvider({...textEnv,AI_TEXT_PROVIDER:"disabled"}),null);
   assert.equal(primaryTextProvider({...textEnv,CLOUDFLARE_ACCOUNT_ID:undefined}),null);

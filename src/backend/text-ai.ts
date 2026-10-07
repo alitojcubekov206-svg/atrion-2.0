@@ -3,6 +3,8 @@ import OpenAI from "openai";
 export type TextProvider={apiKey:string;baseURL?:string;model:string;kind:"compatible"|"cloudflare";name:"primary"|"fallback"};
 type Env=Record<string,string|undefined>;
 export const CLOUDFLARE_TEXT_MODEL="@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+/** Groq retired llama-3.3-70b-versatile on 2026-08-16; gpt-oss-120b also supports strict json_schema. */
+export const GROQ_TEXT_MODEL="openai/gpt-oss-120b";
 
 /** Keep existing text credentials first; the image token is used only at Cloudflare's own endpoint. */
 export function primaryTextProvider(env:Env=process.env):TextProvider|null {
@@ -13,7 +15,7 @@ export function primaryTextProvider(env:Env=process.env):TextProvider|null {
   if(choice!=="cloudflare"&&key){
     const groq=!env.OPENAI_API_KEY?.trim()&&Boolean(env.GROQ_API_KEY?.trim());
     return {apiKey:key,baseURL:env.OPENAI_BASE_URL?.trim()||(groq?"https://api.groq.com/openai/v1":undefined),
-      model:env.OPENAI_MODEL?.trim()||(groq?"llama-3.3-70b-versatile":"gpt-4o"),kind:"compatible",name:"primary"};
+      model:env.OPENAI_MODEL?.trim()||(groq?GROQ_TEXT_MODEL:"gpt-4o"),kind:"compatible",name:"primary"};
   }
   if(choice==="compatible")return null;
   const apiKey=env.CLOUDFLARE_API_TOKEN?.trim(),account=env.CLOUDFLARE_ACCOUNT_ID?.trim();

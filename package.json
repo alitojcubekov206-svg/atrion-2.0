@@ -8,6 +8,8 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate",
     "test:backend": "tsc -p tsconfig.backend-tests.json && node --test .backend-tests/scripts/backend-generation.test.js"
   },

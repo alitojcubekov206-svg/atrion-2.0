@@ -30,7 +30,6 @@ Atrion 2.0 is an **AI Software Architect** — a SaaS application that transform
 
 ```bash
 npm install
-npx prisma db push
 npm run dev
 ```
 
@@ -44,7 +43,7 @@ providers continue to work:
 ```env
 OPENAI_API_KEY="primary-provider-key"
 OPENAI_BASE_URL="https://api.groq.com/openai/v1"
-OPENAI_MODEL="llama-3.3-70b-versatile"
+OPENAI_MODEL="openai/gpt-oss-120b"
 ```
 
 For higher availability, use Gemini as the independent second provider. Create
@@ -53,7 +52,7 @@ the key in Google AI Studio:
 ```env
 AI_FALLBACK_API_KEY="your-gemini-api-key"
 AI_FALLBACK_BASE_URL="https://generativelanguage.googleapis.com/v1beta/openai/"
-AI_FALLBACK_MODEL="gemini-3.5-flash"
+AI_FALLBACK_MODEL="gemini-3.8-flash"
 ```
 
 Every JSON generation first uses the primary provider. On a network, rate-limit,
@@ -116,9 +115,10 @@ WebGL-related while it is `null` (pre-hydration) or `off`.
 - API routes require a verified email when `EMAIL_VERIFICATION_ENABLED="true"`
   (`requireApiUser` in `src/backend/api-auth.ts`).
 
-The database schema is applied with `npx prisma db push` against the linked
-Neon project (`neon link` writes `DATABASE_URL` into `.env`). There are no
-migration files to run by hand.
+The database schema is managed with Prisma Migrate (`prisma/migrations/`):
+`npm run db:migrate` on a development Neon branch, `npm run db:deploy` for
+production, both over the direct (non-pooled) connection. The one-time switch
+from `db push` is described in `docs/DEVELOPMENT.md`.
 
 ## Project Structure
 
