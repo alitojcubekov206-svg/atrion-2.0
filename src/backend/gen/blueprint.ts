@@ -137,6 +137,8 @@ export type Blueprint = {
   spire: boolean;
   towers: number;
   garage: boolean;
+  /** Shop frontage: glazed entrance atrium, sign band, rooftop plant, forecourt parking. */
+  storefront: boolean;
 
   screens: number;
   keyboard: boolean;
@@ -174,6 +176,8 @@ export type Blueprint = {
 
   /** Bridge structure, when the object is a bridge. */
   bridge: "beam" | "cable" | "suspension" | "arch" | "foot" | null;
+  /** Traffic lanes the prompt asked for ("8 полос"); 0 lets the deck width decide. */
+  lanes: number;
   /** A river or water under the object (bridges). */
   water: boolean;
   /** Extra copies of the whole object arranged in a row, e.g. "три стула". */
@@ -239,7 +243,9 @@ function bridgeType(raw: string, rng: Rng): NonNullable<Blueprint["bridge"]> {
   if (/подвес|висяч|suspension|золотые ворота|golden gate/.test(text)) return "suspension";
   if (/арк|арочн|arch/.test(text)) return "arch";
   if (/балоч|эстакад|виадук|путепровод|beam|girder|viaduct/.test(text)) return "beam";
-  return rng.pick(["beam", "beam", "cable", "suspension", "arch"] as const);
+  // A plain "мост" is usually wanted as a showpiece; a girder bridge read as
+  // "basic" at 2 in 5, so it is now 1 in 7.
+  return rng.pick(["beam", "cable", "cable", "suspension", "suspension", "arch", "arch"] as const);
 }
 
 const BIG_WHEELS = /(больш|огромн|крупн)\S*\s+(колёс|колес)|(big|large|huge) wheels/i;
@@ -415,7 +421,7 @@ const RULES: Rule[] = [
   /* --- architecture --- */
   {
     label: "здание", kind: "building",
-    re: w(`дом|house|коттедж|вилл|особняк|дач[аиу]|изб[аыу]|шале|бунгало|таунхаус|здани|строени|корпус|павильон|школ|лице[йя]|гимназ|универ|институт|колледж|садик|детсад|больниц|hospital|клиник|поликлиник|офис|office|бизнес.?центр|коворкинг|магазин|молл|\\bmall\\b|торгов(ый|ого) центр|завод|фабрик|склад|ангар|цех|музе[йя]|театр|библиотек|гостиниц|отель|hotel|вокзал|аэропорт|терминал|церкв|храм|мечет|собор|ратуш|замок|крепост|многоэтажк|панельк|хрущёвк|хрущевк|жилой дом|жк${E}`),
+    re: w(`дом|house|коттедж|вилл|особняк|дач[аиу]|изб[аыу]|шале|бунгало|таунхаус|здани|строени|корпус|павильон|школ|лице[йя]|гимназ|универ|институт|колледж|садик|детсад|больниц|hospital|клиник|поликлиник|офис|office|бизнес.?центр|коворкинг|магазин|молл|\\bmall\\b|торгов(ый|ого) центр|торгово.?развлекат|трц(?![а-яё])|тц(?![а-яё])|супермаркет|гипермаркет|универмаг|универсам|шопинг|shopping|supermarket|рынок|завод|фабрик|склад|ангар|цех|музе[йя]|театр|библиотек|гостиниц|отель|hotel|вокзал|аэропорт|терминал|церкв|храм|мечет|собор|ратуш|замок|крепост|многоэтажк|панельк|хрущёвк|хрущевк|жилой дом|жк${E}`),
     apply: (b) => {
       b.massPlan = "stacked";
       b.bodyShape = "box";
@@ -433,7 +439,7 @@ const RULES: Rule[] = [
     },
   },
   { label: "башня", kind: "landmark", attach: (b, n) => { b.towers = n ?? Math.max(b.towers, 1); b.spire = true; }, re: w("башн|tower|небоскрёб|небоскреб|skyscraper|высотк|телебашн|минарет|маяк|колокольн|донжон"), counter: /башн|tower/i, apply: (b, n) => { b.towers = n ?? Math.max(b.towers, 1); b.massPlan = "stacked"; b.sizeClass = "landmark"; b.floors = Math.max(b.floors, 8); b.spire = true; b.height = Math.max(b.height, 34); b.width = Math.max(b.width, 13); b.length = Math.max(b.length, 13); b.windows = Math.max(b.windows, 32); } },
-  { label: "мост", kind: "landmark", re: w("мост(?!ов[аоуыие])|bridge|эстакад|виадук|путепровод|переправ"), apply: (b) => { b.bridge = bridgeType(b.params.raw, b.rng); b.water = /рек[аиуе]|речк|river|вод[аыуе]|залив|канал|пруд|озер/i.test(b.params.raw); if (b.bridge === "foot") b.width = b.params.width ?? 3.5; else if (!b.params.width) b.width = Math.max(b.width, b.rng.pick([12, 16, 20])); b.massPlan = "platform"; b.sizeClass = "landmark"; b.columns = Math.max(b.columns, 4); b.railings = true; b.cables = Math.max(b.cables, 12); b.length = Math.max(b.length, 60); b.width = Math.max(b.width, 9); b.height = Math.max(b.height, 14); b.roof = "none"; b.windows = 0; } },
+  { label: "мост", kind: "landmark", re: w("мост(?!ов[аоуыие])|bridge|эстакад|виадук|путепровод|переправ"), apply: (b) => { b.bridge = bridgeType(b.params.raw, b.rng); b.water = /рек[аиуе]|речк|river|вод[аыуе]|залив|канал|пруд|озер/i.test(b.params.raw); if (b.bridge === "foot") b.width = b.params.width ?? 3.5; else if (!b.params.width) b.width = Math.max(b.width, b.rng.pick([12, 16, 20])); if (b.bridge !== "foot") { b.lanes = lanesIn(b.params.raw); if (b.lanes && !b.params.width) b.width = bridgeWidthFor(b.lanes); } b.massPlan = "platform"; b.sizeClass = "landmark"; b.columns = Math.max(b.columns, 4); b.railings = true; b.cables = Math.max(b.cables, 12); b.length = Math.max(b.length, 60); b.width = Math.max(b.width, 9); b.height = Math.max(b.height, 14); b.roof = "none"; b.windows = 0; } },
   { label: "стадион", kind: "landmark", re: w("стадион|stadium|арен[аыу]|спорткомплекс|манеж|ипподром|амфитеатр"), apply: (b) => { b.massPlan = "shell"; b.hollow = true; b.sizeClass = "landmark"; b.columns = Math.max(b.columns, 16); b.roof = "flat"; b.length = Math.max(b.length, 90); b.width = Math.max(b.width, 70); b.height = Math.max(b.height, 22); } },
   { label: "комната", kind: "room", re: w(`комнат|спальн|кухн|гостин|ванн|санузел|интерьер|interior|\\broom\\b|bedroom|kitchen|кабинет|квартир|студи[яю]|аудитори|класс${E}|прихож|коридор|лоджи`), apply: (b) => { b.massPlan = "shell"; b.hollow = true; b.sizeClass = "structure"; b.roof = "none"; b.windows = Math.max(b.windows, 1); b.doors = Math.max(b.doors, 1); b.height = 2.8; b.width = Math.max(b.width, 4.2); b.length = Math.max(b.length, 3.6); b.floors = 1; b.detail += 0.3; } },
   { label: "этажи", re: w("этаж|floor|storey|story|уровн|ярус"), counter: /этаж|floor|storey|story|уровн|ярус/i, apply: (b, n) => { if (n) { b.floors = n; b.massPlan = "stacked"; } } },
@@ -662,6 +668,7 @@ function baseBlueprint(prompt: string, variant = ""): Blueprint {
     spire: false,
     towers: 0,
     garage: false,
+    storefront: false,
 
     screens: 0,
     keyboard: false,
@@ -697,6 +704,7 @@ function baseBlueprint(prompt: string, variant = ""): Blueprint {
     copies: 1,
     furnishings: [],
     bridge: null,
+    lanes: 0,
     water: false,
 
     primary: palette.primary,
@@ -860,6 +868,127 @@ function addFurnishing(b: Blueprint, rule: Rule, text: string) {
  * together the longer ("стиральная машина" over "машина"). "Офисный стол" is
  * therefore a table and "робот-пылесос" a vacuum, not a humanoid.
  */
+/**
+ * What a building's head word implies. One shared rule used to make a shopping
+ * centre, a school and a hospital alike into a 9 × 11 m gable-roofed house.
+ * Each type now gets its own storeys, footprint, roof and facade; numbers and
+ * roofs named in the prompt still win, because they are applied afterwards.
+ */
+type BuildingProfile = {
+  re: RegExp;
+  floors: [number, number];
+  /** Footprints [width, length] in metres; one is picked per generation. */
+  plans: [number, number][];
+  /** Storey height, metres. */
+  storey: number;
+  roof: RoofKind;
+  windows: Blueprint["windowStyle"];
+  glassy?: boolean;
+  storefront?: boolean;
+  extra?: (b: Blueprint) => void;
+};
+
+const BUILDING_PROFILES: BuildingProfile[] = [
+  // Shops first: "универмаг" must not read as "универ(ситет)".
+  {
+    re: /торгов|трц|тц|молл|mall|универмаг|шопинг|shopping/i,
+    floors: [2, 3],
+    plans: [[96, 64], [120, 72], [80, 56], [140, 80]],
+    storey: 5.5,
+    roof: "flat",
+    windows: "curtain",
+    glassy: true,
+    storefront: true,
+    extra: (b) => { b.doors = Math.max(b.doors, 2); },
+  },
+  {
+    re: /супермаркет|гипермаркет|универсам|магазин|рынок|supermarket|store/i,
+    floors: [1, 1],
+    plans: [[72, 48], [90, 60], [60, 40]],
+    storey: 7,
+    roof: "flat",
+    windows: "curtain",
+    glassy: true,
+    storefront: true,
+    extra: (b) => { b.doors = Math.max(b.doors, 2); },
+  },
+  { re: /офис|office|бизнес|коворкинг/i, floors: [6, 14], plans: [[36, 22], [30, 30], [44, 20]], storey: 3.6, roof: "flat", windows: "curtain", glassy: true },
+  { re: /садик|детсад/i, floors: [1, 2], plans: [[42, 22], [36, 24]], storey: 3.3, roof: "hip", windows: "punched", extra: (b) => { b.terrace = true; } },
+  { re: /школ|лице|гимназ|колледж|институт|универ/i, floors: [3, 4], plans: [[64, 18], [54, 22], [72, 16]], storey: 3.6, roof: "flat", windows: "ribbon" },
+  { re: /больниц|hospital|клиник|поликлиник/i, floors: [4, 7], plans: [[56, 18], [48, 20], [62, 16]], storey: 3.6, roof: "flat", windows: "ribbon" },
+  { re: /завод|фабрик|цех|склад|ангар|warehouse|factory/i, floors: [1, 1], plans: [[72, 36], [60, 40], [90, 30]], storey: 10, roof: "shed", windows: "ribbon", extra: (b) => { b.doors = Math.max(b.doors, 2); } },
+  { re: /гостиниц|отель|hotel/i, floors: [8, 16], plans: [[42, 16], [36, 18], [50, 15]], storey: 3.2, roof: "flat", windows: "punched", extra: (b) => { b.balconies = Math.max(b.balconies, 2); } },
+  { re: /вокзал|аэропорт|терминал/i, floors: [1, 2], plans: [[140, 45], [110, 40], [160, 50]], storey: 8, roof: "flat", windows: "curtain", glassy: true },
+  { re: /музе|театр|библиотек|ратуш/i, floors: [2, 3], plans: [[46, 30], [40, 28], [52, 32]], storey: 5, roof: "flat", windows: "punched", extra: (b) => { b.columns = Math.max(b.columns, 8); } },
+  { re: /многоэтажк|панельк|хрущ|жилой дом|жк/i, floors: [5, 16], plans: [[60, 14], [48, 16], [72, 13]], storey: 3, roof: "flat", windows: "punched", extra: (b) => { b.balconies = Math.max(b.balconies, 2); } },
+  { re: /церкв|храм|собор/i, floors: [1, 2], plans: [[22, 34], [18, 30]], storey: 7, roof: "gable", windows: "punched", extra: (b) => { b.dome = true; b.spire = true; } },
+  { re: /мечет/i, floors: [1, 1], plans: [[30, 30], [26, 26]], storey: 9, roof: "flat", windows: "punched", extra: (b) => { b.dome = true; b.towers = Math.max(b.towers, 1); } },
+];
+
+const RESIDENTIAL = /дом|house|коттедж|вилл|особняк|дач|изб|шале|бунгало|таунхаус/i;
+
+function applyBuildingProfile(b: Blueprint, head: string) {
+  const { params, rng } = b;
+  const profile = BUILDING_PROFILES.find((item) => item.re.test(head));
+  if (!profile) {
+    if (RESIDENTIAL.test(head)) varyHouse(b);
+    return;
+  }
+  b.floors = params.floors ?? rng.int(profile.floors[0], profile.floors[1]);
+  const [width, length] = rng.pick(profile.plans);
+  b.width = width;
+  b.length = length;
+  b.height = b.floors * profile.storey + (profile.roof === "flat" ? 1.2 : profile.storey * 0.6);
+  b.roof = profile.roof;
+  b.windowStyle = profile.windows;
+  b.glassy = profile.glassy ?? b.glassy;
+  b.storefront = profile.storefront ?? false;
+  b.windows = Math.max(b.windows, b.floors * 6);
+  b.stairs = profile.storefront ? 0 : b.stairs;
+  profile.extra?.(b);
+}
+
+/**
+ * A house used to come out the same every time — one storey, gable roof, no
+ * garage — only recoloured. Each generation now makes its own choices where
+ * the prompt is silent; anything the prompt names (storeys, roof, "без
+ * гаража") is applied afterwards and wins.
+ */
+function varyHouse(b: Blueprint) {
+  const { params, rng } = b;
+  if (!params.floors) {
+    b.floors = rng.pick([1, 1, 2, 2, 2, 3]);
+    b.height = Math.max(b.height, b.floors * 3.1 + 2.6);
+  }
+  if (!params.roof) b.roof = rng.pick<RoofKind>(["gable", "gable", "hip", "hip", "mansard", "flat"]);
+  if (b.roof !== "flat" && rng.chance(0.55)) b.chimneys = Math.max(b.chimneys, 1);
+  if (rng.chance(0.4)) b.terrace = true;
+  if (b.floors >= 2 && rng.chance(0.5)) b.balconies = Math.max(b.balconies, rng.int(1, 2));
+  if (rng.chance(0.3)) b.garage = true;
+  b.width = Math.max(b.width, rng.pick([10, 11, 12, 13]));
+  b.length = Math.max(b.length, rng.pick([8, 9, 10, 11]));
+}
+
+const LANE_WORDS: Record<string, number> = {
+  двух: 2, трёх: 3, трех: 3, четырёх: 4, четырех: 4, пяти: 5, шести: 6, восьми: 8, десяти: 10, двенадцати: 12,
+  two: 2, three: 3, four: 4, six: 6, eight: 8, ten: 10, twelve: 12,
+};
+
+/** "8 полос", "8-полосный", "восьмиполосный", "8 lanes", "eight lanes" → 8. */
+function lanesIn(raw: string): number {
+  const text = raw.toLowerCase();
+  const digits = text.match(/(\d{1,2})\s*-?\s*(?:полос|lanes?\b)/);
+  const word = text.match(/(двух|трёх|трех|четырёх|четырех|пяти|шести|восьми|десяти|двенадцати)\s*-?\s*полосн/) ??
+    text.match(/\b(two|three|four|six|eight|ten|twelve)[\s-]*lanes?\b/);
+  const n = digits ? Number(digits[1]) : word ? LANE_WORDS[word[1]] : 0;
+  return n >= 1 ? Math.min(12, Math.round(n)) : 0;
+}
+
+/** 3.5 m per lane, a median barrier from six lanes, sidewalks on both sides. */
+export function bridgeWidthFor(lanes: number): number {
+  return lanes * 3.5 + (lanes >= 6 ? 0.6 : 0) + 2 * 2.6;
+}
+
 function applySubject(b: Blueprint, text: string, fullText: string) {
   const hits = hitsIn(text);
   const kinded = hits.filter((hit) => hit.rule.kind);
@@ -871,11 +1000,12 @@ function applySubject(b: Blueprint, text: string, fullText: string) {
     );
     head = kinded.filter((hit) => hit.start === best.start && hit.end === best.end);
   }
+  let headWord = "";
   if (head.length) {
     b.kind = head[head.length - 1].rule.kind as ObjectKind;
     const copies = countBefore(text.slice(0, head[0].start));
     // "4 колеса" counts wheels, not cars: skip when the head word is the rule's own unit.
-    const headWord = text.slice(head[0].start, head[0].end);
+    headWord = text.slice(head[0].start, head[0].end);
     const countsParts = head[0].rule.counter?.test(headWord) ?? false;
     if (copies && !countsParts && b.kind !== "room" && b.kind !== "landmark") b.copies = copies;
   }
@@ -890,6 +1020,8 @@ function applySubject(b: Blueprint, text: string, fullText: string) {
     b.matched.push(rule.label);
     rule.apply(b, count);
   }
+  // Only the head word decides the building type: "дом рядом с ТЦ" is a house.
+  if (b.kind === "building") applyBuildingProfile(b, headWord);
 }
 
 const COPY_WORDS: [RegExp, number][] = [

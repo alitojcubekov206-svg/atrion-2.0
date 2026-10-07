@@ -583,6 +583,7 @@ ${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- Ð
         category: plan.sizeClass,
         plan,
         request,
+        variation: options.variant,
       });
     } catch (error) {
       console.warn("AI geometry unavailable", errorSummary(error));

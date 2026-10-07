@@ -124,6 +124,8 @@ export async function generateAIGeometry(options: {
   plan?: Blueprint;
   /** Skip the repair pass when latency matters more than quality. */
   singlePass?: boolean;
+  /** Per-request token: the same words should not give the same design every time. */
+  variation?: string;
 }): Promise<AIGeometryResult | null> {
   const { prompt, baseline, category, request } = options;
   const answers = options.answers ?? [];
@@ -148,6 +150,7 @@ ${EXAMPLE}`;
     params.width ? `width ${params.width} m` : null,
     params.depth ? `depth ${params.depth} m` : null,
     params.height ? `height ${params.height} m` : null,
+    params.size ? `longest side ${params.size} m` : null,
   ]
     .filter(Boolean)
     .join("; ");
@@ -158,6 +161,7 @@ ${measurements ? `Parsed from the request — honour these exactly: ${measuremen
 ${answers.length ? `Clarifications:\n${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n")}` : ""}
 ${named.length ? `Components the user named — each must be present as its own named parts:\n${named.map((item) => `- ${item.en}`).join("\n")}` : ""}
 The request and explicit measurements take priority. No template defines the requested object's parts.
+${options.variation ? `Design variation ${options.variation}: where the request leaves something open (style, proportions, colours, secondary features), make your own distinct choices instead of the most generic version.` : ""}
 
 Return the JSON object now.`;
 

@@ -147,6 +147,49 @@ const CASES: Case[] = [
   check("«мостовой кран» is not planned as a bridge", planFor("мостовой кран", "x").blueprint.bridge === null);
 }
 
+/* ---------------- building types, lanes, and a new look on every generation ---------------- */
+{
+  const build = (prompt: string, variant = "type") => {
+    const blueprint = planFor(prompt, variant).blueprint;
+    return { blueprint, names: buildFromPlan(blueprint).parts.map((item) => item.name).join(" | ") };
+  };
+  for (const prompt of ["торговый центр", "ТЦ", "супермаркет", "Торговый центр с парковкой"]) {
+    const { blueprint, names } = build(prompt);
+    check(`«${prompt}» is a shop, not a house`, blueprint.kind === "building" && blueprint.roof === "flat" && blueprint.width >= 40, `${blueprint.roof} ${blueprint.width.toFixed(0)} m`);
+    check(`«${prompt}» has a shop front`, /Вывеска/.test(names) && /Входной атриум/.test(names) && /Парковка/.test(names));
+  }
+  check("«дом рядом с торговым центром» stays a house", !build("дом рядом с торговым центром").blueprint.storefront);
+  check("«школа» is not a gable-roofed cottage", build("школа").blueprint.floors >= 3 && build("школа").blueprint.roof === "flat");
+
+  const lanesOf = (prompt: string, variant: string) => {
+    const { blueprint, names } = build(prompt, variant);
+    const dividers = names.split(" | ").filter((name) => /Разделительная разметка|Осевая разметка|Разделительный барьер/.test(name)).length;
+    const road = buildFromPlan(blueprint).parts.find((item) => item.name === "Проезжая часть");
+    return { lanes: dividers + 1, laneWidth: (road?.size[0] ?? 0) / (dividers + 1) };
+  };
+  for (const prompt of ["мост с 8 полосами", "восьмиполосный мост", "bridge with 8 lanes", "мост 6 полос"]) {
+    const want = /6/.test(prompt) ? 6 : 8;
+    for (const variant of ["l1", "l2", "l3"]) {
+      const { lanes, laneWidth } = lanesOf(prompt, variant);
+      check(`«${prompt}» [${variant}] has ${want} lanes of at least 3 m`, lanes === want && laneWidth >= 3, `${lanes} × ${laneWidth.toFixed(2)} m`);
+    }
+  }
+
+  const looks = new Set<string>();
+  for (let v = 0; v < 8; v++) {
+    const { blueprint: b } = build("дом", `look-${v}`);
+    looks.add([b.roof, b.floors, b.garage, b.terrace, b.chimneys, b.balconies].join("|"));
+  }
+  check("a plain «дом» looks different across generations", looks.size >= 5, `${looks.size} of 8 differ`);
+  let respected = true;
+  for (let v = 0; v < 12; v++) {
+    respected &&= !build("дом без гаража", `n-${v}`).blueprint.garage;
+    respected &&= build("одноэтажный дом", `n-${v}`).blueprint.floors === 1;
+    respected &&= build("дом с плоской крышей", `n-${v}`).blueprint.roof === "flat";
+  }
+  check("variety never overrides what the prompt says (без гаража, одноэтажный, плоская крыша)", respected);
+}
+
 /* ---------------- a bare "200 метров" is the object's main size ---------------- */
 {
   const plan = (prompt: string) => planFor(prompt, "size").blueprint;

@@ -172,6 +172,7 @@ function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
   if (bp.railings && !bp.terrace) addRailings(ctx);
   if (bp.fence) addFence(ctx);
   if (bp.garage) addGarage(ctx);
+  if (bp.storefront) addStorefront(ctx);
   if (bp.towers > 0) addTowers(ctx);
   if (bp.spire) addSpire(ctx);
   if (bp.solar > 0) addSolar(ctx);
@@ -1813,6 +1814,183 @@ function addWindows(ctx: Ctx) {
 
   facade("Окно", "front", bp.width, "x", body.halfL);
   if (bp.detail > 0.9) facade("Окно бок", "right", bp.length, "z", body.halfW);
+}
+
+/**
+ * Shop frontage: a glazed entrance atrium with a lit sign, canopies over the
+ * shop windows, plant on the roof and a forecourt with parking. Without them
+ * a shopping centre reads as an office block.
+ */
+function addStorefront(ctx: Ctx) {
+  const { bp, body } = ctx;
+  const front = body.halfL;
+  const ground = body.y0;
+  const tall = body.y1 - body.y0;
+  const atriumW = clamp(bp.width * 0.24, 8, 26);
+  const atriumH = clamp(tall + 2, 6, tall + 4);
+  const atriumD = 6;
+  const frame = shade(bp.trim, -0.25);
+  const plazaD = 8;
+  const parkD = 26;
+  const parkZ = front + plazaD + parkD / 2;
+  const stalls = clamp(Math.floor((bp.width * 0.85) / 2.7), 4, 40);
+  const lamps = clamp(Math.round(bp.width / 25), 2, 6);
+  const plant = clamp(Math.round(bp.width / 20), 2, 6);
+  const canopyW = Math.max(2, (bp.width * 0.92 - atriumW) / 2);
+
+  push(
+    ctx,
+    part(ctx.id(), "Входной атриум", {
+      shape: "box",
+      role: "window",
+      group: "Вход",
+      position: [0, ground + atriumH / 2, front + atriumD / 2],
+      size: [atriumW, atriumH, atriumD],
+      color: "#9fd3ee",
+      material: "Стекло",
+      opacity: 0.55,
+      metalness: 0.4,
+      roughness: 0.1,
+    }),
+    part(ctx.id(), "Импост атриума", {
+      shape: "box",
+      role: "structure",
+      group: "Вход",
+      position: [-atriumW / 2, ground + atriumH / 2, front + atriumD + 0.05],
+      size: [0.18, atriumH, 0.18],
+      color: frame,
+      material: "Алюминий",
+      metalness: 0.7,
+      repeat: { count: 7, step: [atriumW / 6, 0, 0] },
+    }),
+    part(ctx.id(), "Ригель атриума", {
+      shape: "box",
+      role: "structure",
+      group: "Вход",
+      position: [0, ground + atriumH / 3, front + atriumD + 0.05],
+      size: [atriumW, 0.15, 0.15],
+      color: frame,
+      material: "Алюминий",
+      metalness: 0.7,
+      repeat: { count: 2, step: [0, atriumH / 3, 0] },
+    }),
+    part(ctx.id(), "Кровля атриума", {
+      shape: "box",
+      role: "roof",
+      group: "Вход",
+      position: [0, ground + atriumH + 0.15, front + atriumD / 2],
+      size: [atriumW + 0.4, 0.3, atriumD + 0.4],
+      color: frame,
+      material: "Алюминий",
+      metalness: 0.6,
+    }),
+    part(ctx.id(), "Вывеска", {
+      shape: "box",
+      role: "light",
+      group: "Вывеска",
+      position: [0, ground + atriumH - 1.3, front + atriumD + 0.3],
+      size: [atriumW * 0.8, 1.6, 0.3],
+      color: bp.accent,
+      material: "Световой короб",
+      emissive: 0.6,
+    }),
+    part(ctx.id(), "Буквы вывески", {
+      shape: "box",
+      role: "light",
+      group: "Вывеска",
+      position: [-atriumW * 0.3, ground + atriumH - 1.3, front + atriumD + 0.5],
+      size: [atriumW * 0.07, 1, 0.12],
+      color: "#fff8e6",
+      material: "Световые буквы",
+      emissive: 0.9,
+      repeat: { count: 6, step: [atriumW * 0.12, 0, 0] },
+    }),
+    part(ctx.id(), "Навес над витринами", {
+      shape: "box",
+      role: "roof",
+      group: "Фасад",
+      position: [atriumW / 2 + canopyW / 2, ground + 4.2, front + 1.2],
+      size: [canopyW, 0.25, 2.4],
+      color: bp.trim,
+      material: "Навес",
+      mirror: "x",
+    }),
+    part(ctx.id(), "Вентиляционная установка", {
+      shape: "box",
+      role: "detail",
+      group: "Крыша",
+      position: [-bp.width / 2 + bp.width / (plant + 1), body.y1 + 0.09 + 0.9, -bp.length * 0.2],
+      size: [3.2, 1.8, 2.4],
+      color: "#b8bcc2",
+      material: "Оцинкованная сталь",
+      metalness: 0.5,
+      mirror: "z",
+      repeat: { count: plant, step: [bp.width / (plant + 1), 0, 0] },
+    }),
+    part(ctx.id(), "Площадь перед входом", {
+      shape: "box",
+      role: "foundation",
+      group: "Территория",
+      position: [0, ground + 0.075, front + plazaD / 2],
+      size: [bp.width * 0.9, 0.15, plazaD],
+      color: "#cfc8bb",
+      material: "Плитка",
+      roughness: 0.9,
+    }),
+    part(ctx.id(), "Парковка", {
+      shape: "box",
+      role: "foundation",
+      group: "Территория",
+      position: [0, ground + 0.05, parkZ],
+      size: [bp.width * 0.9, 0.1, parkD],
+      color: "#3a3d42",
+      material: "Асфальт",
+      roughness: 0.95,
+    }),
+    part(ctx.id(), "Разметка парковки", {
+      shape: "box",
+      role: "detail",
+      group: "Территория",
+      position: [-((stalls - 1) * 2.7) / 2, ground + 0.11, front + plazaD + 3],
+      size: [0.12, 0.02, 5],
+      color: "#f2f0e8",
+      material: "Разметка",
+      repeat: { count: stalls, step: [2.7, 0, 0] },
+    }),
+    part(ctx.id(), "Разметка парковки, дальний ряд", {
+      shape: "box",
+      role: "detail",
+      group: "Территория",
+      position: [-((stalls - 1) * 2.7) / 2, ground + 0.11, front + plazaD + parkD - 3],
+      size: [0.12, 0.02, 5],
+      color: "#f2f0e8",
+      material: "Разметка",
+      repeat: { count: stalls, step: [2.7, 0, 0] },
+    }),
+    part(ctx.id(), "Опора освещения парковки", {
+      shape: "cylinder",
+      role: "structure",
+      group: "Территория",
+      position: [-bp.width * 0.35, ground + 4, parkZ],
+      size: [0.2, 8, 0.2],
+      sides: 10,
+      color: "#4a4f57",
+      material: "Сталь",
+      metalness: 0.7,
+      repeat: { count: lamps, step: [(bp.width * 0.7) / Math.max(1, lamps - 1), 0, 0] },
+    }),
+    part(ctx.id(), "Светильник парковки", {
+      shape: "box",
+      role: "light",
+      group: "Территория",
+      position: [-bp.width * 0.35, ground + 8.1, parkZ],
+      size: [1.2, 0.2, 0.5],
+      color: "#fff3cf",
+      material: "Светильник",
+      emissive: 0.85,
+      repeat: { count: lamps, step: [(bp.width * 0.7) / Math.max(1, lamps - 1), 0, 0] },
+    })
+  );
 }
 
 function addDoors(ctx: Ctx) {
@@ -3908,8 +4086,9 @@ function buildBridge(ctx: Ctx) {
   const deckBottom = deckTop - 0.1 - girder;
   const sidewalk = foot ? 0 : clamp(W * 0.14, 1.5, 3);
   const carriage = W - sidewalk * 2;
-  // 3–3.5 m per lane, as on real roads.
-  const lanes = foot ? 0 : carriage >= 12 ? 4 : 2;
+  // 3–3.5 m per lane, as on real roads; "8 полос" gets eight when they fit.
+  const lanes = foot ? 0 : bp.lanes ? clamp(bp.lanes, 1, Math.max(1, Math.floor(carriage / 3))) : carriage >= 12 ? 4 : 2;
+  const median = lanes >= 6;
 
   const concrete = rng.pick(["#b9b6ae", "#a9aaa5", "#c4bfb4"]);
   const steel = rng.pick(["#c94b3c", "#8f9aa6", "#d8d4cb", "#3f6fa8"]);
@@ -3980,6 +4159,23 @@ function buildBridge(ctx: Ctx) {
     for (let k = 1; k < lanes; k++) {
       const x = -carriage / 2 + (carriage / lanes) * k;
       const centre = Math.abs(x) < 0.01;
+      if (centre && median) {
+        // Six lanes and up: a concrete barrier between the directions.
+        push(
+          ctx,
+          part(ctx.id(), "Разделительный барьер", {
+            shape: "box",
+            role: "structure",
+            group: "Дорога",
+            position: [0, deckTop + 0.4, 0],
+            size: [0.6, 0.8, L],
+            color: "#c9c6be",
+            material: "Бетонный барьер",
+            roughness: 0.85,
+          })
+        );
+        continue;
+      }
       push(
         ctx,
         part(ctx.id(), centre ? "Осевая разметка" : `Разделительная разметка ${k}`, {
