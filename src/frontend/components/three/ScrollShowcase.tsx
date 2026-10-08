@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
-import { animate, motion, useMotionValue, useScroll, useTransform } from "framer-motion";
+import { motion, useScroll, useTransform } from "framer-motion";
 import * as THREE from "three";
 import { useEffects } from "@/frontend/effects";
+import AmbientCanvas from "@/frontend/components/three/AmbientCanvas";
+import SideFraming from "@/frontend/components/three/SideFraming";
 
 const VIOLET = "#a78bfa";
 const VIOLET_HOT = "#c4b5fd";
@@ -114,12 +116,20 @@ function buildPieces(): Piece[] {
   return pieces;
 }
 
-function TowerPiece({ piece, index, assembleT, glowT }: { piece: Piece; index: number; assembleT: number; glowT: number }) {
+type ProgressRef = React.MutableRefObject<number>;
+
+const assembleAt = (p: number) => THREE.MathUtils.clamp(p / 0.5, 0, 1);
+const glowAt = (p: number) => THREE.MathUtils.clamp((p - 0.45) / 0.25, 0, 1);
+const revealAt = (p: number) => THREE.MathUtils.clamp((p - 0.62) / 0.3, 0, 1);
+
+/** Reads scroll progress inside the frame loop, so scrolling never re-renders React. */
+function TowerPiece({ piece, progressRef }: { piece: Piece; progressRef: ProgressRef }) {
   const mesh = useRef<THREE.Mesh>(null);
-  const t = easeOutCubic(assembleT);
 
   useFrame(() => {
     if (!mesh.current) return;
+    const t = easeOutCubic(assembleAt(progressRef.current));
+    const glowT = glowAt(progressRef.current);
     mesh.current.position.set(
       THREE.MathUtils.lerp(piece.scatterPos[0], piece.finalPos[0], t),
       THREE.MathUtils.lerp(piece.scatterPos[1], piece.finalPos[1], t),
@@ -133,7 +143,7 @@ function TowerPiece({ piece, index, assembleT, glowT }: { piece: Piece; index: n
   });
 
   return (
-    <mesh ref={mesh} castShadow receiveShadow>
+    <mesh ref={mesh}>
       {piece.shape === "cylinder" ? (
         <cylinderGeometry args={[piece.size[0], piece.size[2], piece.size[1], 12]} />
       ) : (
@@ -152,11 +162,12 @@ function TowerPiece({ piece, index, assembleT, glowT }: { piece: Piece; index: n
   );
 }
 
-function HaloRings({ revealT }: { revealT: number }) {
+function HaloRings({ progressRef }: { progressRef: ProgressRef }) {
   const a = useRef<THREE.Mesh>(null);
   const b = useRef<THREE.Mesh>(null);
   useFrame((state) => {
     const t = state.clock.elapsedTime;
+    const revealT = revealAt(progressRef.current);
     if (a.current) {
       a.current.rotation.z = t * 0.15;
       (a.current.material as THREE.MeshBasicMaterial).opacity = revealT * 0.65;
@@ -205,7 +216,7 @@ function sampleWaypoints(p: number) {
   return { pos: WAYPOINTS.at(-1)!.pos, look: WAYPOINTS.at(-1)!.look };
 }
 
-function CameraRig({ progressRef }: { progressRef: React.MutableRefObject<number> }) {
+function CameraRig({ progressRef }: { progressRef: ProgressRef }) {
   const { camera } = useThree();
   const lookTarget = useRef(new THREE.Vector3(0, 4, 0));
 
@@ -223,18 +234,8 @@ function CameraRig({ progressRef }: { progressRef: React.MutableRefObject<number
   return null;
 }
 
-function ShowcaseScene({ progressRef }: { progressRef: React.MutableRefObject<number> }) {
+function ShowcaseScene({ progressRef, lite }: { progressRef: ProgressRef; lite: boolean }) {
   const pieces = useMemo(() => buildPieces(), []);
-  const [assembleT, setAssembleT] = useState(0);
-  const [glowT, setGlowT] = useState(0);
-  const [revealT, setRevealT] = useState(0);
-
-  useFrame(() => {
-    const p = progressRef.current;
-    setAssembleT(THREE.MathUtils.clamp(p / 0.5, 0, 1));
-    setGlowT(THREE.MathUtils.clamp((p - 0.45) / 0.25, 0, 1));
-    setRevealT(THREE.MathUtils.clamp((p - 0.62) / 0.3, 0, 1));
-  });
 
   return (
     <>
@@ -244,18 +245,20 @@ function ShowcaseScene({ progressRef }: { progressRef: React.MutableRefObject<nu
       <directionalLight position={[8, 14, 6]} intensity={2} color="#faf5ff" />
       <pointLight position={[-8, 5, -3]} intensity={60} color={VIOLET} distance={30} decay={1.5} />
       <CameraRig progressRef={progressRef} />
+      {/* On phones the tower sits in the upper part, clear of the captions. */}
+      <SideFraming desktopShift={0} phoneLift={0.14} />
       <group position={[0, -1, 0]}>
         {pieces.map((piece, i) => (
-          <TowerPiece key={i} piece={piece} index={i} assembleT={assembleT} glowT={glowT} />
+          <TowerPiece key={i} piece={piece} progressRef={progressRef} />
         ))}
-        <HaloRings revealT={revealT} />
+        <HaloRings progressRef={progressRef} />
       </group>
-      <Stars radius={60} depth={30} count={350} factor={2} saturation={0} fade speed={0.3} />
+      <Stars radius={60} depth={30} count={lite ? 150 : 350} factor={2} saturation={0} fade speed={0.3} />
     </>
   );
 }
 
-function ScrollCanvas({ progressRef }: { progressRef: React.MutableRefObject<number> }) {
+function ScrollCanvas({ progressRef, lite }: { progressRef: ProgressRef; lite: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const [onScreen, setOnScreen] = useState(true);
 
@@ -268,6 +271,21 @@ function ScrollCanvas({ progressRef }: { progressRef: React.MutableRefObject<num
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // Lighter devices get the capped-rate background canvas: 30 fps, lower
+  // resolution, no antialiasing, and nothing at all while off screen.
+  if (lite) {
+    return (
+      <AmbientCanvas
+        fps={30}
+        camera={{ position: [0, 5, 24], fov: 42 }}
+        gl={{ toneMappingExposure: 1.4 }}
+        className="absolute inset-0"
+      >
+        <ShowcaseScene progressRef={progressRef} lite />
+      </AmbientCanvas>
+    );
+  }
 
   return (
     <div ref={host} className="absolute inset-0">
@@ -283,7 +301,7 @@ function ScrollCanvas({ progressRef }: { progressRef: React.MutableRefObject<num
           toneMappingExposure: 1.4,
         }}
       >
-        <ShowcaseScene progressRef={progressRef} />
+        <ShowcaseScene progressRef={progressRef} lite={false} />
       </Canvas>
     </div>
   );
@@ -305,8 +323,8 @@ function Caption({
   return (
     <motion.div
       style={{ opacity }}
-      className={`pointer-events-none absolute top-1/2 max-w-md -translate-y-1/2 px-6 md:px-0 ${
-        align === "left" ? "left-6 md:left-16 text-left" : "right-6 md:right-16 text-right"
+      className={`pointer-events-none absolute bottom-[9%] left-0 right-0 px-6 text-left md:bottom-auto md:top-1/2 md:max-w-md md:-translate-y-1/2 md:px-0 ${
+        align === "left" ? "md:left-16 md:right-auto" : "md:left-auto md:right-16 md:text-right"
       }`}
     >
       <p className="hud-chip inline-block rounded-full px-3 py-1 text-[10px] text-violet-200/90">{eyebrow}</p>
@@ -316,102 +334,41 @@ function Caption({
   );
 }
 
-/** Below this width, scrubbing a 340vh section by touch is a poor experience —
- * the sequence autoplays on a loop instead once it scrolls into view. */
-const MOBILE_QUERY = "(max-width: 768px)";
-/** One loop through all three steps — about 4 s each, ~3 s of it fully shown.
- * 21 s felt too long to wait through on a phone. */
-const AUTOPLAY_SECONDS = 12;
-/** Pause after the section is reached before the first loop starts, so it
- * doesn't fire the instant a user's scroll flicks past the trigger point. */
-const AUTOPLAY_START_DELAY = 0.6;
-
 export default function ScrollShowcase() {
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef(0);
-  const progress = useMotionValue(0);
-  const [isMobile, setIsMobile] = useState(false);
-  const hasPlayedRef = useRef(false);
   const level = useEffects();
   const effectsOff = level === "off";
 
-  useEffect(() => {
-    setIsMobile(window.matchMedia(MOBILE_QUERY).matches);
-  }, []);
+  // Scroll position drives the sequence on every screen size; phones get a
+  // shorter section so the three steps don't take endless swiping.
+  const { scrollYProgress: progress } = useScroll({
+    target: containerRef,
+    offset: ["start start", "end end"],
+  });
 
   useEffect(() => {
+    progressRef.current = progress.get();
     return progress.on("change", (v) => {
       progressRef.current = v;
     });
   }, [progress]);
 
-  const { scrollYProgress } = useScroll({ target: containerRef, offset: ["start start", "end end"] });
-
-  // Desktop: progress tracks scroll position exactly (scrubbed).
-  useEffect(() => {
-    if (isMobile) return;
-    return scrollYProgress.on("change", (v) => progress.set(v));
-  }, [isMobile, scrollYProgress, progress]);
-
-  // Mobile: progress plays through once on its own when the section is reached.
-  // Polled via rAF rather than a scroll/IntersectionObserver listener — the
-  // section is exactly one viewport tall, so a scrubbed scroll range would be
-  // degenerate (start/end resolve to the same scroll position) and some
-  // embedded/automated browser contexts don't dispatch scroll events for
-  // programmatic scrolling at all.
-  useEffect(() => {
-    if (!isMobile) return;
-    if (effectsOff) {
-      progress.set(1);
-      return;
-    }
-    let raf = 0;
-    const check = () => {
-      const el = containerRef.current;
-      if (el && !hasPlayedRef.current && el.getBoundingClientRect().top < window.innerHeight * 0.6) {
-        hasPlayedRef.current = true;
-        // Dwell on each of the three captions instead of sweeping straight through.
-        animate(progress, [0, 0.17, 0.17, 0.5, 0.5, 0.87, 0.87, 1], {
-          duration: AUTOPLAY_SECONDS,
-          delay: AUTOPLAY_START_DELAY,
-          times: [0, 0.1, 0.34, 0.42, 0.66, 0.74, 0.96, 1],
-          ease: "easeInOut",
-          repeat: Infinity,
-        });
-      }
-      if (!hasPlayedRef.current) raf = requestAnimationFrame(check);
-    };
-    raf = requestAnimationFrame(check);
-    return () => cancelAnimationFrame(raf);
-  }, [isMobile, progress, effectsOff]);
-
   const cap1 = useTransform(progress, [0, 0.06, 0.28, 0.34], [0, 1, 1, 0]);
   const cap2 = useTransform(progress, [0.34, 0.4, 0.6, 0.66], [0, 1, 1, 0]);
-  // On mobile the sequence loops, so step 3 fades back out before the reset
-  // instead of holding solid — on desktop it stays visible once fully scrolled.
-  const cap3 = useTransform(
-    progress,
-    isMobile ? [0.66, 0.74, 0.92, 1] : [0.66, 0.74, 1],
-    isMobile ? [0, 1, 1, 0] : [0, 1, 1]
-  );
-  const barScale = progress;
+  const cap3 = useTransform(progress, [0.66, 0.74, 1], [0, 1, 1]);
 
   return (
-    <section
-      ref={containerRef}
-      data-scroll-showcase
-      className={`relative ${isMobile ? "h-screen" : "h-[340vh]"}`}
-    >
-      <div
-        className={`h-screen w-full overflow-hidden ${isMobile ? "relative" : "sticky top-0"}`}
-      >
+    <section ref={containerRef} data-scroll-showcase className="relative h-[260vh] md:h-[340vh]">
+      <div className="sticky top-0 h-svh w-full overflow-hidden md:h-screen">
         <div className="pointer-events-none absolute inset-0 bg-[#050507]/45" />
         {level !== null && !effectsOff ? (
-          <ScrollCanvas progressRef={progressRef} />
+          <ScrollCanvas progressRef={progressRef} lite={level === "lite"} />
         ) : (
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(167,139,250,0.14),transparent_60%)]" />
         )}
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(5,5,7,0.3)_75%,rgba(5,5,7,0.8)_97%)]" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#050507] via-[#050507]/70 to-transparent md:hidden" />
 
         <Caption
           opacity={cap1}
@@ -437,7 +394,7 @@ export default function ScrollShowcase() {
 
         <div className="pointer-events-none absolute right-4 top-1/2 h-40 w-[2px] -translate-y-1/2 overflow-hidden rounded-full bg-white/10 md:right-8">
           <motion.div
-            style={{ scaleY: barScale }}
+            style={{ scaleY: progress }}
             className="h-full w-full origin-top bg-gradient-to-b from-[#a78bfa] to-[#e879f9]"
           />
         </div>

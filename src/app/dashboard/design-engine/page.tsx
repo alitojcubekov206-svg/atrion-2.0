@@ -76,6 +76,21 @@ type Measurement = {
   delta: [number, number, number];
 };
 
+/** Below Tailwind's `md`: the panel is a sheet under the model instead of a sidebar. */
+const PHONE_QUERY = "(max-width: 767px)";
+
+function usePhoneLayout() {
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia(PHONE_QUERY);
+    const sync = () => setPhone(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+  return phone;
+}
+
 export default function DesignEnginePage() {
   const [prompt, setPrompt] = useState("");
   const [panelOpen, setPanelOpen] = useState(true);
@@ -135,6 +150,16 @@ export default function DesignEnginePage() {
   selectedRef.current = selectedId;
 
   useEffect(() => () => realisticAbort.current?.abort(), []);
+
+  // On a phone the panel would take half the screen from the prompt and the
+  // model, so it starts closed there and only opens on its own to show an error.
+  const phone = usePhoneLayout();
+  useEffect(() => {
+    if (phone) setPanelOpen(false);
+  }, [phone]);
+  useEffect(() => {
+    if (phone && error) setPanelOpen(true);
+  }, [phone, error]);
 
   useEffect(() => {
     fetch("/api/3d/providers")
@@ -258,6 +283,9 @@ export default function DesignEnginePage() {
     setLoading(true);
     setError(null);
     setLimitReached(false);
+    // Give the build progress and the new model the whole phone screen. A live
+    // voice session lives in the panel, so it stays open while one is running.
+    if (phone && !voiceMode) setPanelOpen(false);
     cancelRealistic();
     setConcept(null);
     setQuestions([]);
@@ -945,6 +973,15 @@ export default function DesignEnginePage() {
         ) : (
           <div className="relative flex h-full flex-col items-center justify-center overflow-y-auto px-5 py-8">
             <ParticleField layer="absolute" density="subtle" />
+            {!panelOpen && (
+              <button
+                type="button"
+                onClick={() => setPanelOpen(true)}
+                className="absolute right-4 top-4 z-10 rounded-full border border-white/10 bg-[#050507]/80 px-3 py-1.5 text-xs text-[#b8b2a8] md:hidden"
+              >
+                Чат и голос
+              </button>
+            )}
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_35%,rgba(167,139,250,0.12),transparent_50%)]" />
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -1067,6 +1104,15 @@ export default function DesignEnginePage() {
 
         {concept && (
           <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-full border border-[#a78bfa]/20 bg-[#050507]/80 px-2 py-1.5 shadow-lg shadow-black/40 backdrop-blur-xl">
+            <button
+              type="button"
+              onClick={() => setPanelOpen((v) => !v)}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs md:hidden ${
+                panelOpen ? "bg-[#a78bfa]/20 text-[#a78bfa]" : "text-[#d8d3cb]"
+              }`}
+            >
+              Панель
+            </button>
             {(
               [
                 ["perspective", "Обзор"],
@@ -1163,7 +1209,7 @@ export default function DesignEnginePage() {
             <button
               type="button"
               onClick={() => setPanelOpen((v) => !v)}
-              className="rounded-full px-3 py-1.5 text-xs text-[#8f8a82]"
+              className="hidden shrink-0 rounded-full px-3 py-1.5 text-xs text-[#8f8a82] md:block"
             >
               {panelOpen ? "Скрыть панель" : "Панель"}
             </button>
@@ -1176,10 +1222,10 @@ export default function DesignEnginePage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-30 flex items-center justify-center bg-[#050507]/55 backdrop-blur-sm"
+              className="absolute inset-0 z-30 flex items-center justify-center bg-[#050507]/55 px-4 backdrop-blur-sm"
             >
               <div className="w-full max-w-md rounded-2xl border border-[#a78bfa]/25 bg-[#121214]/95 p-6">
-                <CubesLoop className="mx-auto mb-3 h-80 w-full" />
+                <CubesLoop className="mx-auto mb-3 h-44 w-full sm:h-80" />
                 <p className="mb-3 text-[10px] uppercase tracking-[0.28em] text-[#a78bfa]/80">
                   {pipelineStep >= 3 ? "Собираем детали…" : "Строим модель…"}
                 </p>
@@ -1218,9 +1264,18 @@ export default function DesignEnginePage() {
                   ATRION <span className="text-[#a78bfa]">3D</span>
                 </h2>
               </div>
-              <Link href="/dashboard" className="text-xs text-[#8f8a82] hover:text-white">
-                Exit
-              </Link>
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => setPanelOpen(false)}
+                  className="text-xs text-[#8f8a82] hover:text-white md:hidden"
+                >
+                  Свернуть
+                </button>
+                <Link href="/dashboard" className="text-xs text-[#8f8a82] hover:text-white">
+                  Exit
+                </Link>
+              </div>
             </div>
           </div>
 

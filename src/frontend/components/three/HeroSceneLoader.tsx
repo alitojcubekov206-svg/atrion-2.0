@@ -39,7 +39,7 @@ export default function HeroSceneLoader() {
       <div className="absolute inset-0 bg-[#050507]/50" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_40%,rgba(167,139,250,0.22),transparent_55%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_70%,rgba(232,121,249,0.1),transparent_50%)]" />
-      {!reduced && ready && level !== null && level !== "off" ? <HeroScene /> : null}
+      {!reduced && ready && level !== null && level !== "off" ? <HeroScene lite={level === "lite"} /> : null}
     </div>
   );
 }

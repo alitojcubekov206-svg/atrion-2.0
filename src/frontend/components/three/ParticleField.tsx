@@ -170,6 +170,9 @@ export default function ParticleField({
   );
 
   if (!level || level === "off") return null;
+  // On a lite phone each section already brings its own 3D scene; a full-screen
+  // canvas that never stops drawing on top of those is what makes scrolling stutter.
+  if (level === "lite" && mobile) return null;
 
   const base = density === "subtle" ? 3200 : 7000;
   const count = Math.round(level === "lite" ? base / 2.5 : mobile ? Math.min(base, 2400) : base);

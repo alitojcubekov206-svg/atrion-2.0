@@ -14,12 +14,18 @@ const ASSEMBLE_END = 1.25;
 const BLAST_START = 2.3;
 const BLAST_END = 2.95;
 const TOTAL = 3.05;
+/** Width of the text-sampling canvas in world units, and the camera distance
+ * the word is framed at just before it bursts. */
+const TEXT_SPAN = 16;
+const FRAME_Z = 21;
+const CAMERA_FOV = 40;
 
 const VERTEX = /* glsl */ `
   uniform float uProgress;
   uniform float uBlast;
   uniform float uTime;
   uniform float uPixelRatio;
+  uniform float uFit;
   attribute vec3 aTarget;
   attribute float aSeed;
   varying float vSeed;
@@ -28,7 +34,7 @@ const VERTEX = /* glsl */ `
   void main() {
     float stagger = clamp((uProgress - aSeed * 0.35) / 0.65, 0.0, 1.0);
     float eased = 1.0 - pow(1.0 - stagger, 4.0);
-    vec3 p = mix(position, aTarget, eased);
+    vec3 p = mix(position, aTarget * uFit, eased);
     p += vec3(sin(uTime * 2.0 + aSeed * 20.0), cos(uTime * 1.7 + aSeed * 13.0), 0.0) * 0.03 * eased;
 
     vec3 dir = normalize(p + vec3(0.0, 0.0, 0.001));
@@ -66,7 +72,9 @@ function displayFontFamily() {
   return raw || "ui-sans-serif, system-ui, sans-serif";
 }
 
-function sampleText(text: string, count: number, fontFamily: string) {
+type TextTargets = { targets: Float32Array; width: number };
+
+function sampleText(text: string, count: number, fontFamily: string): TextTargets {
   const W = 1400;
   const H = 320;
   const canvas = document.createElement("canvas");
@@ -74,10 +82,14 @@ function sampleText(text: string, count: number, fontFamily: string) {
   canvas.height = H;
   const ctx = canvas.getContext("2d");
   const targets = new Float32Array(count * 3);
-  if (!ctx) return targets;
+  if (!ctx) return { targets, width: TEXT_SPAN };
 
   ctx.fillStyle = "#fff";
   ctx.font = `700 230px ${fontFamily}`;
+  // A wide face could run past the canvas and lose its outer letters.
+  const fit = (W * 0.94) / Math.max(1, ctx.measureText(text).width);
+  if (fit < 1) ctx.font = `700 ${Math.floor(230 * fit)}px ${fontFamily}`;
+  const textWidth = Math.min(W, ctx.measureText(text).width);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(text, W / 2, H / 2);
@@ -101,24 +113,28 @@ function sampleText(text: string, count: number, fontFamily: string) {
     const k = Math.floor(((i / count) * n + Math.random() * (n / count)) % n);
     const px = found[k * 2];
     const py = found[k * 2 + 1];
-    targets[i * 3] = ((px - W / 2) / W) * 16;
-    targets[i * 3 + 1] = (-(py - H / 2) / W) * 16;
+    targets[i * 3] = ((px - W / 2) / W) * TEXT_SPAN;
+    targets[i * 3 + 1] = (-(py - H / 2) / W) * TEXT_SPAN;
     targets[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
   }
-  return targets;
+  return { targets, width: (textWidth / W) * TEXT_SPAN };
 }
 
 function IntroParticles({
   targets,
+  textWidth,
   count,
   onDone,
 }: {
   targets: Float32Array;
+  textWidth: number;
   count: number;
   onDone: () => void;
 }) {
   const dpr = useThree((s) => s.gl.getPixelRatio());
   const camera = useThree((s) => s.camera);
+  const width = useThree((s) => s.size.width);
+  const height = useThree((s) => s.size.height);
   const started = useRef<number | null>(null);
   const finished = useRef(false);
 
@@ -154,6 +170,7 @@ function IntroParticles({
           uBlast: { value: 0 },
           uTime: { value: 0 },
           uPixelRatio: { value: dpr },
+          uFit: { value: 1 },
           uColorA: { value: new THREE.Color("#c4b5fd") },
           uColorB: { value: new THREE.Color("#e879f9") },
         },
@@ -163,6 +180,14 @@ function IntroParticles({
 
   useEffect(() => () => geometry.dispose(), [geometry]);
   useEffect(() => () => material.dispose(), [material]);
+
+  // A portrait phone sees well under half the word's width at this distance,
+  // so the word shrinks until it fits with a margin on both sides.
+  useEffect(() => {
+    const aspect = width / Math.max(1, height);
+    const visibleWidth = 2 * FRAME_Z * Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV / 2)) * aspect;
+    material.uniforms.uFit.value = Math.min(1, (visibleWidth * 0.86) / Math.max(0.01, textWidth));
+  }, [material, width, height, textWidth]);
 
   useFrame((state) => {
     if (started.current === null) started.current = state.clock.elapsedTime;
@@ -175,7 +200,7 @@ function IntroParticles({
 
     const dolly = THREE.MathUtils.clamp(t / BLAST_START, 0, 1);
     const eased = 1 - Math.pow(1 - dolly, 3);
-    camera.position.z = THREE.MathUtils.lerp(30, 21, eased) - blast * blast * 14;
+    camera.position.z = THREE.MathUtils.lerp(30, FRAME_Z, eased) - blast * blast * 14;
     camera.lookAt(0, 0, 0);
 
     if (t > TOTAL && !finished.current) {
@@ -190,7 +215,7 @@ function IntroParticles({
 export default function CinematicIntro() {
   const [visible, setVisible] = useState(true);
   const [instant, setInstant] = useState(false);
-  const [targets, setTargets] = useState<Float32Array | null>(null);
+  const [text, setText] = useState<TextTargets | null>(null);
   const [blasting, setBlasting] = useState(false);
   const [count, setCount] = useState(6500);
 
@@ -226,7 +251,7 @@ export default function CinematicIntro() {
       new Promise((resolve) => setTimeout(resolve, 1200)),
     ]);
     ready.then(() => {
-      if (!cancelled) setTargets(sampleText("ATRION", particles, family));
+      if (!cancelled) setText(sampleText("ATRION", particles, family));
     });
 
     const blastTimer = setTimeout(() => setBlasting(true), BLAST_START * 1000 + 350);
@@ -262,13 +287,13 @@ export default function CinematicIntro() {
           role="img"
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(167,139,250,0.18),transparent_60%)]" />
-          {targets && (
+          {text && (
             <Canvas
               dpr={[1, 1.5]}
-              camera={{ position: [0, 0, 30], fov: 40 }}
+              camera={{ position: [0, 0, 30], fov: CAMERA_FOV }}
               gl={{ antialias: false, alpha: true, powerPreference: "high-performance" }}
             >
-              <IntroParticles targets={targets} count={count} onDone={finish} />
+              <IntroParticles targets={text.targets} textWidth={text.width} count={count} onDone={finish} />
             </Canvas>
           )}
 

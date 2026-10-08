@@ -10,6 +10,8 @@ export type AtrionSettings = {
   voiceURI: string;
   voiceRate: number;
   effects: EffectsLevel;
+  /** Set once the visitor picks a level themselves; automatic tuning then leaves it alone. */
+  effectsManual?: boolean;
 };
 
 const KEY = "atrion_settings_v1";
@@ -24,30 +26,85 @@ export const DEFAULT_SETTINGS: AtrionSettings = {
   effects: "full",
 };
 
+const EFFECTS_RANK: Record<EffectsLevel, number> = { off: 0, lite: 1, full: 2 };
+
+let webglSupport: boolean | null = null;
+
+/** Probed once per page: browsers cap how many WebGL contexts a page may create. */
+function hasWebGL(): boolean {
+  if (webglSupport !== null) return webglSupport;
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+    webglSupport = Boolean(gl);
+  } catch {
+    webglSupport = false;
+  }
+  return webglSupport;
+}
+
 // First-visit default for the decorative effects: phones and low-spec machines
 // start on "lite" so the landing doesn't stutter before the user ever finds
-// the setting. An explicit choice in Settings overrides this.
+// the setting; devices that can barely run it, or can't run WebGL at all,
+// start with effects off. An explicit choice in Settings overrides this.
 export function detectEffectsLevel(): EffectsLevel {
   if (typeof window === "undefined") return "full";
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return "off";
-  const nav = navigator as Navigator & { deviceMemory?: number };
+  const nav = navigator as Navigator & {
+    deviceMemory?: number;
+    connection?: { saveData?: boolean };
+  };
+  if ((nav.deviceMemory ?? 8) <= 2 || !hasWebGL()) return "off";
   const weakCpu = (navigator.hardwareConcurrency ?? 8) <= 4;
   const lowMemory = (nav.deviceMemory ?? 8) <= 4;
   const phone = window.matchMedia("(max-width: 768px)").matches;
-  return weakCpu || lowMemory || phone ? "lite" : "full";
+  const saveData = nav.connection?.saveData === true;
+  return weakCpu || lowMemory || phone || saveData ? "lite" : "full";
+}
+
+/**
+ * Ceiling set by `PerformanceGuard` after it measured this device stuttering.
+ * It lasts a week, so a device that was only busy that day gets another try.
+ */
+const CAP_KEY = "atrion_effects_cap_v1";
+const CAP_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function readEffectsCap(): EffectsLevel | null {
+  try {
+    const raw = localStorage.getItem(CAP_KEY);
+    if (!raw) return null;
+    const cap = JSON.parse(raw) as { level?: EffectsLevel; at?: number };
+    if (!cap.level || !(cap.level in EFFECTS_RANK) || Date.now() - (cap.at ?? 0) > CAP_TTL_MS) {
+      return null;
+    }
+    return cap.level;
+  } catch {
+    return null;
+  }
+}
+
+/** Lowers the automatic effects level; never raises it and never overrides a manual choice. */
+export function capEffects(level: Exclude<EffectsLevel, "full">) {
+  try {
+    localStorage.setItem(CAP_KEY, JSON.stringify({ level, at: Date.now() }));
+  } catch {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent("atrion-settings"));
 }
 
 export function loadSettings(): AtrionSettings {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS, effects: detectEffectsLevel() };
-    const stored = JSON.parse(raw) as Partial<AtrionSettings>;
-    return {
-      ...DEFAULT_SETTINGS,
-      ...stored,
-      effects: stored.effects ?? detectEffectsLevel(),
-    };
+    const stored = raw ? (JSON.parse(raw) as Partial<AtrionSettings>) : {};
+    let effects = stored.effects ?? detectEffectsLevel();
+    if (!stored.effectsManual) {
+      const cap = readEffectsCap();
+      if (cap && EFFECTS_RANK[cap] < EFFECTS_RANK[effects]) effects = cap;
+    }
+    return { ...DEFAULT_SETTINGS, ...stored, effects };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -61,8 +118,17 @@ export function effectsLevel(): EffectsLevel {
 }
 
 export function saveSettings(next: Partial<AtrionSettings>): AtrionSettings {
-  const merged = { ...loadSettings(), ...next };
+  // Picking an effects level by hand takes over from the automatic tuning.
+  const choosingEffects = next.effects !== undefined;
+  const merged = { ...loadSettings(), ...next, ...(choosingEffects ? { effectsManual: true } : {}) };
   localStorage.setItem(KEY, JSON.stringify(merged));
+  if (choosingEffects) {
+    try {
+      localStorage.removeItem(CAP_KEY);
+    } catch {
+      // Storage unavailable: the manual flag above already wins over any cap.
+    }
+  }
   window.dispatchEvent(new CustomEvent("atrion-settings", { detail: merged }));
   return merged;
 }

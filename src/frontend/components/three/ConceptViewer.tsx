@@ -15,6 +15,8 @@ import * as THREE from "three";
 import type { ModelPart, PartShape, ThreeDConcept } from "@/shared/types";
 import { expandPart, primitiveCount } from "@/shared/geometry";
 import type { CadTool } from "@/frontend/components/CadToolbar";
+import { useEffects } from "@/frontend/effects";
+import { effectsLevel } from "@/frontend/settings";
 
 export type DrawingView = "perspective" | "top" | "front" | "side";
 
@@ -22,7 +24,7 @@ export type DrawingView = "perspective" | "top" | "front" | "side";
 const EDGE_INSTANCE_LIMIT = 120;
 
 /**
- * Explode direction for a single rendered instance — repeated rows fly apart
+ * Explode direction for a single rendered instance вЂ” repeated rows fly apart
  * instead of collapsing on the authored part position.
  */
 function explodeOffset(
@@ -68,7 +70,7 @@ function easeOutCubic(t: number) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-/** Overshoots a little and settles — a part "clicking" into place. */
+/** Overshoots a little and settles вЂ” a part "clicking" into place. */
 function easeOutBack(t: number) {
   const c1 = 1.4;
   const c3 = c1 + 1;
@@ -140,7 +142,7 @@ function hollowCylinder(holeRatio: number, segments: number): THREE.BufferGeomet
 /**
  * Every `PartShape` under the bounding-box contract: `size` is always the full
  * extent [x, y, z]. The real size is baked into the geometry so the mesh scale
- * stays 1 — the CAD scale gizmo and the exporter both rely on that.
+ * stays 1 вЂ” the CAD scale gizmo and the exporter both rely on that.
  */
 function buildPartGeometry(
   shape: PartShape,
@@ -181,14 +183,14 @@ function buildPartGeometry(
       return new THREE.BoxGeometry(sx, thickness, sz);
     }
     case "cylinder":
-      // radiusTop from x, radiusBottom from z — truncated cones stay expressible.
+      // radiusTop from x, radiusBottom from z вЂ” truncated cones stay expressible.
       return new THREE.CylinderGeometry(sx / 2, sz / 2, sy, radial);
     case "sphere":
       return new THREE.SphereGeometry(0.5, 32, 24).scale(sx, sy, sz);
     case "cone":
       return new THREE.ConeGeometry(0.5, 1, radial).scale(sx, sy, sz);
     case "pyramid":
-      // Circumradius √2⁄2 + 45° turn → an axis-aligned square base of side 1.
+      // Circumradius в€љ2вЃ„2 + 45В° turn в†’ an axis-aligned square base of side 1.
       return new THREE.ConeGeometry(Math.SQRT1_2, 1, 4)
         .rotateY(Math.PI / 4)
         .scale(sx, sy, sz);
@@ -224,7 +226,7 @@ function buildPartGeometry(
 
 /**
  * One geometry per part, shared by every repeat/mirror instance of it and
- * rebuilt only when the shape parameters actually change — never per frame.
+ * rebuilt only when the shape parameters actually change вЂ” never per frame.
  * It is handed to the meshes as a `geometry` prop rather than as a
  * `<primitive attach="geometry">` child, because a single primitive object
  * cannot be mounted under several meshes at once.
@@ -251,10 +253,16 @@ function CameraRig({
   sectioned?: boolean;
 }) {
   const { camera } = useThree();
+  const getState = useThree((state) => state.get);
   useEffect(() => {
+    // A portrait phone sees a much narrower slice than a desktop at the same
+    // distance, so narrow screens pull back until the model fits across. The
+    // size is read once per framing, so resizing the panel keeps the orbit.
+    const { width, height } = getState().size;
+    const narrow = Math.min(2.4, Math.max(1, 0.95 / (width / Math.max(1, height))));
     // Frame the model by its own size: a fixed 14 m minimum turned a desk lamp
     // or a toaster into a speck in the middle of an empty grid.
-    const distance = Math.max(0.5, maxDimension * 1.75);
+    const distance = Math.max(0.5, maxDimension * 1.75) * narrow;
     const lookY = maxDimension * 0.22;
     const positions: Record<DrawingView, [number, number, number]> = {
       perspective: sectioned
@@ -273,10 +281,51 @@ function CameraRig({
       (camera as THREE.OrthographicCamera).zoom = Math.max(
         8,
         Math.min(4000, 420 / maxDimension)
-      );
+      ) / narrow;
     }
     camera.updateProjectionMatrix();
-  }, [camera, maxDimension, view, sectioned]);
+  }, [camera, getState, maxDimension, view, sectioned]);
+  return null;
+}
+
+/**
+ * Fog that keeps its distance from the camera. It is there to fade the endless
+ * grid, so pulling back вЂ” zooming out, or the wider framing on a narrow screen
+ * вЂ” must not swallow the model as well. `rest` is the camera distance the
+ * near/far values were tuned for; up to it the fog stays exactly where it was.
+ */
+function FollowFog({ color, near, far, rest }: { color: string; near: number; far: number; rest: number }) {
+  const scene = useThree((state) => state.scene);
+  const fog = useMemo(() => new THREE.Fog(color, near, far), [color, near, far]);
+  useEffect(() => {
+    scene.fog = fog;
+    return () => {
+      scene.fog = null;
+    };
+  }, [scene, fog]);
+  useFrame(({ camera }) => {
+    const extra = Math.max(0, camera.position.length() - rest);
+    fog.near = near + extra;
+    fog.far = far + extra;
+  });
+  return null;
+}
+
+/** Same for the grid, which fades out by its distance from the camera. */
+function FollowGridFade({
+  grid,
+  fade,
+  rest,
+}: {
+  grid: React.RefObject<THREE.Mesh | null>;
+  fade: number;
+  rest: number;
+}) {
+  useFrame(({ camera }) => {
+    const material = grid.current?.material as THREE.ShaderMaterial | undefined;
+    const uniform = material?.uniforms?.fadeDistance;
+    if (uniform) uniform.value = fade + Math.max(0, camera.position.length() - rest);
+  });
   return null;
 }
 
@@ -338,7 +387,7 @@ function EditablePart({
   onSelect: () => void;
   onPartChange?: (id: string, patch: Partial<ModelPart>) => void;
 }) {
-  // meshes[0] is the authored instance — the only one the CAD gizmo drives.
+  // meshes[0] is the authored instance вЂ” the only one the CAD gizmo drives.
   const meshes = useRef<(THREE.Mesh | null)[]>([]);
   const progress = useRef(exploded ? 0 : 1);
   const geometry = usePartGeometry(part);
@@ -422,8 +471,8 @@ function EditablePart({
   }, [textureUrl]);
   useEffect(() => () => texture?.dispose(), [texture]);
 
-  const glass = /стекл|glass|витраж/i.test(part.material);
-  const metal = /стал|металл|алюмин|metal|трос/i.test(part.material);
+  const glass = /СЃС‚РµРєР»|glass|РІРёС‚СЂР°Р¶/i.test(part.material);
+  const metal = /СЃС‚Р°Р»|РјРµС‚Р°Р»Р»|Р°Р»СЋРјРёРЅ|metal|С‚СЂРѕСЃ/i.test(part.material);
   const opacity = part.opacity ?? (glass ? 0.55 : 1);
   const transparent = opacity < 1;
   const metalness = part.metalness ?? (metal ? 0.55 : glass ? 0.15 : 0.08);
@@ -506,7 +555,7 @@ function EditablePart({
                   snap ? snapValue(sz, snapStep) : sz,
                 ],
                 rotation: [node.rotation.x, node.rotation.y, node.rotation.z],
-                // Baked geometry carries its own vertices — `size` alone would
+                // Baked geometry carries its own vertices вЂ” `size` alone would
                 // change the numbers without changing what is on screen.
                 ...(part.shape === "mesh" && part.mesh
                   ? {
@@ -563,8 +612,13 @@ export default function ConceptViewer({
   sectionHeight?: number | null;
   onPartChange?: (id: string, patch: Partial<ModelPart>) => void;
 }) {
-  // An exploded model flies apart upwards — cutting it would hide the pieces.
+  // An exploded model flies apart upwards вЂ” cutting it would hide the pieces.
   const section = exploded || assembling ? null : sectionHeight;
+  // Phones and slow machines skip the shadow passes (each one draws the whole
+  // scene again every frame) and render at a lower pixel ratio. The viewer is
+  // client-only, so the stored level is readable on the very first render.
+  const lite = (useEffects() ?? effectsLevel()) !== "full";
+  const grid = useRef<THREE.Mesh>(null);
   const maxDimension = useMemo(
     () =>
       Math.max(
@@ -575,7 +629,7 @@ export default function ConceptViewer({
       ),
     [concept.dimensions]
   );
-  /** Rendered primitives after repeat/mirror — drives the wireframe budget. */
+  /** Rendered primitives after repeat/mirror вЂ” drives the wireframe budget. */
   const totalInstances = useMemo(() => primitiveCount(concept.parts), [concept.parts]);
 
   const fogNear = Math.max(1.5, maxDimension * 1.8);
@@ -596,13 +650,13 @@ export default function ConceptViewer({
   const assembleDrop = Math.max(0.15, maxDimension * 0.35);
 
   return (
-    <div className={`relative h-full min-h-[420px] overflow-hidden bg-[#2b2d33] ${className}`}>
+    <div className={`relative h-full min-h-[220px] overflow-hidden bg-[#2b2d33] md:min-h-[420px] ${className}`}>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.12),transparent_60%)]" />
       <Canvas
         key={`${view}-${concept.name}`}
-        shadows={view === "perspective"}
+        shadows={view === "perspective" && !lite}
         orthographic={view !== "perspective"}
-        dpr={[1, 1.6]}
+        dpr={lite ? [1, 1.25] : [1, 1.6]}
         camera={
           view === "perspective"
             ? { position: [14, 8, 16], fov: 40, near: 0.02, far: 500 }
@@ -620,7 +674,7 @@ export default function ConceptViewer({
         <CameraRig view={view} maxDimension={maxDimension} sectioned={section !== null} />
         <SectionClip height={section} />
         <color attach="background" args={["#32353c"]} />
-        <fog attach="fog" args={["#32353c", fogNear, fogFar]} />
+        <FollowFog color="#32353c" near={fogNear} far={fogFar} rest={maxDimension * 2.6} />
 
         <hemisphereLight args={["#ffffff", "#8a909a", 1.35]} />
         <ambientLight intensity={1.25} />
@@ -677,7 +731,9 @@ export default function ConceptViewer({
 
         {view === "perspective" && (
           <>
+            <FollowGridFade grid={grid} fade={Math.max(28, maxDimension * 3)} rest={maxDimension * 2.6} />
             <Grid
+              ref={grid}
               position={[0, groundY, 0]}
               args={[Math.max(40, maxDimension * 4), Math.max(40, maxDimension * 4)]}
               cellSize={Math.max(snapStep, maxDimension / 24)}
@@ -690,13 +746,15 @@ export default function ConceptViewer({
               fadeStrength={1}
               infiniteGrid
             />
-            <ContactShadows
-              position={[0, groundY + 0.02, 0]}
-              opacity={0.45}
-              scale={Math.max(1, maxDimension * 2.5)}
-              blur={2.5}
-              far={Math.max(0.5, maxDimension)}
-            />
+            {!lite && (
+              <ContactShadows
+                position={[0, groundY + 0.02, 0]}
+                opacity={0.45}
+                scale={Math.max(1, maxDimension * 2.5)}
+                blur={2.5}
+                far={Math.max(0.5, maxDimension)}
+              />
+            )}
           </>
         )}
         <OrbitControls
@@ -704,7 +762,8 @@ export default function ConceptViewer({
           enabled={orbitEnabled}
           enablePan
           minDistance={Math.max(0.1, maxDimension * 0.35)}
-          maxDistance={Math.max(3, maxDimension * 3.5)}
+          // Room for the pulled-back framing on narrow screens (see CameraRig).
+          maxDistance={Math.max(3, maxDimension * 6.5)}
           maxPolarAngle={Math.PI * 0.495}
           target={[0, maxDimension * 0.2, 0]}
         />

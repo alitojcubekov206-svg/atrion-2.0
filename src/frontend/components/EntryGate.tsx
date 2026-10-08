@@ -93,7 +93,7 @@ function Gate({ mode }: { mode: GateMode }) {
     <main className="relative flex min-h-screen overflow-hidden bg-[#050507]">
       <div aria-hidden="true">
         {level !== null && level !== "off" ? (
-          <EntryGateScene />
+          <EntryGateScene lite={level === "lite"} />
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_75%_40%,rgba(167,139,250,0.18),transparent_55%)]" />
         )}

@@ -172,6 +172,20 @@ body {
   }
 }
 
+/* Lighter effects levels, set on <html data-effects> by PerformanceGuard.
+   Backdrop blur re-samples everything behind a panel every frame — over a
+   live 3D canvas that is one of the costliest things a phone GPU does — so
+   panels fall back to their own translucent fill. */
+html[data-effects="lite"] *,
+html[data-effects="off"] * {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html[data-effects="off"] .holo-ring,
+html[data-effects="off"] .skeleton {
+  animation: none;
+}
+
 .score-ring circle.fill {
   animation: ring-fill 1.2s ease-out forwards;
 }
