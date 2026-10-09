@@ -245,9 +245,8 @@ function ShowcaseScene({ progressRef, lite }: { progressRef: ProgressRef; lite: 
       <directionalLight position={[8, 14, 6]} intensity={2} color="#faf5ff" />
       <pointLight position={[-8, 5, -3]} intensity={60} color={VIOLET} distance={30} decay={1.5} />
       <CameraRig progressRef={progressRef} />
-      {/* On phones the tower sits in the upper part, clear of the captions, and the view
-          zooms out less (fitAspect 0.55 instead of 0.75) so the tall tower is not thinned. */}
-      <SideFraming desktopShift={0} phoneLift={0.14} fitAspect={0.55} />
+      {/* On phones the tower sits in the upper part, clear of the captions. */}
+      <SideFraming desktopShift={0} phoneLift={0.14} />
       <group position={[0, -1, 0]}>
         {pieces.map((piece, i) => (
           <TowerPiece key={i} piece={piece} progressRef={progressRef} />
