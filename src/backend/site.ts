@@ -1,4 +1,4 @@
-const DEFAULT_SITE_URL = "https://atrion-2-0.vercel.app";
+const DEFAULT_SITE_URL = "https://www.atrion.online";
 
 function parseOrigin(value: string | undefined) {
   if (!value) return null;

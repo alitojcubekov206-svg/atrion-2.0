@@ -11,7 +11,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
       AUTH_SECRET: ci-only-secret
-      APP_URL: https://atrion-2-0.vercel.app
+      APP_URL: https://www.atrion.online
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

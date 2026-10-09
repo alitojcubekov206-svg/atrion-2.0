@@ -4,8 +4,8 @@
 
 [![CI](https://github.com/alitojcubekov206-svg/atrion-2.0/actions/workflows/ci.yml/badge.svg)](https://github.com/alitojcubekov206-svg/atrion-2.0/actions/workflows/ci.yml)
 
-🔗 **Демо:** https://atrion-2-0.vercel.app<br>
-🎟️ **Вход без регистрации (для жюри):** https://atrion-2-0.vercel.app/api/auth/demo — создаёт гостевой аккаунт и сразу открывает 3D-студию.
+🔗 **Демо:** [atrion.online](https://www.atrion.online)<br>
+🎟️ **Вход без регистрации (для жюри):** [atrion.online/api/auth/demo](https://www.atrion.online/api/auth/demo) — создаёт гостевой аккаунт и сразу открывает 3D-студию.
 
 *English version below ↓*
 
@@ -74,8 +74,8 @@ npm run build
 
 **Describe an object in words — get an editable 3D model in minutes.**
 
-🔗 **Live demo:** https://atrion-2-0.vercel.app<br>
-🎟️ **No-signup login for judges:** https://atrion-2-0.vercel.app/api/auth/demo — creates a guest account and opens the 3D studio.
+🔗 **Live demo:** [atrion.online](https://www.atrion.online)<br>
+🎟️ **No-signup login for judges:** [atrion.online/api/auth/demo](https://www.atrion.online/api/auth/demo) — creates a guest account and opens the 3D studio.
 
 Atrion is a browser studio that turns plain text ("a two-storey house with a tower and a 6-arch arcade", "an 8-lane bridge", "a cozy 4×5 m bedroom") into a 3D model built from separate parts. Every part can be moved, rotated, scaled and edited by chat or voice, and the result exports to Unity, Blender or a 3D printer.
 
