@@ -22,5 +22,6 @@ export function prepareDesignPreview(body: Record<string, unknown>): ReadyBrief 
 }
 export async function renderDesignPreview(plan: ReadyBrief | RoomPlan): Promise<DesignPreviewResult> {
   if (plan.kind === "ready") return buildBriefModel(plan, crypto.randomUUID());
-  return {kind: "interior", ...await designWithPlanner(plan.scene, plan.prompt, plan.editing, 0)};
+  // A fresh variant per generation: the same request gets a different layout and palette.
+  return {kind: "interior", ...await designWithPlanner(plan.scene, plan.prompt, plan.editing, Math.floor(Math.random() * 1000))};
 }

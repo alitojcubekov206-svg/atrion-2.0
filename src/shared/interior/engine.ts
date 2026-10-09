@@ -1,4 +1,4 @@
-import {ASSETS, STYLES, findAsset, isFlatAsset, type InteriorStyle} from "@/shared/interior/catalog";
+import {ASSETS, STYLES, defaultColor, findAsset, isFlatAsset, type InteriorStyle} from "@/shared/interior/catalog";
 import {color, footprint, layoutIssues, parseScene, validateLayout, vec, type InteriorScene, type SceneObject} from "@/shared/interior/scene";
 import {check, choice, id, list, number, record, text, DesignError} from "@/shared/design/validation";
 
@@ -14,7 +14,7 @@ function facingRank(x: number, z: number, angle: number, sofa: SceneObject, wall
 
 export function placeObject(scene: InteriorScene, object: SceneObject, variant = 0, nearWindow = false, skip = 0): SceneObject {
   const positions: {x: number; z: number; y: number; angle: number; rank: number}[] = [];
-  const tv = object.assetId === "tv_stand", sofa = scene.objects.find(o => o.assetId === "sofa_compact");
+  const tv = object.assetId === "tv_stand", sofa = scene.objects.find(o => findAsset(o.assetId).category === "sofa");
   for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
     const bounds = footprint({...object, rotation: {x: 0, y: angle, z: 0}});
     for (let x = bounds.width / 2 + .06; x <= scene.width - bounds.width / 2 - .05; x += .25) {
@@ -47,7 +47,7 @@ export function applyActions(input: InteriorScene, raw: unknown, variant = 0, ch
     if (type === "ADD_OBJECT") {
       const assetId = text(a.assetId, "assetId");
       check(ASSETS.some(item => item.id === assetId), "AI выбрал неизвестный предмет");
-      const object: SceneObject = {id: id(a.id, "id"), assetId, position: {x: 0, y: 0, z: 0}, rotation: {x: 0, y: 0, z: 0}, scale: {x: 1, y: 1, z: 1}, locked: false, color: a.color === undefined ? STYLES[scene.style].accent : color(a.color)};
+      const object: SceneObject = {id: id(a.id, "id"), assetId, position: {x: 0, y: 0, z: 0}, rotation: {x: 0, y: 0, z: 0}, scale: {x: 1, y: 1, z: 1}, locked: false, color: a.color === undefined ? defaultColor(scene.style, findAsset(assetId), variant) : color(a.color)};
       check(!scene.objects.some(o => o.id === object.id), "Повтор ID предмета");
       scene.objects.push(a.position ? {...object, position: vec(a.position, "position"), rotation: {x: 0, y: a.angle === undefined ? 0 : number(a.angle, "angle", -Math.PI * 2, Math.PI * 2), z: 0}} : placeObject(scene, object, variant, a.nearWindow === true, choices[added] ?? 0));
       added++;
@@ -103,7 +103,24 @@ const ROOM_DEFAULTS: [RegExp, string, string[]][] = [
 const ROOM_ESSENTIALS: Record<string, string[]> = {kids: ["bed_single"], bedroom: ["bed_double"], living: ["sofa_compact"], kitchen: ["kitchen_run"], bathroom: ["toilet_compact", "vanity_sink"], dining: ["table_dining"], office: ["desk_work"]};
 const DEFAULT_DECISION = /^(?:на\s+(?:твой|ваш|свой)\s+вкус|(?:выбери|реши|подбери|придумай|решай)\s+сам(?:а|остоятельно)?|на\s+усмотрение|не\s+знаю|you\s+decide)$/i;
 /** Explicit, limited offline commands; unsupported language must not look successful. */
-export function localPlan(prompt: string, scene: InteriorScene, editing: boolean) {
+/**
+ * The wording picks a size ("трёхместный диван", "шкаф-купе", "двухместный"); otherwise a wide
+ * room may get the larger piece on alternate generations, so rooms do not all look alike.
+ */
+function sizedVariant(assetId: string, clause: string, scene: InteriorScene, variant: number): string {
+  if (assetId === "sofa_compact") {
+    if (/тр[её]хместн|больш\S*\s+диван|three.?seat|large sofa/i.test(clause)) return "sofa_large";
+    if (/двухместн|компактн|маленьк|small sofa/i.test(clause)) return "sofa_compact";
+    return scene.width >= 4.5 && variant % 2 === 1 ? "sofa_large" : "sofa_compact";
+  }
+  if (assetId === "wardrobe_double") {
+    if (/купе|широк|больш\S*\s+шкаф|wide wardrobe/i.test(clause)) return "wardrobe_wide";
+    return scene.width >= 4.2 && variant % 2 === 1 && !/узк|маленьк/i.test(clause) ? "wardrobe_wide" : "wardrobe_double";
+  }
+  return assetId;
+}
+
+export function localPlan(prompt: string, scene: InteriorScene, editing: boolean, variant = 0) {
   const actions: Record<string, unknown>[] = [];
   const style = STYLE_TERMS.find(([pattern]) => pattern.test(prompt))?.[1];
   if (style) actions.push({type: "APPLY_STYLE", style});
@@ -130,7 +147,7 @@ export function localPlan(prompt: string, scene: InteriorScene, editing: boolean
       if (matched.some(m => start < m.end && end > m.start)) continue;
       matched.push({start, end});
       namedFurniture = true;
-      const assetId = genericId === "desk_work" && /обеденн|dining/i.test(clause) ? "table_dining" : genericId === "bed_double" && (/односпальн|single|детск/i.test(clause) || room?.[1] === "kids") ? "bed_single" : genericId;
+      const assetId = genericId === "desk_work" && /обеденн|dining/i.test(clause) ? "table_dining" : genericId === "bed_double" && (/односпальн|single|детск/i.test(clause) || room?.[1] === "kids") ? "bed_single" : sizedVariant(genericId, clause, scene, variant);
       const existing = scene.objects.filter(o => o.assetId === assetId);
       if (editing && (intent !== "add" || excluding)) {
         const all = /все|всю|\ball\b/i.test(clause);
@@ -162,7 +179,7 @@ export function localPlan(prompt: string, scene: InteriorScene, editing: boolean
   }
   const emptyRoom = /пуст|без мебел|empty|unfurnished/i.test(prompt);
   if (!editing && room && !namedFurniture && !emptyRoom) for (const assetId of room[2]) {
-    if (!scene.objects.some(o => o.locked && o.assetId === assetId)) actions.push({type: "ADD_OBJECT", id: nextId(), assetId});
+    if (!scene.objects.some(o => o.locked && o.assetId === assetId)) actions.push({type: "ADD_OBJECT", id: nextId(), assetId: sizedVariant(assetId, prompt, scene, variant)});
   }
   // A bedroom with "two nightstands" still needs its bed, unless the request rules it out.
   if (!editing && room && namedFurniture && !emptyRoom) for (const assetId of ROOM_ESSENTIALS[room[1]] ?? []) {
@@ -203,7 +220,7 @@ function validateRequestedInventory(original: InteriorScene, result: InteriorSce
 export async function designWithPlanner(scene: InteriorScene, prompt: string, editing: boolean, variant: number,
   request?: (system: string, user: string) => Promise<unknown>): Promise<{scene: InteriorScene; source: "ai" | "local"}> {
   if (!request) {
-    const plan = localPlan(prompt, scene, editing);
+    const plan = localPlan(prompt, scene, editing, variant);
     // Bounded backtracking of early furniture choices preserves the inventory
     // when a greedy placement blocks a later item. Existing objects never move.
     const alternatives = editing ? [[]] : [[], [1], [4], [12], [24], [0, 4], [0, 12], [4, 4], [12, 4], [24, 8]];

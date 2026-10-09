@@ -110,3 +110,15 @@ test("FORMA's room set: kitchens, bathrooms, kids' rooms, rugs, TVs, essentials 
   const dx = sofa.position.x - tv.position.x, dz = sofa.position.z - tv.position.z;
   assert((Math.sin(tv.rotation.y) * dx + Math.cos(tv.rotation.y) * dz) / Math.hypot(dx, dz) > .7, "TV faces the sofa");
 });
+
+test("rooms vary: palette colours per kind of piece and larger variants on some generations", async () => {
+  // The editor path, with its placement retries, as every real generation uses it.
+  const scenes = new Map<string, Awaited<ReturnType<typeof designWithPlanner>>["scene"]>();
+  for (const prompt of ["гостиная", "гостиная с трёхместным диваном", "спальня со шкафом-купе"]) for (const v of [0, 1, 2, 3]) scenes.set(prompt + v, (await designWithPlanner(newScene(5, 6), prompt, false, v)).scene);
+  const room = (prompt: string, v: number) => scenes.get(prompt + v)!;
+  assert(new Set(room("гостиная", 0).objects.map(o => o.color)).size >= 2, "pieces no longer share one accent colour");
+  const sofas = new Set([0, 1, 2, 3].map(v => room("гостиная", v).objects.find(o => o.assetId.startsWith("sofa"))!.assetId));
+  assert(sofas.has("sofa_large") && sofas.has("sofa_compact"), [...sofas].join(","));
+  assert.equal(room("гостиная с трёхместным диваном", 0).objects.find(o => o.assetId.startsWith("sofa"))!.assetId, "sofa_large");
+  assert.equal(room("спальня со шкафом-купе", 0).objects.find(o => o.assetId.startsWith("wardrobe"))!.assetId, "wardrobe_wide");
+});

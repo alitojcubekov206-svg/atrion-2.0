@@ -28,7 +28,7 @@ export async function POST(req: Request) {
       if (brief.house || designPromptTarget(prompt) === "model") return NextResponse.json(buildBriefModel(brief, crypto.randomUUID()));
     }
     const scene = prepareInteriorScene(parseScene(body.scene), prompt, body.editing === true);
-    return NextResponse.json({kind: "interior", ...await designWithPlanner(scene, prompt, body.editing === true, 0)});
+    return NextResponse.json({kind: "interior", ...await designWithPlanner(scene, prompt, body.editing === true, Math.floor(Math.random() * 1000))});
   } catch (e) {
     return NextResponse.json({error: e instanceof DesignError ? e.message : "Не удалось обработать запрос", code: e instanceof DesignError ? e.code : "DESIGN_FAILED"}, {status: e instanceof DesignError ? e.status : e instanceof SyntaxError ? 400 : 500});
   }

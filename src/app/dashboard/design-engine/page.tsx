@@ -23,7 +23,6 @@ import ParticleField from "@/frontend/components/three/ParticleField";
 import {designPromptTarget} from "@/shared/interior/request";
 import {isLivingConcept,requestedMotion} from "@/shared/living/request";
 import OpenDesignButton from "@/frontend/components/OpenDesignButton";
-import DesignExamples from "@/frontend/components/interior/DesignExamples";
 
 const LivingViewer=dynamic(()=>import("@/frontend/components/interior/LivingViewer"),{ssr:false});
 
@@ -1022,7 +1021,6 @@ export default function DesignEnginePage() {
                   Дальше можно править мышью или голосом: «добавь куб», «удали крышу»,
                   «покрась в синий», «разбери».
                 </p>
-                <DesignExamples disabled={loading}/>
               </div>
             </motion.div>
           </div>

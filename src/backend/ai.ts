@@ -671,7 +671,7 @@ export async function generate3DConcept(
 
 /**
  * The subject of a 3D request as a short English description for an image
- * model — FLUX reads English far better than Russian. Falls back to the
+ * model — SDXL on the Modal app reads English far better than Russian. Falls back to the
  * request itself when no text provider is configured or it fails.
  */
 export async function describeForImage(

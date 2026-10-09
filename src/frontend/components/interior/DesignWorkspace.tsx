@@ -6,7 +6,6 @@ import {ASSETS, STYLES, findAsset, type InteriorStyle} from "@/shared/interior/c
 import {DEFAULT_PROMPT, newScene, type InteriorScene, type Opening} from "@/shared/interior/scene";
 import {templateScene} from "@/shared/interior/templates";
 import {findDesignExample, type DesignExample} from "@/shared/design/examples";
-import DesignExamples from "./DesignExamples";
 import PhotoPlan from "./PhotoPlan";
 import {applyActions} from "@/shared/interior/engine";
 import {designPromptTarget} from "@/shared/interior/request";
@@ -244,7 +243,6 @@ export default function DesignWorkspace({initialScene, preview = false}: {initia
           <p className="my-2 text-xs text-muted">Если важных деталей не хватает, Atrion уточнит их перед построением. Можно ответить своими словами или доверить выбор. {engine === "local-ai" ? "Укажите размеры и стиль в описании. Новый запрос создаст отдельную композицию." : designPromptTarget(prompt) === "model" ? "Текущая комната сохранится на странице." : "Новая расстановка заменит незакреплённую мебель."}</p>
           {clarification && <ClarificationPanel key={`${clarification.question.id}-${clarification.answers.length}`} value={clarification} busy={Boolean(disabled)} onAnswer={answerQuestion} onCancel={() => {setClarification(null);setAnswers([]);}}/>}
           {!clarification && <div className="flex justify-between gap-2"><span className="self-center text-xs text-muted">Бесплатная генерация</span><button className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40" disabled={disabled || Boolean(dirty) || !prompt.trim()} onClick={() => void (preview ? localTask : run)(() => generate(false))}>{busy ? "Обрабатываем…" : "Создать 3D"}</button></div>}
-          <DesignExamples disabled={Boolean(disabled || dirty)} onSelect={openExample}/>
         </div>
         {((!model && engine === "rules") || (model?.composition && engine === "local-ai")) && <form className="flex gap-2" onSubmit={e => {e.preventDefault();setAnswers([]);setClarification(null); void (preview ? localTask : run)(() => generate(true, []));}}><input aria-label="Команда редактирования" className={input} placeholder="Убери стол и поставь диван" value={command} maxLength={1500} disabled={disabled} onChange={e => setCommand(e.target.value)}/><button className={button} disabled={disabled || Boolean(dirty) || !command.trim()}>Изменить</button></form>}
       </section>
