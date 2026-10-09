@@ -88,7 +88,8 @@ export function detailedScene(scene: InteriorScene) {
     const mesh = new Mesh(geometry, material); mesh.name = part.id;
     mesh.position.set(...part.position); mesh.rotation.set(...part.rotation);
     mesh.userData.role = part.role;
-    const side = part.role === "wall" ? part.id.split("_")[1] as Opening["wall"] : scene.openings.find(o => o.id === part.id)?.wall;
+    const side = part.role === "wall" ? part.id.split("_")[1] as Opening["wall"] : scene.openings.find(o => o.id === part.id||o.id===part.group)?.wall;
+    mesh.userData.keepInCutaway=part.role?.startsWith("door")===true;
     mesh.userData.wallSide = side; mesh.receiveShadow = true; mesh.castShadow = part.role === "wall"; root.add(mesh);
     // Skirting follows actual solid wall segments and never crosses a doorway.
     if (part.role === "wall" && part.position[1] - part.size[1] / 2 < .001 && side) {

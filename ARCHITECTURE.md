@@ -1,5 +1,7 @@
 # Устройство серверного этапа
 
+Маршруты создания 3D/дома/дизайна используют `backend/generation-http.ts`: сессия и технический rate-limit проверяются внутри общей границы ошибок, ответ получает безопасный ID запроса без текста пользователя/данных подключения. `generation-request.ts` проверяет диалог и передаёт уточнённые параметры в построитель; бюджет не участвует в геометрии. Ракеты собираются `gen/rocket.ts`, дверные полотна комнат — чистым `shared/interior/doors.ts` и включаются в общий `sceneParts`/подробный GLB.
+
 Вход через Google Identity Services добавлен как `/api/auth/google` → проверка JWT/JWKS и nonce в `backend/google-auth.ts` → транзакция `auth_identities` → существующая сессия Atrion. Пока нет OAuth Client ID и добавочной таблицы, путь отключён флагом; настройка: [docs/GOOGLE_SIGN_IN.md](docs/GOOGLE_SIGN_IN.md).
 
 Люди и четвероногие используют пропорциональные сетки `backend/gen/living-anatomy.ts` перед общими проходами дополнений. Группы деталей сохраняют редактирование, анимации и экспорт. Ограничения: [docs/LIVING_MODEL_QUALITY.md](docs/LIVING_MODEL_QUALITY.md).

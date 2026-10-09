@@ -1,5 +1,6 @@
 import {NextResponse} from "next/server";
-import {designAuth,designFailure,readDesignBody} from "@/backend/design/http";
+import {readDesignBody} from "@/backend/design/body";
+import {generationApi} from "@/backend/generation-http";
 import {generateHouse} from "@/backend/design/house-generation";
 import {primaryTextProvider,requestTextJSON} from "@/backend/text-ai";
 import {consumeAiQuota} from "@/backend/ai-quota";
@@ -8,14 +9,13 @@ export const maxDuration=60;
 export const runtime="nodejs";
 
 export async function POST(req:Request){
-  const auth=await designAuth();if(auth.response)return auth.response;
-  try{
+  return generationApi(async userId=>{
     const body=await readDesignBody(req),provider=primaryTextProvider(),deadline=Date.now()+50_000;
     let refund: (() => Promise<void>) | undefined;
     const result=await generateHouse(body.prompt,{
       configured:Boolean(provider),
       reserve:async()=>{
-        const quota=await consumeAiQuota(auth.userId);
+        const quota=await consumeAiQuota(userId);
         if(quota.ok)refund=quota.refund;
         return quota;
       },refund:async()=>{await refund?.();},
@@ -25,5 +25,5 @@ export async function POST(req:Request){
       },
     },req.signal);
     return NextResponse.json(result,{headers:{"Cache-Control":"private, no-store"}});
-  }catch(error){return designFailure(error);}
+  });
 }

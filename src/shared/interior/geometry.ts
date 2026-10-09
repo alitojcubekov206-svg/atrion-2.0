@@ -2,6 +2,7 @@ import type {ModelPart, ThreeDConcept} from "../types";
 import {findAsset} from "./catalog";
 import type {InteriorScene, SceneObject} from "./scene";
 import {fixtureParts} from "./fixtures";
+import {interiorDoors} from "./doors";
 
 function box(id: string, name: string, position: number[], size: number[], color: string, group = name): ModelPart {
   return {id, name, shape: "box", position: position as [number, number, number], size: size as [number, number, number], rotation: [0, 0, 0], color, material: "Материал концепта", quantity: 1, group};
@@ -67,6 +68,7 @@ export function sceneParts(scene: InteriorScene): ModelPart[] {
       parts.push({...box(o.id, "Окно", p, horizontal ? [o.width, o.height, .02] : [.02, o.height, o.width], "#b4d8e6"), opacity: .3, role: "window"});
     }
   }
+  parts.push(...interiorDoors(scene));
   for (const object of scene.objects) parts.push(...transformed(assetParts(object.assetId, object.color), object, scene));
   return parts;
 }

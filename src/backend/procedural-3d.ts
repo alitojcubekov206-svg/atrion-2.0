@@ -7,6 +7,7 @@ import {
   type ObjectKind,
 } from "@/backend/gen/blueprint";
 import { buildFromBlueprint } from "@/backend/gen/build";
+import type {PromptParams} from "./gen/prompt-params";
 
 export type { Blueprint };
 
@@ -47,8 +48,8 @@ export function buildFromPlan(blueprint: Blueprint): ThreeDConcept {
 
 /** The blueprint behind a prompt, for logging and for the AI geometry brief. */
 /** `variant` gives the same words a different take — each generation passes a fresh one. */
-export function planFor(prompt: string, variant = "") {
-  const blueprint = planFromPrompt(prompt, variant);
+export function planFor(prompt: string, variant = "", overrides: Partial<PromptParams> = {}) {
+  const blueprint = planFromPrompt(prompt, variant, overrides);
   return { blueprint, summary: describeBlueprint(blueprint) };
 }
 

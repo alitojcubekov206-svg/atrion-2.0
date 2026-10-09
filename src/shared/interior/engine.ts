@@ -118,8 +118,8 @@ export function localPlan(prompt: string, scene: InteriorScene, editing: boolean
         }
       } else if (!editing || intent === "add") {
         if (excluding) continue;
-        const prefix = clause.slice(Math.max(0, match.index - 24), match.index);
-        const countText = /(?:^|\s)(\d+|один|одна|одно|одним|одной|два|две|двумя|двух|три|тремя|четыре|пять|шесть|one|two|three|four)\s+(?:(?:красн|син|бел|ч[её]рн|зел[её]н|сер|деревянн|мягк|обеденн|журнальн|односпальн|двуспальн)[а-яё]*\s+){0,2}$/i.exec(prefix)?.[1];
+        const prefix = clause.slice(Math.max(0, match.index - 80), match.index);
+        const countText = /(?:^|\s)(\d+|один|одна|одно|одним|одной|два|две|двумя|двух|три|тремя|четыре|пять|шесть|one|two|three|four)\s+(?:(?:красн|син|бел|ч[её]рн|зел[её]н|сер|деревянн|мягк|обеденн|журнальн|рабоч|письменн|офисн|кухонн|книжн|напольн|односпальн|двуспальн)[а-яё]*\s+){0,2}$/i.exec(prefix)?.[1];
         const count = countText ? ({один: 1, одна: 1, одно: 1, одним: 1, одной: 1, два: 2, две: 2, двумя: 2, двух: 2, три: 3, тремя: 3, четыре: 4, пять: 5, шесть: 6, one: 1, two: 2, three: 3, four: 4}[countText.toLowerCase()] ?? Number(countText)) : 1;
         check(Number.isInteger(count) && count >= 1 && count <= 10, "За один запрос можно добавить до 10 одинаковых предметов");
         const needed = editing ? count : Math.max(0, count - existing.filter(o => o.locked).length);

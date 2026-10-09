@@ -225,7 +225,6 @@ export default function DesignEnginePage() {
     // Give the build progress and the new model the whole phone screen. A live
     // voice session lives in the panel, so it stays open while one is running.
     if (phone && !voiceMode) setPanelOpen(false);
-    setConcept(null);
     setQuestions([]);
     setDiagnostics(null);
     setMeasurement(null);
