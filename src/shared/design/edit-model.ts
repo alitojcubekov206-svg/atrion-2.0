@@ -4,6 +4,16 @@ import {check} from "./validation";
 import {compositionParts, compositionIssues, parseComposition} from "./composition";
 import {dimensionsOf,structureFromGroups} from "../geometry";
 
+export function removeModelPart(result:LocalModelResult,id:string):LocalModelResult {
+  check(!result.document,"Мебель дома редактируется через комнату");
+  const index=result.concept.parts.findIndex(p=>p.id===id);
+  check(index>=0,"Деталь не найдена");
+  check(result.concept.parts.length>1,"Последнюю деталь нельзя удалить. Создайте новую модель.");
+  const composition=result.composition?parseComposition({...result.composition,nodes:result.composition.nodes.filter((_,i)=>i!==index)}):undefined;
+  const parts=composition?compositionParts(composition):result.concept.parts.filter(p=>p.id!==id);
+  return {...result,composition,concept:{...result.concept,parts,dimensions:dimensionsOf(parts),structure:structureFromGroups(parts)}};
+}
+
 /** Apply the same transforms to the displayed model, exported geometry and quantities. */
 export function editModelPart(result:LocalModelResult,id:string,patch:Partial<ModelPart>):LocalModelResult {
   check(!result.document,"Мебель дома редактируется через комнату");

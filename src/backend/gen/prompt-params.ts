@@ -137,9 +137,13 @@ function toMetres(value: number, unit: string | undefined): number {
 
 const UNIT = "(миллиметр[а-яё]*|сантиметр[а-яё]*|километр[а-яё]*|метр[а-яё]*|(?:milli|centi|kilo)?met(?:er|re)s?|мм|см|км|м|mm|cm|km|m)?";
 
+/** Common storey typos must never become a count of separate buildings. */
+export function normalizeBuildingWords(prompt:string):string {
+  return prompt.replace(/(^|[^а-яё])(?:эаж|етаж|эатж)(?=н|ей|а(?:[^а-яё]|$)|(?:[^а-яё]|$))/gi,"$1этаж");
+}
 export function parsePromptParams(prompt: string): PromptParams {
   const raw = prompt.trim();
-  const text = raw.toLowerCase();
+  const text = normalizeBuildingWords(raw).toLowerCase();
   const seed = hashString(raw);
   const rng = new Rng(seed);
   const numbers = extractNumbers(text);
@@ -210,6 +214,9 @@ export function parsePromptParams(prompt: string): PromptParams {
     [/трёхэтаж|трехэтаж|three.?stor/i, 3],
     [/четырёхэтаж|четырехэтаж|four.?stor/i, 4],
     [/пятиэтаж|five.?stor/i, 5],
+    [/шестиэтаж|six.?stor/i, 6],
+    [/семиэтаж|seven.?stor/i, 7],
+    [/восьмиэтаж|eight.?stor/i, 8],
     [/девятиэтаж/i, 9],
     [/шестнадцатиэтаж/i, 16],
   ];

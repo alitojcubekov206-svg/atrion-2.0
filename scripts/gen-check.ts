@@ -67,6 +67,9 @@ const CASES: Case[] = [
 
   // A number completing "этажный" counts floors, not houses.
   { prompt: "3 этажный дом", kind: "building", plan: (b) => (b.copies === 1 && b.floors === 3) || `copies=${b.copies} floors=${b.floors}` },
+  { prompt: "создай 8 эажный дом", kind: "building", plan: (b) => (b.copies === 1 && b.floors === 8) || `copies=${b.copies} floors=${b.floors}` },
+  { prompt: "8 етажный дом", kind: "building", plan: (b) => (b.copies === 1 && b.floors === 8) || `copies=${b.copies} floors=${b.floors}` },
+  { prompt: "восьмиэтажный дом", kind: "building", plan: (b) => (b.copies === 1 && b.floors === 8) || `copies=${b.copies} floors=${b.floors}` },
   { prompt: "5 этажный дом", kind: "building", plan: (b) => (b.copies === 1 && b.floors === 5) || `copies=${b.copies} floors=${b.floors}` },
   { prompt: "три этажный дом", kind: "building", plan: (b) => b.copies === 1 || `copies=${b.copies}` },
   { prompt: "4 местная машина", kind: "vehicle", plan: (b) => b.copies === 1 || `copies=${b.copies}` },

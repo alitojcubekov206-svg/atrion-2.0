@@ -1,4 +1,4 @@
-import {parsePromptParams} from "@/backend/gen/prompt-params";
+import {parsePromptParams,normalizeBuildingWords} from "@/backend/gen/prompt-params";
 import {planFor} from "@/backend/procedural-3d";
 import {designPromptTarget} from "@/shared/interior/request";
 import {check, list, record, text} from "@/shared/design/validation";
@@ -54,7 +54,7 @@ export function readBriefAnswers(raw: unknown): BriefAnswer[] {
 
 /** Select only missing decisions. No generation, provider or quota is used here. */
 export function resolveDesignBrief(rawPrompt: unknown, rawAnswers?: unknown): DesignBrief {
-  const prompt = text(rawPrompt, "Описание", 1500), answers = readBriefAnswers(rawAnswers);
+  const prompt = normalizeBuildingWords(text(rawPrompt, "Описание", 1500)), answers = readBriefAnswers(rawAnswers).map(a=>({...a,answer:normalizeBuildingWords(a.answer)}));
   const source = [prompt, ...answers.map(a => a.answer)].join(". ");
   check(source.length <= 6000, "Диалог слишком длинный. Объедините требования в описании.");
   const latest = (id: string) => answers.filter(a => a.questionId === id).at(-1)?.answer;

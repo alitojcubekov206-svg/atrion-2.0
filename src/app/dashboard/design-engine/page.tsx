@@ -165,9 +165,8 @@ export default function DesignEnginePage() {
     setSelectedId(null);
     setCadTool("select");
     setConcept(next);
-    // A building with furniture inside opens up on its own — otherwise the
-    // rooms it was generated with are hidden behind the walls and roof.
-    setSectionHeight(interiorCutHeight(next));
+    // Start with the complete object; a previous or automatic cut hides storeys.
+    setSectionHeight(null);
     setAssembling(true);
     setRevealKey((key) => key + 1);
     assembleTimer.current = setTimeout(() => setAssembling(false), 3400);

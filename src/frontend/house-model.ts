@@ -7,7 +7,7 @@ import {prepareExportTangents} from "@/shared/interior/export-tangents";
 export type HouseView = {floor: number | null; plan?: boolean; roomId?: string | null};
 
 /** The same detailed furniture is used in the house viewer and its full GLB. */
-export function buildFurnishedHouse(result: LocalModelResult, view: HouseView = {floor:null}): Group {
+export function buildFurnishedHouse(result: LocalModelResult, view: HouseView = {floor:null}, includeFurniture = true): Group {
   const doc=result.document!;
   const floor=view.floor===null?undefined:doc.floors[view.floor];
   const elevation=view.floor===null?0:view.floor*(doc.floorHeight+.2);
@@ -23,7 +23,7 @@ export function buildFurnishedHouse(result: LocalModelResult, view: HouseView = 
   root.traverse(n=>{if(n instanceof Mesh&&n.userData.role==="floor-finish") {const m=n.material as MeshStandardMaterial;m.map=floorMap;m.roughness=.7;floorMapUsed=true;}});
   if(!floorMapUsed)floorMap.dispose();
   const cache=new Map<string,Group>();
-  for(const room of result.interiors??[]) {
+  for(const room of includeFurniture ? result.interiors??[] : []) {
     if(floor&&room.floorId!==floor.id)continue;
     const holder=new Group();holder.name=`${room.floorId} · ${room.name}`;holder.userData.roomId=room.roomId;
     holder.position.set(room.origin[0],room.origin[1]-elevation,room.origin[2]);
