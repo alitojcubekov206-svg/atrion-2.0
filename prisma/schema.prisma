@@ -32,6 +32,19 @@ model User {
   designProjects DesignProject[]
   formaProjects FormaProject[]
   formaFiles FormaFile[]
+  authIdentities AuthIdentity[]
+}
+
+model AuthIdentity {
+  id String @id @default(cuid())
+  provider String
+  subject String
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([provider, subject])
+  @@index([userId])
+  @@map("auth_identities")
 }
 
 model FormaProject {

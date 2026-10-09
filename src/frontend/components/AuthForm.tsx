@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import TransitionLink from "@/frontend/components/TransitionLink";
 import { motion, type Variants } from "framer-motion";
 import AuthTransition from "@/frontend/components/AuthTransition";
+import GoogleSignIn from "@/frontend/components/GoogleSignIn";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -28,6 +29,14 @@ export default function AuthForm({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
+
+  function googleSuccess() {
+    setTransitioning(true);
+    const requestedPage = new URLSearchParams(window.location.search).get("next");
+    const destination = ["/dashboard/forma", "/dashboard/design"].includes(requestedPage ?? "") ? "/dashboard/design" : "/dashboard";
+    router.push(destination);
+    router.refresh();
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -79,6 +88,7 @@ export default function AuthForm({
         }}
         className="mt-9 flex w-full max-w-sm flex-col gap-5"
       >
+        <motion.div variants={gateItem}><GoogleSignIn onSuccess={googleSuccess}/></motion.div>
         {mode === "register" && (
           <motion.div variants={gateItem}>
             <label htmlFor="gate-name" className="sr-only">Имя</label>
@@ -183,7 +193,8 @@ export default function AuthForm({
         {mode === "login" ? "Войдите, чтобы продолжить" : "Начните проектировать за минуту"}
       </p>
 
-      <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-4">
+      <div className="mt-8"><GoogleSignIn onSuccess={googleSuccess}/></div>
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
         {mode === "register" && (
           <>
             <label htmlFor="card-name" className="sr-only">Имя</label>

@@ -132,10 +132,13 @@ export async function generateAIGeometry(options: {
   const params = parsePromptParams(prompt);
   const target = detailTarget(category);
   const plan = options.plan ?? planFromPrompt(prompt);
+  const anatomy = plan.kind === "character" ? `HUMAN ANATOMY: preserve the requested age/style. For an adult, head height is about 1/7.5 of overall height, hips at about half height, shoulders below the neck. Shape chest, waist and pelvis separately. Place ears on skull sides, visible eyes/nose/lips on +z, hair above/behind the face. Connect tapered upper/lower limbs at knees and elbows, feet on the floor, hands and fingers at wrists. Separate skin, clothing, hair and footwear materials. No animal muzzle on a human. For editable motion use groups Тело, Ноги, Руки, Голова, Волосы, Хвост; name upper leg Бедро, shoulder Плечо, knee Колено and elbow Локоть. Requested proportions and missing limbs take priority.` : plan.kind === "animal" ? `ANIMAL ANATOMY: identify the actual requested species before drawing. Cats, dogs, horses, rabbits, birds and fish have different silhouettes, limb proportions, faces, ears and tails. Use a connected shaped torso, species-appropriate neck/head/muzzle and articulated legs with paws or hooves. Put eyes and muzzle visibly on the head, ears connected to the skull, tail connected at the rear. Do not substitute one generic capsule for every species or add human hands to an ordinary quadruped. For editable motion use groups Тело, Ноги, Голова, Хвост, Крылья; name upper leg Бедро and knee Колено. Obey explicit missing limbs/features.` : "";
   // Only what the user named outright — a class of object never implies parts.
   const named = expectationsFor(plan).filter((item) => item.named);
 
   const system = `${GEOMETRY_RULES}
+
+${anatomy}
 
 DETAIL BUDGET for scale class "${category}": approximately ${target.parts} parts. ${target.note}
 Repeat and mirror multiply those into more rendered instances — use them.

@@ -3,9 +3,9 @@
  *
  * One builder for everything. It lays down a mass, stands it on whatever it has
  * to stand on, grows the limbs and openings the blueprint asked for, mounts the
- * surface hardware, and finishes with a detail pass. No branch here knows what
- * a "house" or a "cat" is — it only knows wheels, legs, windows, roofs, heads
- * and screens, so any combination of those is buildable.
+ * surface hardware, and finishes with a detail pass. Living anatomy has its
+ * own proportional meshes; the remaining feature passes still compose wheels,
+ * windows, roofs, wings and hardware from the blueprint.
  *
  * Axes: x = width (side to side), y = up, z = length (+z is the front).
  */
@@ -36,6 +36,7 @@ import {
   type Vec3,
 } from "@/backend/gen/details";
 import { describeBlueprint, planFromPrompt, type Blueprint } from "@/backend/gen/blueprint";
+import { buildLivingAnatomy, fitLivingDimensions, hasLivingAnatomy } from "./living-anatomy";
 
 /** The main mass, once it exists — everything else anchors to this. */
 type Body = {
@@ -138,24 +139,26 @@ function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
   ctx.body.y0 = clearance;
   ctx.body.y1 = Math.max(clearance + bp.height * 0.12, bp.height - topReserve(ctx));
 
-  buildMass(ctx);
+  const living = hasLivingAnatomy(bp);
+  if (living) buildLivingAnatomy(ctx);
+  else buildMass(ctx);
 
   // Ground contact
   if (bp.wheels > 0) addWheels(ctx);
   if (bp.trailer) addTrailer(ctx);
   if (bp.tracks) addTracks(ctx);
-  if (bp.legs > 0) addLegs(ctx);
+  if (bp.legs > 0 && !living) addLegs(ctx);
   if (bp.furnitureLegs > 0) addFurnitureLegs(ctx);
   if (bp.hull) addHull(ctx);
   if (bp.skids) addSkids(ctx);
 
   // Anatomy
-  if (bp.head > 0) addHead(ctx);
-  if (bp.arms > 0) addArms(ctx);
+  if (bp.head > 0 && !living) addHead(ctx);
+  if (bp.arms > 0 && (!living || bp.kind !== "character")) addArms(ctx);
   if (bp.armour && bp.head > 0 && ctx.upright) addArmour(ctx);
   if (bp.blade) addHeldBlade(ctx);
   if (bp.wings > 0) addWings(ctx);
-  if (bp.tail > 0) addTail(ctx);
+  if (bp.tail > 0 && (!living || bp.kind === "character")) addTail(ctx);
   if (bp.spikes > 0) addSpikes(ctx);
   if (bp.fins > 0) addFins(ctx);
 
@@ -205,6 +208,7 @@ function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
   if (bp.mast) addMast(ctx);
 
   addSurfaceDetail(ctx);
+  if (living) fitLivingDimensions(ctx.parts, bp);
   return ctx.parts;
 }
 

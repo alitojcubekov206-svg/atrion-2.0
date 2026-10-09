@@ -61,3 +61,7 @@ git diff --check
 ## Проверка размещения и анимаций — 2026-10-09
 
 scripts/interior-edit-motion.test.ts входит в test:backend. Для UI проверьте «Создай офис», перетаскивание, отмену, ошибочную координату с восстановлением, перенос мебели между этажами, «Создай человека, который идёт» и «Кот, который идёт», паузу/смену клипа и экспорт GLB. Проверяйте анимационные каналы экспортированного файла и glTF Validator; не выдавайте это за реальный импорт в Unity Editor. Подробности: [DESIGN_EDITING_MOTION.md](DESIGN_EDITING_MOTION.md).
+
+Google Identity Services: [настройка и ограничения](GOOGLE_SIGN_IN.md), добавочная SQL-схема `prisma/add-google-auth.sql`. Пока нет Client ID, вход отключён, БД не изменяется. `scripts/google-auth.test.ts` входит в test:backend; он проверяет RSA/JWKS, nonce/CSRF, неверные claims, Origin, потоковое тело и выдачу прежней сессии на фикстурах. Реальный popup проверяется владельцем после создания OAuth-клиента.
+
+Для пропорций людей/животных и коленных/локтевых суставов добавлен `scripts/living-anatomy.test.ts` в test:backend; ограничения визуального результата описаны в [LIVING_MODEL_QUALITY.md](LIVING_MODEL_QUALITY.md).

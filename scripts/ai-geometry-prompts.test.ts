@@ -27,6 +27,14 @@ for(const prompt of ["создай мне ракету","самолёт длин
 const part = (id: string, position = [0, 1, 0], size = [2, 2, 2]) => ({
   id, shape: "box", position, size, color: "#123456", metalness: .8, roughness: .2,
 });
+
+test("living anatomy instructions follow the actual object and never become generic size-class requirements",async()=>{
+  for(const [prompt,expected] of [["Человек","HUMAN ANATOMY"],["Кот","ANIMAL ANATOMY"],["Стол",""]] as const) {
+    let captured="";const request:JsonRequester=async<T>(system:string)=>{captured=system;return {parts:[]} as T;};
+    await generateAIGeometry({prompt,category:"furniture",baseline:buildFromPrompt(prompt),request,singlePass:true});
+    if(expected)assert(captured.includes(expected));else assert(!captured.includes("HUMAN ANATOMY")&&!captured.includes("ANIMAL ANATOMY"));
+  }
+});
 async function resultFor(parts: unknown[], singlePass = false) {
   const baseline = buildFromPrompt("микроскоп");
   let calls = 0;

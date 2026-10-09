@@ -13,7 +13,7 @@
     "design:worker": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/design-worker.ts",
     "design:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/design-ai.ps1",
     "postinstall": "prisma generate",
-    "test:backend": "tsc -p tsconfig.backend-tests.json && node --test .backend-tests/scripts/backend-generation.test.js && tsx --test scripts/backend-safety.test.ts scripts/ai-geometry-prompts.test.ts scripts/interior*.test.ts && tsx scripts/gen-check.ts"
+    "test:backend": "tsc -p tsconfig.backend-tests.json && node --test .backend-tests/scripts/backend-generation.test.js && tsx --test scripts/backend-safety.test.ts scripts/ai-geometry-prompts.test.ts scripts/google-auth.test.ts scripts/living-anatomy.test.ts scripts/interior*.test.ts && tsx scripts/gen-check.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1147.0",

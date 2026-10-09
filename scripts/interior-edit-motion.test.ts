@@ -87,7 +87,7 @@ test("person and animal joint loops preserve rest geometry, move limbs and retur
       assert.deepEqual(clips.map(c=>c.name),["Idle","Walk"]);assert(clips[1].tracks.some(t=>/quaternion$/.test(t.name)));
       const after=new Box3().setFromObject(root);assert(before.min.distanceTo(after.min)<1e-6&&before.max.distanceTo(after.max)<1e-6);
       assert.equal(attachLivingMotion(root,concept),clips);
-      let limb:Mesh|undefined;root.traverse(o=>{if(o instanceof Mesh&&o.name.startsWith("Стопа"))limb=o;});assert(limb);
+      let limb:Mesh|undefined;root.traverse(o=>{if(o instanceof Mesh&&/^(Стопа|Лапа|Копыто)/.test(o.name))limb=o;});assert(limb);
       const start=limb.getWorldPosition(new Vector3()),mixer=new AnimationMixer(root);mixer.clipAction(clips[1]).play();mixer.setTime(.3);root.updateMatrixWorld(true);
       assert(start.distanceTo(limb.getWorldPosition(new Vector3()))>.01,prompt);
       mixer.setTime(clips[1].duration);root.updateMatrixWorld(true);assert(start.distanceTo(limb.getWorldPosition(new Vector3()))<1e-5);

@@ -1,17 +1,19 @@
 /**
  * Text → Blueprint.
  *
- * There are no per-object templates here. A prompt is read word by word and
+ * A prompt is read word by word and
  * each word nudges a single numeric description of the thing being built: how
  * the mass is shaped, what it stands on, what grows out of it, what is mounted
  * on its surfaces. One universal builder then renders that description, so
  * "дракон с крыльями", "робот-паук на 8 ногах" and "дом с башней и гаражом"
- * all take the same code path and still come out different.
+ * compose features from the same description. Living species additionally use
+ * explicit anatomy proportions rather than the generic capsule body.
  *
  * A word that is not in the lexicon still changes the result: everything left
  * unspecified is drawn from an RNG seeded by the prompt itself.
  */
 import { Rng, hashString } from "@/shared/geometry";
+import { setAnimalDimensions } from "./living-anatomy";
 import {
   colorIn,
   materialIn,
@@ -1191,6 +1193,7 @@ export function planFromPrompt(prompt: string, variant = ""): Blueprint {
 
   // Shape and size adjectives describe the main object only: "с длинными
   // волосами" does not stretch the girl, "с большими колёсами" does not grow the car.
+  setAnimalDimensions(blueprint, subject);
   for (const [pattern, apply] of PROPORTIONS) {
     if (pattern.test(subject)) apply(blueprint);
   }
