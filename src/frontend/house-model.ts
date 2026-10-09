@@ -13,7 +13,7 @@ export function buildFurnishedHouse(result: LocalModelResult, view: HouseView = 
   const elevation=view.floor===null?0:view.floor*(doc.floorHeight+.2);
   const parts=result.concept.parts.filter(p=>p.role!=="furniture"&&(!floor||p.group===floor.id)).flatMap(p=>{
     const bottom=p.position[1]-elevation-p.size[1]/2;
-    const trim=floor&&["wall","opening-frame","window"].includes(p.role??"");
+    const trim=floor&&["wall","opening-frame","window","door","door-detail","door-hardware","facade","porch"].includes(p.role??"");
     const height=trim?Math.min(p.size[1],(view.plan ? .4 : 1.2)-bottom):p.size[1];
     return height<=0?[]:[{...p,position:[p.position[0],bottom+height/2,p.position[2]] as [number,number,number],size:[p.size[0],height,p.size[2]] as [number,number,number]}];
   });

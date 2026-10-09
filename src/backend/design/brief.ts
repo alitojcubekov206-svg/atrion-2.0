@@ -3,6 +3,8 @@ import {planFor} from "@/backend/procedural-3d";
 import {designPromptTarget} from "@/shared/interior/request";
 import {check, list, record, text} from "@/shared/design/validation";
 import type {BriefAnswer, BriefQuestion, DesignBrief, HouseBrief} from "@/shared/design/brief";
+import {houseArchitecture, houseElementColor} from "./house-architecture";
+import {HOUSE_ROOFS} from "@/shared/house/architecture";
 
 const WORDS: Record<string, number> = {один: 1, одна: 1, одно: 1, одну: 1, одной: 1, два: 2, две: 2, двух: 2, двумя: 2, три: 3, трех: 3, трёх: 3, четыре: 4, четырех: 4, четырёх: 4, пять: 5, пяти: 5, шесть: 6, шести: 6, семь: 7, восемь: 8, девять: 9, десять: 10, one: 1, two: 2, three: 3, four: 4};
 const NUM = `(?:\\d+|${Object.keys(WORDS).join("|")})`;
@@ -68,15 +70,16 @@ export function resolveDesignBrief(rawPrompt: unknown, rawAnswers?: unknown): De
   if (house) {
     understood.push("Дом с внутренней планировкой");
     let rooms = roomsIn(prompt), floors: number | undefined, width: number | undefined, depth: number | undefined;
-    let roof: string | undefined, wallColor = "#e4ddd1";
+    let roof: string | undefined, wallColor: string | undefined;
     // Later explicit answers can correct earlier values and answer several questions at once.
     for (const entry of [{questionId: "prompt", answer: prompt}, ...answers]) {
-      const p = parsePromptParams(entry.answer);
+      const buildingText=entry.answer.replace(/(?:окн[а-яё]*|windows?)\s*(?:размер[а-яё]*|ширин[а-яё]*)?\s*\d+(?:[.,]\d+)?\s*[×xх*]\s*\d+(?:[.,]\d+)?/gi, "");
+      const p = parsePromptParams(buildingText);
       const floorNumber = new RegExp(`(${NUM})\\s*[- ]?(?:этаж|floors?|storeys?)`, "i").exec(entry.answer)?.[1]
         ?? new RegExp(`(?:этажей|этажность|floors?)\\s*[:=]?\\s*(${NUM})(?![\\d×x])`, "i").exec(entry.answer)?.[1];
       floors = floorNumber ? countOf(floorNumber) : /(?:одно|двух|тр[её]х|четыр[её]х|пяти)[ -]?этажн/i.test(entry.answer) ? p.floors : floors;
       width = p.width ?? width; depth = p.depth ?? depth;
-      roof = p.roof ?? roof; wallColor = p.color ?? wallColor;
+      roof = p.roof ?? roof; wallColor = houseElementColor(entry.answer, "фасад|стен|дом|house|walls?") ?? wallColor;
       const roomList = roomsIn(entry.answer, entry.questionId === "rooms");
       if (roomList) rooms = roomList;
       if (entry.questionId === "floors" && new RegExp(`^\\s*${NUM}\\s*$`, "i").test(entry.answer)) floors = countOf(entry.answer.trim());
@@ -93,9 +96,14 @@ export function resolveDesignBrief(rawPrompt: unknown, rawAnswers?: unknown): De
     if (!rooms || (floors !== undefined && floors >= 1 && floors <= 3 && rooms.length < floors)) return ask({id: "rooms", text: rooms ? `Для ${floors} этажей нужно хотя бы по одному помещению. Какие комнаты разместить?` : "Сколько помещений нужно в доме и какие?", hint: "Например: две спальни, гостиная, кухня, санузел. Можно указать только общее количество — помещения останутся без назначения.", options: ["2 спальни, кухня-гостиная, санузел и прихожая", "3 спальни, гостиная, кухня, 2 санузла и прихожая", "Подбери сам"]});
     if (!Number.isInteger(floors) || floors! < 1 || floors! > 3) return ask({id: "floors", text: floors === undefined ? "Сколько этажей сделать?" : "Сейчас планировка поддерживает 1–3 этажа. Сколько выбрать?", hint: "Комнаты распределим между этажами. Лестницы в этой версии не моделируются.", options: ["1 этаж", "2 этажа", "3 этажа", "Выбери сам"]});
     if (width === undefined || depth === undefined || width < 3 || depth < 3 || width > 100 || depth > 100) return ask({id: "size", text: "Какие габариты дома по ширине и длине?", hint: "Например: 12 × 9 метров. Это размер одного этажа; если ещё не решили, можно доверить выбор Atrion.", options: ["10 × 8 м", "12 × 9 м", "15 × 12 м", "Подбери сам"]});
-    if (roof && !["gable", "flat"].includes(roof)) return ask({id: "roof", text: "Для дома с планировкой доступны две формы крыши. Какую выбрать?", hint: "Указанную форму пока не поддерживает этот построитель.", options: ["Двускатная крыша", "Плоская крыша"]});
-    if (!roof) assumptions.push("Крыша двускатная; высота этажа 2,8 м");
-    const brief: HouseBrief = {width, depth, floors: floors!, rooms, roof: roof === "flat" ? "flat" : "gable", wallColor,
+    const footprint=/[гgl]\s*[-–]?\s*образн|l[- ]shaped|угловой\s+дом/i.test(source)?"l-shaped":"rectangular";
+    if(footprint==="l-shaped"&&rooms.length<floors!*2)return ask({id:"rooms",text:"Для двух крыльев Г-образного дома нужно хотя бы два помещения на каждом этаже. Какие комнаты разместить?",hint:"Укажите полный перечень помещений для всех этажей.",options:["Прихожая, кухня-гостиная, 2 спальни, санузел и кабинет","Подбери сам"]});
+    if (roof && !HOUSE_ROOFS.includes(roof as HouseBrief["roof"])) return ask({id: "roof", text: "Какую форму крыши сделать?", hint: "Купола этот построитель планировки пока не поддерживает.", options: ["Двускатная крыша", "Вальмовая крыша", "Односкатная крыша", "Мансардная крыша", "Плоская крыша"]});
+    const architecture = houseArchitecture(source, width, depth);
+    understood.push(`Фасад: ${architecture.architecture.style}; окна: ${architecture.architecture.windows}`);
+    if (!roof) assumptions.push("Форма крыши выбрана по стилю фасада; высота этажа 2,8 м");
+    const brief: HouseBrief = {width, depth, floors: floors!, rooms, roof: (roof ?? architecture.roof) as HouseBrief["roof"], wallColor: wallColor ?? architecture.wallColor,
+      footprint, architecture: architecture.architecture, automaticArchitecture: !architecture.explicitStyle, automaticRoof: !roof, automaticWallColor: !wallColor,
       furnished: !/без\s+(?:всей\s+)?мебели|пустой\s+дом|unfurnished/i.test(source), description: source};
     return {kind: "ready", prompt: subject, answers, understood, assumptions, house: brief};
   }

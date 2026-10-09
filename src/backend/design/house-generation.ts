@@ -1,8 +1,9 @@
 import { parseHouse, buildHouse, type HouseDocument } from "../../shared/house/document";
 import { DesignError,record,list,text,number } from "./validation";
 import {compileHouseLayout} from "./house-layout";
+import {footprintRects,exteriorRoomSides} from "../../shared/house/footprint";
 
-const BRIEF_SCHEMA={type:"object",properties:{rooms:{type:"array",items:{type:"string"}},width:{type:["number","null"]},depth:{type:["number","null"]},floors:{type:["integer","null"]},roof:{type:["string","null"],enum:["flat","gable",null]}},required:["rooms","width","depth","floors","roof"],additionalProperties:false};
+const BRIEF_SCHEMA={type:"object",properties:{rooms:{type:"array",items:{type:"string"}},width:{type:["number","null"]},depth:{type:["number","null"]},floors:{type:["integer","null"]},roof:{type:["string","null"],enum:["flat","gable","hip","shed","mansard",null]}},required:["rooms","width","depth","floors","roof"],additionalProperties:false};
 
 export const HOUSE_GENERATION_SYSTEM = `Design an editable architectural concept from the user's brief. Return JSON only:
 {"name":"...","plan":{"width":12,"depth":9,"wallThickness":0.2,"floorHeight":2.8,"wallColor":"#e4ddd1","roof":"gable","floors":[{"rooms":[{"name":"room name","share":20},{"name":"another room","share":10}]}]}}
@@ -12,7 +13,7 @@ Put the entrance hall first in the list. Choose sensible area shares for each ro
 The layout compiler partitions the footprint, derives walls, door gaps and exterior windows. Do not emit coordinates or a nested tree.
 Honor the requested footprint, floor count, rooms, roof and wall color. Include EVERY explicitly named room, including the entrance hall, bathroom and the exact number of bedrooms; never silently omit or merge requested rooms.
 Before returning JSON, count the rooms and compare their names with the brief. Width/depth: 3..100 m; floors: 1..3; rooms per floor: 1..32.
-floorHeight: 2.2..6; wallThickness: .05...6; roof: flat or gable; room width/depth >=1.
+floorHeight: 2.2..6; wallThickness: .05...6; roof: flat, gable, hip, shed or mansard; room width/depth >=1.
 Names in the user's language. Use balanced shares so each room can fit a doorway.
 Current representation has no stairs, furniture, curved outlines, glass panes or door leaves. Do not claim these were generated.
 If the brief cannot fit this representation at all, return {"unsupported":true} instead of an unrelated house.`;
@@ -22,7 +23,8 @@ export function checkGeneratedHouse(doc: HouseDocument): string[] {
   const errors: string[] = [], eps=1e-6;
   doc.floors.forEach((floor, index) => {
     const area=floor.rooms.reduce((sum,r)=>sum+r.width*r.depth,0);
-    if(Math.abs(area-doc.width*doc.depth)>.01)errors.push(`Этаж ${index+1}: комнаты не покрывают весь контур.`);
+    const footprintArea=footprintRects(doc).reduce((n,r)=>n+r.width*r.depth,0);
+    if(Math.abs(area-footprintArea)>.01)errors.push(`Этаж ${index+1}: комнаты не покрывают весь контур.`);
     const neighbors=new Map(floor.rooms.map(r=>[r.id,new Set<string>()]));
     const entries=new Set<string>();
     for(const opening of floor.openings.filter(o=>o.kind==="door")){
@@ -30,8 +32,7 @@ export function checkGeneratedHouse(doc: HouseDocument): string[] {
       const horizontal=opening.side==="north"||opening.side==="south";
       const line=horizontal?room.z+(opening.side==="south"?room.depth:0):room.x+(opening.side==="east"?room.width:0);
       const start=(horizontal?room.x:room.z)+opening.offset,end=start+opening.width;
-      const outer=horizontal?doc.depth:doc.width;
-      if(Math.abs(line)<eps||Math.abs(line-outer)<eps)entries.add(room.id);
+      if(exteriorRoomSides(doc,room).some(e=>e.side===opening.side))entries.add(room.id);
       const opposite=floor.rooms.filter(r=>r.id!==room.id && (
         opening.side==="north"?Math.abs(r.z+r.depth-line)<eps:
         opening.side==="south"?Math.abs(r.z-line)<eps:
@@ -66,7 +67,7 @@ export async function generateHouse(input:unknown,deps:Dependencies,signal?:Abor
     const prompt=input.trim();let correction="";
     const brief=record(await deps.request(
       `Extract only explicit requirements from a house brief. Return JSON: {"rooms":["room name",...],"width":null,"depth":null,"floors":null,"roof":null}.
-Expand counts (two bedrooms means two named entries). Keep each explicitly requested room, including halls and bathrooms. Keep combined rooms combined if requested. Names in the user's language. Do not invent rooms. Dimensions in metres; absent/ambiguous values are null. roof: flat, gable or null.`,prompt,signal,BRIEF_SCHEMA),"brief");
+Expand counts (two bedrooms means two named entries). Keep each explicitly requested room, including halls and bathrooms. Keep combined rooms combined if requested. Names in the user's language. Do not invent rooms. Dimensions in metres; absent/ambiguous values are null. roof: flat, gable, hip, shed, mansard or null.`,prompt,signal,BRIEF_SCHEMA),"brief");
     signal?.throwIfAborted();
     const roomNames=list(brief.rooms,"rooms",96).map(name=>text(name,"room.name"));
     const required={width:brief.width==null?null:number(brief.width,"width",3,100),depth:brief.depth==null?null:number(brief.depth,"depth",3,100),floors:brief.floors==null?null:number(brief.floors,"floors",1,3),roof:brief.roof};
@@ -84,7 +85,7 @@ Expand counts (two bedrooms means two named entries). Keep each explicitly reque
         if(required.width!==null&&Math.abs(document.width-required.width)>.001)issues.push(`Ширина должна быть ${required.width} м.`);
         if(required.depth!==null&&Math.abs(document.depth-required.depth)>.001)issues.push(`Глубина должна быть ${required.depth} м.`);
         if(required.floors!==null&&document.floors.length!==required.floors)issues.push(`Количество этажей должно быть ${required.floors}.`);
-        if(["flat","gable"].includes(String(required.roof))&&document.roof!==required.roof)issues.push(`Крыша должна быть ${required.roof}.`);
+        if(["flat","gable","hip","shed","mansard"].includes(String(required.roof))&&document.roof!==required.roof)issues.push(`Крыша должна быть ${required.roof}.`);
         if(issues.length)throw new Error(issues.join(" "));
         const name="name" in raw&&typeof raw.name==="string"&&raw.name.trim()?raw.name.trim().slice(0,120):"Проект дома";
         return {name,document,warnings:[...buildHouse(document).warnings,"Расположение дверей и окон рассчитано автоматически и доступно для ручной правки. Проверьте удобство проходов и соответствие заданию."],source:"ai" as const};

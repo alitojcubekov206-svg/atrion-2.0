@@ -1,11 +1,14 @@
 import type { ModelPart } from "../types";
 import { check, choice, id, list, number, record, text, unique, version } from "../design/validation";
+import {HOUSE_ROOFS, parseHouseArchitecture, type HouseArchitecture, type HouseRoof} from "./architecture";
+import {houseRoofParts} from "./roof";
+import {footprintRects, footprintBoundary, type HouseFootprint} from "./footprint";
 
 type Room = { id: string; name: string; x: number; z: number; width: number; depth: number };
 type Opening = { id: string; roomId: string; side: "north" | "south" | "east" | "west";
   kind: "door" | "window"; offset: number; width: number; bottom: number; height: number };
 export type HouseDocument = { kind: "house"; schemaVersion: 1; units: "m"; width: number; depth: number;
-  wallThickness: number; floorHeight: number; wallColor: string; roof: "flat" | "gable";
+  wallThickness: number; floorHeight: number; wallColor: string; roof: HouseRoof; architecture?: HouseArchitecture; footprint?: HouseFootprint;
   floors: { id: string; rooms: Room[]; openings: Opening[] }[] };
 type Edge = { axis: "x" | "z"; line: number; start: number; end: number };
 function roomEdge(room: Room, side: Opening["side"]): Edge {
@@ -22,6 +25,8 @@ export function parseHouse(input: unknown): HouseDocument {
   const floorHeight = number(value.floorHeight,"floorHeight",2.2,6);
   const wallThickness = number(value.wallThickness,"wallThickness",0.05,0.6);
   const wallColor = text(value.wallColor,"wallColor");
+  const footprint=value.footprint===undefined?undefined:choice(value.footprint,["rectangular","l-shaped"] as const,"footprint");
+  const contour=footprintRects({width,depth,footprint});
   check(/^#[0-9a-f]{6}$/i.test(wallColor),"wallColor: ожидается #RRGGBB");
   const floors = list(value.floors,"floors",3,1).map((inputFloor) => {
     const floor = record(inputFloor,"floor");
@@ -30,6 +35,8 @@ export function parseHouse(input: unknown): HouseDocument {
       const result = { id:id(room.id,"room.id"),name:text(room.name,"room.name"), x:number(room.x,"x",0,width),
         z:number(room.z,"z",0,depth),width:number(room.width,"room.width",1,width),depth:number(room.depth,"room.depth",1,depth) };
       check(result.x+result.width <= width+EPS && result.z+result.depth <= depth+EPS,"Комната выходит за границы этажа");
+      const covered=contour.reduce((area,r)=>area+Math.max(0,Math.min(r.x+r.width,result.x+result.width)-Math.max(r.x,result.x))*Math.max(0,Math.min(r.z+r.depth,result.z+result.depth)-Math.max(r.z,result.z)),0);
+      check(Math.abs(covered-result.width*result.depth)<EPS,"Комната выходит за выбранный контур дома");
       return result;
     });
     const roomMap = unique(rooms,"rooms");
@@ -64,7 +71,7 @@ export function parseHouse(input: unknown): HouseDocument {
   });
   unique(floors,"floors");
   return { kind:"house",schemaVersion:1,units:"m",width,depth,wallThickness,floorHeight,wallColor,
-    roof:choice(value.roof,["flat","gable"] as const,"roof"),floors };
+    roof:choice(value.roof,HOUSE_ROOFS,"roof"),floors, ...(footprint===undefined?{}:{footprint}), ...(value.architecture === undefined ? {} : {architecture: parseHouseArchitecture(value.architecture)}) };
 }
 
 /** Build real wall gaps; a door is not a painted rectangle over a solid wall. */
@@ -78,11 +85,10 @@ export function buildHouse(document: HouseDocument) {
   }
   document.floors.forEach((floor,index) => {
     const y = index*(document.floorHeight+0.2);
-    box("Перекрытие",floor.id,[0,y-0.1,0],[document.width,0.2,document.depth],"#b7aea3","foundation");
+    for(const r of footprintRects(document))box("Перекрытие",floor.id,[r.x+r.width/2-document.width/2,y-0.1,r.z+r.depth/2-document.depth/2],[r.width,0.2,r.depth],"#b7aea3","foundation");
     const roomMap = new Map(floor.rooms.map((room) => [room.id,room]));
     const edges: Edge[] = [
-      {axis:"x",line:0,start:0,end:document.width},{axis:"x",line:document.depth,start:0,end:document.width},
-      {axis:"z",line:0,start:0,end:document.depth},{axis:"z",line:document.width,start:0,end:document.depth},
+      ...footprintBoundary(document),
       ...floor.rooms.flatMap((room) => (["north","south","east","west"] as const).map((side) => roomEdge(room,side)))
     ];
     const holes = floor.openings.map((opening) => {
@@ -99,11 +105,11 @@ export function buildHouse(document: HouseDocument) {
     for (const plane of planes) {
       const openings = holes.filter((hole) => hole.axis===plane.axis && Math.abs(hole.line-plane.line)<EPS);
       const cuts = [...new Set([...plane.edges.flatMap((edge) => [edge.start,edge.end]),...openings.flatMap((hole) => [hole.from,hole.to])])].sort((a,b) => a-b);
-      const limit = plane.axis==="x" ? document.depth : document.width;
-      const line = Math.abs(plane.line)<EPS ? document.wallThickness/2 : Math.abs(plane.line-limit)<EPS ? limit-document.wallThickness/2 : plane.line;
       for (let i=1;i<cuts.length;i++) {
         const start=cuts[i-1],end=cuts[i],mid=(start+end)/2;
         if (!plane.edges.some((edge) => mid>=edge.start && mid<=edge.end)) continue;
+        const boundary=footprintBoundary(document).find(e=>e.axis===plane.axis&&Math.abs(e.line-plane.line)<EPS&&mid>=e.start&&mid<=e.end);
+        const line=plane.line+(boundary?(["north","west"].includes(boundary.side)?1:-1)*document.wallThickness/2:0);
         const active = openings.filter((hole) => mid>hole.from && mid<hole.to);
         const verticalCuts = [...new Set([0,document.floorHeight,...active.flatMap((hole) => [hole.opening.bottom,hole.opening.bottom+hole.opening.height])])].sort((a,b) => a-b);
         for (let j=1;j<verticalCuts.length;j++) {
@@ -117,11 +123,7 @@ export function buildHouse(document: HouseDocument) {
     }
   });
   const roofY = document.floors.length*(document.floorHeight+0.2)-0.2;
-  box("Крыша","roof",[0,roofY+0.1,0],[document.width+0.4,0.2,document.depth+0.4],"#676d7c","roof");
-  if (document.roof === "gable") {
-    const roof = parts[parts.length-1];
-    roof.shape="prism"; roof.size[1]=Math.min(3,document.width*0.2); roof.position[1]=roofY+roof.size[1]/2;
-  }
+  for(const [i,r] of footprintRects(document).entries())parts.push(...houseRoofParts({...document,width:r.width,depth:r.depth},roofY).map(p=>({...p,id:`${p.id}_${i}`,position:[p.position[0]+r.x+r.width/2-document.width/2,p.position[1],p.position[2]+r.z+r.depth/2-document.depth/2] as ModelPart["position"]})));
   return { units:"m",parts, floors:document.floors.map((floor,index) => ({id:floor.id,elevation:index*(document.floorHeight+0.2),rooms:floor.rooms})),
     warnings:["Концептуальный эскиз без инженерных расчётов. Проёмы открытые; стекло, дверные полотна и инженерные сети не моделируются.",
       ...(document.floors.length>1 ? ["Межэтажный доступ пока не моделируется: лестницы отсутствуют."] : [])] };

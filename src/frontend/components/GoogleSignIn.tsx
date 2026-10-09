@@ -45,7 +45,7 @@ export default function GoogleSignIn({onSuccess}:{onSuccess:()=>void}) {
           } catch(err) {if(active){setState("error");setError(err instanceof Error?err.message:"Не удалось войти через Google");}}
         }});
         host.current.replaceChildren();
-        google.accounts.id.renderButton(host.current,{type:"standard",theme:"outline",size:"large",text:"signin_with",shape:"pill",width:Math.min(360,host.current.clientWidth||320),locale:"ru"});
+        google.accounts.id.renderButton(host.current,{type:"standard",theme:"filled_black",size:"large",text:"signin_with",shape:"pill",width:Math.min(360,host.current.clientWidth||320),locale:"ru"});
         setState("ready");
       } catch(err) {if(active){setState("error");setError(err instanceof Error?err.message:"Не удалось подключить Google");}}
     }

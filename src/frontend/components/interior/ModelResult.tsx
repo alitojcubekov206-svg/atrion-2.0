@@ -24,7 +24,7 @@ const input="rounded-lg border border-white/15 bg-surface2 px-2 py-1 text-sm";
 export default function ModelResult({result,onChange,onReturn}:{result:LocalModelResult;onChange:(result:LocalModelResult)=>void;onReturn:()=>void}) {
   const [selected,setSelected]=useState<string|null>(null),[section,setSection]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState("");
-  const [floor,setFloor]=useState<number|null>(result.document?0:null),[plan,setPlan]=useState(false),[roomId,setRoomId]=useState<string|null>(null);
+  const [floor,setFloor]=useState<number|null>(null),[plan,setPlan]=useState(false),[roomId,setRoomId]=useState<string|null>(null);
   const [mode,setMode]=useState<CadTool>("select"),[playing,setPlaying]=useState(true);
   const [undo,setUndo]=useState<LocalModelResult[]>([]),[redo,setRedo]=useState<LocalModelResult[]>([]);
   const {concept}=result,living=isLivingConcept(concept),placement=mode==="scale"?"select":mode;

@@ -1,5 +1,6 @@
 import {parseHouse, type HouseDocument} from "../../shared/house/document";
 import {check,record,number,text,list,choice} from "./validation";
+import {footprintRects,exteriorRoomSides} from "../../shared/house/footprint";
 
 /** Compile a recursively partitioned layout: coverage and non-overlap follow from construction. */
 export function compileHouseLayout(input:unknown):HouseDocument{
@@ -32,27 +33,28 @@ export function compileHouseLayout(input:unknown):HouseDocument{
       return {axis,ratio,first:partition(items.slice(0,at),axis==="x"?w*ratio:w,axis==="z"?d*ratio:d),
         second:partition(items.slice(at),axis==="x"?w*(1-ratio):w,axis==="z"?d*(1-ratio):d)};
     }
-    const layout=floor.rooms!==undefined?partition(list(floor.rooms,"rooms",32,1).map(value=>{
+    const program=floor.rooms!==undefined?list(floor.rooms,"rooms",32,1).map(value=>{
       const room=record(value,"room");return {name:text(room.name,"room.name"),share:number(room.share,"share",1,100)};
-    }),width,depth):floor.layout;
-    split(layout,0,0,width,depth);
+    }):undefined;
+    if(plan.footprint==="l-shaped"){
+      check(program&&program.length>=2,"Для двух крыльев нужны минимум два помещения на каждом этаже");
+      const zones=footprintRects({width,depth,footprint:"l-shaped"}),total=program.reduce((n,r)=>n+r.share,0),target=zones[0].width*zones[0].depth/zones.reduce((n,r)=>n+r.width*r.depth,0);
+      let at=1,best=Infinity,sum=0;
+      for(let i=1;i<program.length;i++){sum+=program[i-1].share;const gap=Math.abs(sum/total-target);if(gap<best){best=gap;at=i;}}
+      zones.forEach((r,i)=>split(partition(i===0?program.slice(0,at):program.slice(at),r.width,r.depth),r.x,r.z,r.width,r.depth));
+    } else split(program?partition(program,width,depth):floor.layout,0,0,width,depth);
     return {id:`floor_${index+1}`,rooms,openings:[]};
   });
   const doc=parseHouse({...plan,kind:"house",schemaVersion:1,units:"m",floors});
   const eps=1e-6,doorWidth=.8,margin=doc.wallThickness;
-  doc.floors.forEach(floor=>{
+  doc.floors.forEach((floor, floorIndex)=>{
     type Room=typeof floor.rooms[number];type Side="north"|"south"|"west"|"east";
     const openings:typeof floor.openings=[];
-    const exterior=(room:Room)=>[
-      {side:"north" as Side,edge:room.z,length:room.width},
-      {side:"south" as Side,edge:doc.depth-room.z-room.depth,length:room.width},
-      {side:"west" as Side,edge:room.x,length:room.depth},
-      {side:"east" as Side,edge:doc.width-room.x-room.width,length:room.depth},
-    ].filter(e=>Math.abs(e.edge)<eps&&e.length>=doorWidth+2*margin);
-    const root=floor.rooms.find(r=>/прихож|холл|коридор|entrance|hall/i.test(r.name)&&exterior(r).length)??floor.rooms.find(r=>exterior(r).length);
+    const exterior=(room:Room)=>exteriorRoomSides(doc,room).filter(e=>e.length>=doorWidth+2*margin);
+    const root=floor.rooms.find(r=>/прихож|холл|коридор|entrance|hall/i.test(r.name)&&exterior(r).length)??floor.rooms.find(r=>exterior(r).some(e=>e.side==="south"))??floor.rooms.find(r=>exterior(r).length);
     check(root,"Нет места для входной двери");
-    const entry=exterior(root)[0];
-    openings.push({id:"entry",roomId:root.id,side:entry.side,kind:"door",offset:(entry.length-doorWidth)/2,width:doorWidth,bottom:0,height:Math.min(2.1,doc.floorHeight-.1)});
+    const entry=exterior(root).find(e=>e.side==="south")??exterior(root)[0];
+    if(floorIndex===0)openings.push({id:"entry",roomId:root.id,side:entry.side,kind:"door",offset:(entry.length-doorWidth)/2,width:doorWidth,bottom:0,height:Math.min(2.1,doc.floorHeight-.1)});
     const reached=new Set([root.id]);
     while(reached.size<floor.rooms.length){
       let added=false;
@@ -74,11 +76,22 @@ export function compileHouseLayout(input:unknown):HouseDocument{
       }
       check(added,"Нет достаточной общей стены для дверного прохода между комнатами");
     }
-    for(const room of floor.rooms){
-      const wall=exterior(room).find(e=>!openings.some(o=>o.roomId===room.id&&o.side===e.side));
-      if(!wall)continue;
-      const windowWidth=Math.min(1.2,wall.length-2*margin),bottom=.8,height=Math.min(1.2,doc.floorHeight-bottom-.1);
-      openings.push({id:`window_${openings.length}`,roomId:room.id,side:wall.side,kind:"window",offset:(wall.length-windowWidth)/2,width:windowWidth,bottom,height});
+    for(const room of floor.rooms)for(const wall of exterior(room)){
+      const a=doc.architecture, bathroom=/сануз|ванн|bath|кладов|pantry/i.test(room.name);
+      const desiredWidth=bathroom?.8:a?.windowWidth??1.45, desiredHeight=bathroom?1:a?.windowHeight??1.45;
+      const bottom=bathroom?1.35:a?.windows==="panoramic"?.3:.85,height=Math.min(desiredHeight,doc.floorHeight-bottom-.15);
+      // Split around door openings. Windows cut the wall, including beside the entrance.
+      const blocked=openings.filter(o=>o.roomId===room.id&&o.side===wall.side).map(o=>[Math.max(margin,o.offset-.3),Math.min(wall.length-margin,o.offset+o.width+.3)]).sort((a,b)=>a[0]-b[0]);
+      let start=margin;
+      const intervals:number[][]=[];
+      for(const [low,high] of blocked){if(low>start)intervals.push([start,low]);start=Math.max(start,high);}
+      if(start<wall.length-margin)intervals.push([start,wall.length-margin]);
+      for(const [low,high] of intervals){
+        const available=high-low;if(available<.75)continue;
+        const count=bathroom?1:Math.min(12,Math.max(1,Math.floor((available+.4)/(a?.windowSpacing??3))));
+        const cell=available/count,windowWidth=Math.min(desiredWidth,cell-.35);if(windowWidth<.4)continue;
+        for(let i=0;i<count&&openings.length<128;i++)openings.push({id:`window_${openings.length}`,roomId:room.id,side:wall.side,kind:"window",offset:low+cell*(i+.5)-windowWidth/2,width:windowWidth,bottom,height});
+      }
     }
     floor.openings=openings;
   });
