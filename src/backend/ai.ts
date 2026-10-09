@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { isDeepStrictEqual } from "node:util";
-import { EditNotApplied, editableParts, isModelRebuild, localRefine, restoreEditedMeshes } from "./refinement";
+import { EditNotApplied, editableParts, localRefine, rebuildPromptFor, restoreEditedMeshes } from "./refinement";
 import { primaryTextProvider, fallbackTextProvider, requestTextJSON, type TextRequestOptions } from "./text-ai";
 import type {
   Blueprint,
@@ -770,8 +770,9 @@ export async function refine3DConcept(
   instruction: string,
   selectedPartId?: string | null
 ): Promise<ThreeDConcept> {
-  if (isModelRebuild(instruction)) {
-    const rebuilt = await generate3DModel(instruction, [], { variant: crypto.randomUUID().slice(0, 8) });
+  const rebuild = rebuildPromptFor(concept, instruction);
+  if (rebuild) {
+    const rebuilt = await generate3DModel(rebuild, [], { variant: crypto.randomUUID().slice(0, 8) });
     return { ...rebuilt.concept, description: `${rebuilt.concept.description} · ${instruction}` };
   }
 

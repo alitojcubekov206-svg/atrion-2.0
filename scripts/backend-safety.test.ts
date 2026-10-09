@@ -358,6 +358,23 @@ test("short house commands generate new geometry despite historical usage", asyn
   assert.match(schoolData.concept.name, /школа/i); assert.notDeepEqual(schoolData.concept.parts, office.parts);
 });
 
+test("asking a bridge for more lanes rebuilds the same bridge, never a car", async () => {
+  // A creation verb alone used to send the rest of the sentence off as a new model.
+  for (const edit of ["построй больше полос для машин", "build more lanes for cars", "построй террасу", "построй ещё одну башню"]) assert(!isModelRebuild(edit), edit);
+  for (const fresh of ["нарисуй дракона", "создай красную машину", "сгенерируй абстрактную скульптуру"]) assert(isModelRebuild(fresh), fresh);
+
+  const bridge = buildFromPrompt("вантовый мост на 4 полосы");
+  const {result} = await inRequest(() => refine(post("/api/3d/refine", {concept: bridge, instruction: "построй больше полос для машин"})));
+  assert.equal(result.status, 200);
+  const data = await result.json();
+  const names: string[] = data.concept.parts.map((p: ModelPart) => p.name);
+  assert(names.includes("Проезжая часть"), "still a road bridge");
+  assert(names.some(n => /пилон/i.test(n)), "same cable-stayed style");
+  assert(!names.some(n => /колес|колёс/i.test(n)), "no car parts");
+  assert.match(data.concept.name, /6 полос/);
+  assert.equal(user.threeDGenerations, 1, "a rebuild counts as a generation");
+});
+
 test("successful local generation spends both allowances and does not log prompt text", async () => {
   const log = mock.method(console, "info", () => undefined);
   const prompt = "Деревянный стол fixture-private-marker";

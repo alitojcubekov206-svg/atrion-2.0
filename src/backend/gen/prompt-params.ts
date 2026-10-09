@@ -204,6 +204,12 @@ export function parsePromptParams(prompt: string): PromptParams {
     text.match(/(\d+)\s*[-\s]?(?:этаж|эт\.|floor|storey|story|уровн)/i) ??
     text.match(/(?:этаж|floor|storey|уровн)\D{0,10}?(\d+)/i);
   if (floorsMatch) floors = Math.round(normalizeNumber(floorsMatch[1]));
+  // "три этажа", "из трёх этажей", "с тремя этажами", "three floors"
+  const spelled = text.match(/(?<![a-zа-яё])(один|одн(?:ого|ом|им)|дв(?:а|ух|умя)|тр(?:и|ёх|ех|емя)|четыр(?:е|ёх|ех|ьмя)|пят(?:ь|и|ью)|шест(?:ь|и|ью)|сем(?:ь|и|ью)|восьм(?:и|ью)|восемь|девят(?:ь|и|ью)|десят(?:ь|и|ью)|one|two|three|four|five|six|seven|eight|nine|ten)\s*[-\s]?(?:этаж|floor|storey|story|уровн)/i);
+  if (!floorsMatch && spelled) {
+    const stems: [RegExp, number][] = [[/^(один|одн|one)/, 1], [/^(дв|two)/, 2], [/^(тр|three)/, 3], [/^(четыр|four)/, 4], [/^(пят|five)/, 5], [/^(шест|six)/, 6], [/^(сем|seven)/, 7], [/^(восьм|восемь|eight)/, 8], [/^(девят|nine)/, 9], [/^(десят|ten)/, 10]];
+    floors = stems.find(([stem]) => stem.test(spelled[1].toLowerCase()))?.[1];
+  }
   const WORD_FLOORS: [RegExp, number][] = [
     [/одноэтаж|one.?stor/i, 1],
     [/двухэтаж|двух-этаж|two.?stor/i, 2],

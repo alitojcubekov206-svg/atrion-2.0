@@ -4,7 +4,7 @@ import {designPromptTarget} from "@/shared/interior/request";
 import {check, list, record, text} from "@/shared/design/validation";
 import type {BriefAnswer, BriefQuestion, DesignBrief, HouseBrief} from "@/shared/design/brief";
 
-const WORDS: Record<string, number> = {один: 1, одна: 1, одно: 1, одну: 1, одной: 1, два: 2, две: 2, двух: 2, двумя: 2, три: 3, трех: 3, трёх: 3, четыре: 4, четырех: 4, четырёх: 4, пять: 5, пяти: 5, шесть: 6, шести: 6, семь: 7, восемь: 8, девять: 9, десять: 10, one: 1, two: 2, three: 3, four: 4};
+const WORDS: Record<string, number> = {один: 1, одна: 1, одно: 1, одну: 1, одной: 1, два: 2, две: 2, двух: 2, двумя: 2, три: 3, трех: 3, трёх: 3, тремя: 3, четыре: 4, четырех: 4, четырёх: 4, четырьмя: 4, пять: 5, пяти: 5, шесть: 6, шести: 6, семь: 7, восемь: 8, девять: 9, десять: 10, one: 1, two: 2, three: 3, four: 4};
 const NUM = `(?:\\d+|${Object.keys(WORDS).join("|")})`;
 const countOf = (s: string) => WORDS[s.toLowerCase()] ?? Number(s);
 const SELF = /(?:на\s+(?:твой|ваш|свой)\s+вкус|(?:выбери|реши|подбери|придумай|решай)\s+сам|на\s+усмотрение|не\s+знаю|you\s+decide)/i;
@@ -68,7 +68,7 @@ export function resolveDesignBrief(rawPrompt: unknown, rawAnswers?: unknown): De
   if (house) {
     understood.push("Дом с внутренней планировкой");
     let rooms = roomsIn(prompt), floors: number | undefined, width: number | undefined, depth: number | undefined;
-    let roof: string | undefined, wallColor = "#e4ddd1";
+    let roof: string | undefined, wallColor = "#e4ddd1", autoSize = false, namedColor = false;
     // Later explicit answers can correct earlier values and answer several questions at once.
     for (const entry of [{questionId: "prompt", answer: prompt}, ...answers]) {
       const p = parsePromptParams(entry.answer);
@@ -76,14 +76,15 @@ export function resolveDesignBrief(rawPrompt: unknown, rawAnswers?: unknown): De
         ?? new RegExp(`(?:этажей|этажность|floors?)\\s*[:=]?\\s*(${NUM})(?![\\d×x])`, "i").exec(entry.answer)?.[1];
       floors = floorNumber ? countOf(floorNumber) : /(?:одно|двух|тр[её]х|четыр[её]х|пяти)[ -]?этажн/i.test(entry.answer) ? p.floors : floors;
       width = p.width ?? width; depth = p.depth ?? depth;
-      roof = p.roof ?? roof; wallColor = p.color ?? wallColor;
+      if (p.width !== undefined || p.depth !== undefined) autoSize = false;
+      roof = p.roof ?? roof; wallColor = p.color ?? wallColor; namedColor ||= p.color !== undefined;
       const roomList = roomsIn(entry.answer, entry.questionId === "rooms");
       if (roomList) rooms = roomList;
       if (entry.questionId === "floors" && new RegExp(`^\\s*${NUM}\\s*$`, "i").test(entry.answer)) floors = countOf(entry.answer.trim());
       if (SELF.test(entry.answer)) {
         if ((entry.questionId === "prompt" || entry.questionId === "rooms") && !rooms) {rooms = [...DEFAULT_ROOMS];assumptions.push("Предложен набор: прихожая, кухня-гостиная, две спальни, санузел");}
         if ((entry.questionId === "prompt" || entry.questionId === "floors") && floors === undefined) {floors = 1;assumptions.push("Выбран один этаж");}
-        if ((entry.questionId === "prompt" || entry.questionId === "size") && (width === undefined || depth === undefined)) {width ??= 12;depth ??= 9;assumptions.push(`Выбран габарит ${width} × ${depth} м`);}
+        if ((entry.questionId === "prompt" || entry.questionId === "size") && (width === undefined || depth === undefined)) {width ??= 12;depth ??= 9;autoSize = true;assumptions.push(`Выбран габарит ${width} × ${depth} м`);}
         if (entry.questionId === "roof") roof = "gable";
       }
     }
@@ -96,7 +97,8 @@ export function resolveDesignBrief(rawPrompt: unknown, rawAnswers?: unknown): De
     if (roof && !["gable", "flat"].includes(roof)) return ask({id: "roof", text: "Для дома с планировкой доступны две формы крыши. Какую выбрать?", hint: "Указанную форму пока не поддерживает этот построитель.", options: ["Двускатная крыша", "Плоская крыша"]});
     if (!roof) assumptions.push("Крыша двускатная; высота этажа 2,8 м");
     const brief: HouseBrief = {width, depth, floors: floors!, rooms, roof: roof === "flat" ? "flat" : "gable", wallColor,
-      furnished: !/без\s+(?:всей\s+)?мебели|пустой\s+дом|unfurnished/i.test(source), description: source};
+      furnished: !/без\s+(?:всей\s+)?мебели|пустой\s+дом|unfurnished/i.test(source), description: source,
+      auto: {size: autoSize, roof: !roof || roof === "gable" && answers.some(a => a.questionId === "roof" && SELF.test(a.answer)), color: !namedColor}};
     return {kind: "ready", prompt: subject, answers, understood, assumptions, house: brief};
   }
 

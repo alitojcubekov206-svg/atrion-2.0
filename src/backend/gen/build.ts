@@ -13,6 +13,7 @@ import type { ModelPart, ThreeDConcept } from "@/shared/types";
 import {
   part,
   partsBounds,
+  scaleParts,
   shade,
   translateParts,
   wrapConcept,
@@ -68,6 +69,8 @@ type Ctx = {
   lampHead?: { at: Vec3; tilt: number };
   /** Free floor area inside a hollow building — where its furniture stands. */
   interior?: { halfW: number; halfL: number; floorY: number };
+  /** Footprint of each storey relative to the plan; upper storeys step in slightly. */
+  levelScale?: number[];
   /** Top of the floor slab inside a room shell. */
   floorY?: number;
 };
@@ -84,7 +87,7 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
 /* ================= entry point ================= */
 
 export function buildFromBlueprint(bp: Blueprint): ThreeDConcept {
-  let parts = buildParts(bp, "p");
+  let parts = fitExplicitSize(bp, buildParts(bp, "p"));
 
   // "три стула" — the same object again, side by side.
   if (bp.copies > 1) {
@@ -112,6 +115,25 @@ export function buildFromBlueprint(bp: Blueprint): ThreeDConcept {
   });
 }
 
+/**
+ * A single number the user gave is the finished size: "башня высотой 50 м" came
+ * out 62 m once the spire stood on top. With exactly one measured axis the whole
+ * model is scaled uniformly, so proportions survive. A building's width or length
+ * is its body; a porch or garage may stand outside it. Bridges measure their own span.
+ */
+function fitExplicitSize(bp: Blueprint, parts: ModelPart[]): ModelPart[] {
+  const axes = (["width", "height", "length"] as const).filter((axis) => bp.explicitAxes[axis]);
+  if (axes.length !== 1 || bp.bridge || bp.kind === "room" || !parts.length) return parts;
+  const axis = axes[0];
+  if (axis !== "height" && bp.kind === "building") return parts;
+  const { min, max } = partsBounds(parts);
+  const index = { width: 0, height: 1, length: 2 }[axis];
+  const actual = max[index] - min[index];
+  const target = bp[axis];
+  if (!(actual > 0) || Math.abs(actual - target) <= target * 0.01) return parts;
+  return scaleParts(parts, target / actual);
+}
+
 /** Geometry for one blueprint, before grounding — reused for room furniture. */
 function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
   const ctx: Ctx = {
@@ -126,6 +148,12 @@ function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
   // A bridge has its own anatomy — deck, lanes, piers, pylons — not a body.
   if (bp.bridge) {
     buildBridge(ctx);
+    return ctx.parts;
+  }
+
+  // A tree is a trunk and a crown, not a body with features.
+  if (bp.kind === "plant") {
+    addPlant(ctx);
     return ctx.parts;
   }
 
@@ -398,7 +426,8 @@ function massStacked(ctx: Ctx) {
         role: "volume",
         group: bp.floors > 0 ? "Этажи" : "Объём",
         position: [0, y, 0],
-        size: [bp.width * k, step * 0.98, bp.length * k],
+        // Storey bands hide the joint on buildings; elsewhere a 2 % gap split the object in two.
+        size: [bp.width * k, step * (bp.floors > 0 ? 0.98 : 1), bp.length * k],
         color: i % 2 === 0 ? bp.primary : shade(bp.primary, -0.05),
         material: "Основной объём",
         metalness: bp.metalness,
@@ -426,6 +455,7 @@ function massStacked(ctx: Ctx) {
 
   body.halfW = (bp.width * profile[0]) / 2;
   body.halfL = (bp.length * profile[0]) / 2;
+  if (bp.floors > 0) ctx.levelScale = profile;
 }
 
 /** Storeys as floor slabs and four walls — the shell of a house with an interior. */
@@ -1246,24 +1276,41 @@ function headAnchor(ctx: Ctx): { center: Vec3; size: number } {
 
 function addHead(ctx: Ctx) {
   const { bp, body } = ctx;
-  const { center, size } = headAnchor(ctx);
+  const anchor = headAnchor(ctx);
+  const size = anchor.size;
   const skin = bp.secondary;
 
   // Neck first, so the head never floats off the body.
   const neckLength = Math.max(size * 0.35, bp.height * bp.neck * 0.5);
   const neckDir: Vec3 = ctx.upright ? [0, 1, 0] : [0, 0.45, 1];
+  const neckStart: Vec3 = ctx.upright
+    ? [0, body.y1 - size * 0.1, 0]
+    : [0, body.y1 - (body.y1 - body.y0) * 0.25, body.halfL * 0.7];
+  const neckSegments = bp.neck > 0.6 ? 5 : 2;
+  const segmentLength = neckLength / (bp.neck > 0.6 ? 4 : 2);
+
+  // Where the chain really ends (taperedChain shortens each segment). A long
+  // dragon neck stopped 35 cm short of a head placed by the anchor alone.
+  const unit = Math.hypot(...neckDir);
+  const dir: Vec3 = [neckDir[0] / unit, neckDir[1] / unit, neckDir[2] / unit];
+  let reach = 0;
+  for (let i = 0; i < neckSegments; i++) reach += segmentLength * (1 - (i / (neckSegments - 1)) * 0.35);
+  const tip: Vec3 = [neckStart[0] + dir[0] * reach, neckStart[1] + dir[1] * reach, neckStart[2] + dir[2] * reach];
+  const gap = Math.hypot(tip[0] - anchor.center[0], tip[1] - anchor.center[1], tip[2] - anchor.center[2]);
+  const center: Vec3 = gap > size * 0.5
+    ? [tip[0] + dir[0] * size * 0.3, tip[1] + dir[1] * size * 0.3, tip[2] + dir[2] * size * 0.3]
+    : anchor.center;
+
   push(
     ctx,
     taperedChain({
       id: ctx.id,
       group: "Шея",
       name: "Шея",
-      start: ctx.upright
-        ? [0, body.y1 - size * 0.1, 0]
-        : [0, body.y1 - (body.y1 - body.y0) * 0.25, body.halfL * 0.7],
+      start: neckStart,
       direction: neckDir,
-      segments: bp.neck > 0.6 ? 5 : 2,
-      segmentLength: neckLength / (bp.neck > 0.6 ? 4 : 2),
+      segments: neckSegments,
+      segmentLength,
       startRadius: size * 0.3,
       endRadius: size * 0.24,
       color: skin,
@@ -1296,7 +1343,9 @@ function addHead(ctx: Ctx) {
         role: "detail",
         group: "Голова",
         position: [center[0], center[1] - size * 0.12, center[2] + size * 0.42 + snout * 0.32],
-        size: [size * 0.46, size * 0.4, snout * 0.75],
+        // A capsule's long axis is local y; tipped forward it must carry the
+        // snout length, or the muzzle pointed up and the nose floated ahead of it.
+        size: bp.muzzle > 0.9 ? [size * 0.46, snout * 0.75, size * 0.4] : [size * 0.46, size * 0.4, snout * 0.75],
         rotation: bp.muzzle > 0.9 ? [Math.PI / 2, 0, 0] : [0, 0, 0],
         color: shade(skin, -0.06),
         material: "Морда",
@@ -1764,12 +1813,17 @@ function addWindows(ctx: Ctx) {
     const stepAcross = usable / columns;
     const windowWidth = stepAcross * (bp.windowStyle === "curtain" ? 0.9 : 0.6);
     const windowHeight = levelHeight * (bp.windowStyle === "curtain" ? 0.74 : 0.48);
-    const columnMajor = levels > columns;
+    // Upper storeys step in, so their windows sit on that storey's wall rather
+    // than floating at the ground-floor line.
+    const scale = ctx.levelScale?.length === levels ? ctx.levelScale : undefined;
+    const stepped = scale?.some((k) => k !== scale[0]) ?? false;
+    const columnMajor = levels > columns && !stepped;
 
     const positionFor = (index: number, level: number): Vec3 => {
       const across = -usable / 2 + stepAcross * (index + 0.5);
       const y = body.y0 + levelHeight * (level + 0.55);
-      return axis === "x" ? [across, y, offsetOut] : [offsetOut, y, across];
+      const out = scale ? offsetOut * (scale[level] / scale[0]) : offsetOut;
+      return axis === "x" ? [across, y, out] : [out, y, across];
     };
 
     const shared = {
@@ -2618,7 +2672,10 @@ function addStairs(ctx: Ctx) {
   const rise = Math.max(0.04, body.y0 > 0.05 ? body.y0 / steps : (bp.height * 0.04) / 1);
   const run = rise * 1.5;
   const width = Math.min(bp.width * 0.32, 2.4);
-  const zBase = body.halfL + (bp.terrace ? Math.min(bp.length * 0.4, 3.2) : 0) + run * steps * 0.5;
+  // The flight climbs towards the door: the lowest step is outermost and the
+  // top one meets the facade (or the terrace edge). "back" made it climb away.
+  const face = body.halfL + (bp.terrace ? Math.min(bp.length * 0.4, 3.2) : 0);
+  const zBase = face + run * (steps - 0.5);
 
   push(
     ctx,
@@ -2629,7 +2686,7 @@ function addStairs(ctx: Ctx) {
       steps,
       rise,
       run,
-      facing: "back",
+      facing: "front",
       color: shade(bp.trim, 0.25),
     })
   );
@@ -2770,7 +2827,12 @@ function addTowers(ctx: Ctx) {
 
 function addSpire(ctx: Ctx) {
   const { bp, body } = ctx;
-  const base = Math.max(body.y1, bp.height * 0.92);
+  // Stand on whatever is already under the centre — body, roof or dome. A fixed
+  // 92 % of the height left a gap above towers whose top was held back for it.
+  const base = ctx.parts.reduce((top, p) => {
+    const over = !p.repeat && !p.mirror && Math.abs(p.position[0]) <= p.size[0] / 2 && Math.abs(p.position[2]) <= p.size[2] / 2;
+    return over ? Math.max(top, p.position[1] + p.size[1] / 2) : top;
+  }, body.y1);
   const size = Math.min(bp.width, bp.length) * 0.16;
 
   push(
@@ -2800,7 +2862,7 @@ function addSpire(ctx: Ctx) {
       shape: "sphere",
       role: "detail",
       group: "Шпиль",
-      position: [0, base + bp.height * 0.25, 0],
+      position: [0, base + bp.height * 0.24 + size * 0.12, 0],
       size: [size * 0.4, size * 0.4, size * 0.4],
       color: "#c9973f",
       material: "Навершие",
@@ -3938,6 +4000,9 @@ function addCannon(ctx: Ctx) {
   const { bp, body } = ctx;
   const turretSize = Math.min(bp.width, bp.length) * 0.55;
   const barrelLength = bp.length * 0.62;
+  // The mantlet overlaps the turret's front face; a fixed offset left the gun floating.
+  const turretZ = -bp.length * 0.04;
+  const maskZ = turretZ + turretSize * 0.575 + turretSize * 0.08;
 
   push(
     ctx,
@@ -3945,7 +4010,7 @@ function addCannon(ctx: Ctx) {
       shape: "cylinder",
       role: "volume",
       group: "Башня",
-      position: [0, body.y1 + turretSize * 0.22, -bp.length * 0.04],
+      position: [0, body.y1 + turretSize * 0.22, turretZ],
       size: [turretSize, turretSize * 0.45, turretSize * 1.15],
       sides: 12,
       color: shade(bp.primary, -0.04),
@@ -3956,7 +4021,7 @@ function addCannon(ctx: Ctx) {
       shape: "box",
       role: "detail",
       group: "Башня",
-      position: [0, body.y1 + turretSize * 0.22, turretSize * 0.55],
+      position: [0, body.y1 + turretSize * 0.22, maskZ],
       size: [turretSize * 0.5, turretSize * 0.36, turretSize * 0.2],
       color: shade(bp.primary, -0.14),
       material: "Маска",
@@ -3966,7 +4031,7 @@ function addCannon(ctx: Ctx) {
       shape: "cylinder",
       role: "detail",
       group: "Башня",
-      position: [0, body.y1 + turretSize * 0.22, turretSize * 0.55 + barrelLength / 2],
+      position: [0, body.y1 + turretSize * 0.22, maskZ + barrelLength / 2],
       size: [turretSize * 0.16, barrelLength, turretSize * 0.16],
       rotation: [Math.PI / 2, 0, 0],
       sides: 14,
@@ -3978,7 +4043,7 @@ function addCannon(ctx: Ctx) {
       shape: "cylinder",
       role: "detail",
       group: "Башня",
-      position: [0, body.y1 + turretSize * 0.22, turretSize * 0.55 + barrelLength * 0.94],
+      position: [0, body.y1 + turretSize * 0.22, maskZ + barrelLength * 0.94],
       size: [turretSize * 0.22, barrelLength * 0.1, turretSize * 0.22],
       rotation: [Math.PI / 2, 0, 0],
       sides: 14,
@@ -5038,6 +5103,119 @@ function addHeldBlade(ctx: Ctx) {
 }
 
 /** The weapon as the whole object, standing point up. */
+type PlantPart = Omit<Parameters<typeof part>[2], "group" | "role">;
+
+/**
+ * Trees, bushes and flowers. Every piece overlaps the one it grows from, so the
+ * plant reads as one connected object; the variant picks the crown layout.
+ */
+function addPlant(ctx: Ctx) {
+  const { bp, rng } = ctx;
+  const raw = bp.params.raw;
+  const H = bp.height;
+  const W = Math.max(bp.width, bp.length);
+  const bark = { color: rng.pick(["#6b4a32", "#5a3d2b", "#7a5638"]), material: "Кора", roughness: 0.9 };
+  const autumn = /осенн|autumn|fall/i.test(raw);
+  const leaf = autumn ? rng.pick(["#c8742c", "#d19a2a", "#b5512a"]) : bp.params.color ?? rng.pick(["#3f7d3a", "#4c8a3f", "#2f6b3a", "#5a9a45"]);
+  const foliage = { color: leaf, material: "Листва", roughness: 0.85 };
+  const add = (name: string, group: string, opts: PlantPart) =>
+    push(ctx, part(ctx.id(), name, { ...opts, role: "structure", group }));
+
+  if (/цвет|роз|тюльпан|ромашк|подсолнух|flower|rose/i.test(raw)) {
+    const sunflower = /подсолнух|sunflower/i.test(raw);
+    const potH = sunflower ? 0 : H * 0.28;
+    if (potH) add("Горшок", "Горшок", { shape: "cylinder", position: [0, potH / 2, 0], size: [H * 0.3, potH, H * 0.3], sides: 18, color: "#b5653a", material: "Керамика", roughness: 0.7 });
+    const stemTop = H * 0.88;
+    add("Стебель", "Стебель", { shape: "cylinder", position: [0, (potH + stemTop) / 2, 0], size: [H * 0.025, stemTop - potH + 0.02, H * 0.025], sides: 8, color: "#4d8a3a", material: "Стебель" });
+    add("Лист", "Стебель", { shape: "capsule", position: [H * 0.06, potH + (stemTop - potH) * 0.45, 0], size: [H * 0.14, H * 0.02, H * 0.06], rotation: [0, 0, -0.5], mirror: "x", color: "#4d8a3a", material: "Листва" });
+    const petal = bp.params.color ?? (sunflower ? "#f2c230" : rng.pick(["#d6455d", "#f2c94c", "#f4f1ea", "#b05cc8", "#e8738f"]));
+    const bloom = H * (sunflower ? 0.22 : 0.16);
+    add("Сердцевина", "Цветок", { shape: "sphere", position: [0, stemTop, 0], size: [bloom * 0.5, bloom * 0.35, bloom * 0.5], color: sunflower ? "#5a3a1c" : "#e0b23a", material: "Цветок" });
+    const count = sunflower ? 14 : rng.pick([5, 6, 8]);
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      add(`Лепесток ${i + 1}`, "Цветок", { shape: "sphere", position: [Math.cos(angle) * bloom * 0.42, stemTop, -Math.sin(angle) * bloom * 0.42], size: [bloom * 0.5, bloom * 0.14, bloom * 0.28], rotation: [0, angle, 0], color: petal, material: "Цветок" });
+    }
+    return;
+  }
+
+  if (/кактус|cactus/i.test(raw)) {
+    const potH = H * 0.22;
+    add("Горшок", "Горшок", { shape: "cylinder", position: [0, potH / 2, 0], size: [H * 0.34, potH, H * 0.34], sides: 18, color: "#b5653a", material: "Керамика" });
+    add("Ствол кактуса", "Кактус", { shape: "capsule", position: [0, potH + (H - potH) / 2 - 0.01, 0], size: [H * 0.2, H - potH, H * 0.2], color: "#4f8d4a", material: "Растение" });
+    add("Отросток", "Кактус", { shape: "capsule", position: [H * 0.15, potH + (H - potH) * 0.55, 0], size: [H * 0.11, H * 0.3, H * 0.11], mirror: "x", color: "#4f8d4a", material: "Растение" });
+    return;
+  }
+
+  if (/куст|bush|shrub/i.test(raw)) {
+    const blobs = rng.int(4, 6);
+    for (let i = 0; i < blobs; i++) {
+      const angle = (i / blobs) * Math.PI * 2 + rng.float(0, 0.6);
+      const r = W * rng.float(0.15, 0.28);
+      const size = W * rng.float(0.45, 0.6);
+      add(`Крона ${i + 1}`, "Куст", { shape: "sphere", position: [Math.cos(angle) * r, size * 0.42, -Math.sin(angle) * r], size: [size, size * 0.85, size], ...foliage });
+    }
+    add("Верх куста", "Куст", { shape: "sphere", position: [0, Math.max(H - W * 0.28, W * 0.3), 0], size: [W * 0.6, W * 0.55, W * 0.6], ...foliage });
+    return;
+  }
+
+  if (/пальм|palm/i.test(raw)) {
+    const trunkH = H * 0.86;
+    const segments = 5;
+    const lean = H * 0.012;
+    for (let i = 0; i < segments; i++) {
+      const h = trunkH / segments;
+      const d = H * (0.07 - i * 0.006);
+      add(`Ствол ${i + 1}`, "Ствол", { shape: "cylinder", position: [i * lean, h * i + h / 2, 0], size: [d, h + 0.05, d], sides: 10, ...bark });
+    }
+    const top: Vec3 = [(segments - 1) * lean, trunkH, 0];
+    const fronds = rng.int(7, 9);
+    const length = H * 0.42;
+    for (let i = 0; i < fronds; i++) {
+      const angle = (i / fronds) * Math.PI * 2;
+      const droop = rng.float(0.35, 0.65);
+      add(`Лист пальмы ${i + 1}`, "Крона", {
+        shape: "capsule",
+        position: [top[0] + Math.cos(angle) * Math.cos(droop) * length / 2, top[1] - Math.sin(droop) * length / 2, top[2] - Math.sin(angle) * Math.cos(droop) * length / 2],
+        size: [length, H * 0.015, H * 0.09],
+        rotation: [0, angle, -droop],
+        ...foliage,
+      });
+    }
+    add("Кокосы", "Крона", { shape: "sphere", position: [top[0], top[1] - H * 0.03, top[2]], size: [H * 0.1, H * 0.08, H * 0.1], color: "#5a4128", material: "Плод" });
+    return;
+  }
+
+  if (/[её]лк|ель(?![а-яё])|сосн|pine|хвойн|\bfir\b|spruce/i.test(raw)) {
+    const trunkH = H * 0.22;
+    add("Ствол", "Ствол", { shape: "cylinder", position: [0, trunkH / 2, 0], size: [H * 0.06, trunkH + 0.1, H * 0.06], sides: 10, ...bark });
+    const tiers = rng.int(3, 5);
+    const base = trunkH * 0.7;
+    const tierH = ((H - base) / tiers) * 1.6;
+    const step = (H - base - tierH) / Math.max(1, tiers - 1);
+    for (let i = 0; i < tiers; i++) {
+      const width = W * (1 - (i / tiers) * 0.7);
+      add(`Ярус хвои ${i + 1}`, "Крона", { shape: "cone", position: [0, base + step * i + tierH / 2, 0], size: [width, tierH, width], sides: 14, color: rng.pick(["#2e5e3b", "#2b5634", "#356b40"]), material: "Хвоя", roughness: 0.85 });
+    }
+    return;
+  }
+
+  // An ordinary broadleaf tree: trunk, two boughs and a clustered crown.
+  const trunkH = H * rng.float(0.4, 0.5);
+  const trunkD = Math.max(0.12, H * 0.07);
+  add("Ствол", "Ствол", { shape: "cylinder", position: [0, trunkH / 2, 0], size: [trunkD, trunkH + 0.2, trunkD], sides: 12, ...bark });
+  add("Ветвь", "Ствол", { shape: "cylinder", position: [trunkD * 1.1, trunkH * 0.95, 0], size: [trunkD * 0.45, H * 0.22, trunkD * 0.45], rotation: [0, 0, -0.6], mirror: "x", sides: 8, ...bark });
+  const crownH = H - trunkH + 0.3;
+  const crownY = H - crownH / 2;
+  add("Крона", "Крона", { shape: "sphere", position: [0, crownY, 0], size: [W * 0.75, crownH, W * 0.75], ...foliage });
+  const lobes = rng.int(3, 5);
+  for (let i = 0; i < lobes; i++) {
+    const angle = (i / lobes) * Math.PI * 2 + rng.float(0, 0.8);
+    const size = Math.min(W * rng.float(0.42, 0.55), crownH * 0.8);
+    add(`Часть кроны ${i + 1}`, "Крона", { shape: "sphere", position: [Math.cos(angle) * W * 0.24, crownY + rng.float(-0.12, 0.12) * crownH, -Math.sin(angle) * W * 0.24], size: [size, size * 0.85, size], ...foliage });
+  }
+}
+
 function addStandaloneBlade(ctx: Ctx) {
   const { bp } = ctx;
   const H = bp.height;

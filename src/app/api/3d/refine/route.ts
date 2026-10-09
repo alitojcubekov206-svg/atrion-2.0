@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/backend/api-auth";
 import { consumeAiQuota } from "@/backend/ai-quota";
 import { reserveGenerationQuota } from "@/backend/generation-quota";
-import { EditNotApplied, isModelRebuild, readEditableConcept } from "@/backend/refinement";
+import { EditNotApplied, readEditableConcept, rebuildPromptFor } from "@/backend/refinement";
 import { refine3DConcept } from "@/backend/ai";
 import {partsProcurement} from "@/shared/procurement";
 
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Выбранная деталь не найдена." }, { status: 400 });
   }
 
-  const quota = await (isModelRebuild(instruction) ? reserveGenerationQuota(userId) : consumeAiQuota(userId));
+  const quota = await (rebuildPromptFor(concept, instruction) ? reserveGenerationQuota(userId) : consumeAiQuota(userId));
   if (!quota.ok) return NextResponse.json({ error: quota.error, code: quota.code }, { status: quota.status });
 
   try {
