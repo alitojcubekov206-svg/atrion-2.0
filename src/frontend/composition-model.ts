@@ -4,6 +4,7 @@ import {ASSETS} from "@/shared/interior/catalog";
 import {detailedAsset, disposeDetailed} from "@/shared/interior/detailed";
 import {buildConceptScene} from "./export-3d";
 import type {LocalModelResult} from "@/shared/design/result";
+import {prepareExportTangents} from "@/shared/interior/export-tangents";
 
 /** Display and export use exactly the same meshes, with center-based transforms. */
 export function buildComposition(result: LocalModelResult): Group {
@@ -27,6 +28,7 @@ export function buildComposition(result: LocalModelResult): Group {
 export async function exportComposition(result: LocalModelResult): Promise<Blob> {
   const root = buildComposition(result);
   try {
+    await prepareExportTangents(root);
     const data = await new GLTFExporter().parseAsync(root, {binary: true});
     if (!(data instanceof ArrayBuffer)) throw new Error("Invalid GLB");
     return new Blob([data], {type: "model/gltf-binary"});

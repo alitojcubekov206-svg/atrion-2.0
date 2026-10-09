@@ -3,6 +3,7 @@ import {GLTFExporter} from "three/examples/jsm/exporters/GLTFExporter.js";
 import {buildConceptScene} from "./export-3d";
 import {detailedAsset,disposeDetailed,surfaceTexture} from "@/shared/interior/detailed";
 import type {LocalModelResult} from "@/shared/design/result";
+import {prepareExportTangents} from "@/shared/interior/export-tangents";
 export type HouseView = {floor: number | null; plan?: boolean; roomId?: string | null};
 
 /** The same detailed furniture is used in the house viewer and its full GLB. */
@@ -41,6 +42,7 @@ export function buildFurnishedHouse(result: LocalModelResult, view: HouseView = 
 export async function exportFurnishedHouse(result: LocalModelResult): Promise<Blob> {
   const root=buildFurnishedHouse(result);
   try {
+    await prepareExportTangents(root);
     const data=await new GLTFExporter().parseAsync(root,{binary:true,onlyVisible:true});
     if(!(data instanceof ArrayBuffer))throw new Error("Invalid GLB");
     return new Blob([data],{type:"model/gltf-binary"});

@@ -24,6 +24,12 @@ test("detailed GLB contains actual triangles, embedded textures and scene bounds
   assert.equal(buffer.readUInt32LE(8),buffer.length);assert.equal(doc.asset.version,"2.0");assert(doc.images.length>0);
   assert(doc.meshes.length>20);assert(doc.accessors.some((a:{count:number})=>a.count>100));
   assert(doc.materials.some((m:{normalTexture?:unknown})=>m.normalTexture), "material surface detail must survive GLB export");
+  for(const mesh of doc.meshes) for(const primitive of mesh.primitives) if(doc.materials[primitive.material].normalTexture) {
+    const tangent=doc.accessors[primitive.attributes.TANGENT];assert(tangent, "normal maps need portable tangent space");
+    assert.equal(tangent.type,"VEC4");assert.equal(tangent.count,doc.accessors[primitive.attributes.POSITION].count);
+    const view=doc.bufferViews[tangent.bufferView],start=28+jsonLength+view.byteOffset;
+    for(let i=0;i<tangent.count;i++) {const v=Array.from({length:4},(_,j)=>buffer.readFloatLE(start+(i*4+j)*4));assert(v.every(Number.isFinite));assert(Math.abs(Math.hypot(...v.slice(0,3))-1)<1e-4);assert.equal(Math.abs(v[3]),1);}
+  }
   for(const view of doc.bufferViews)assert(view.byteOffset+view.byteLength<=doc.buffers[0].byteLength);
   for(const im of doc.images){assert.equal(im.mimeType,"image/png");const v=doc.bufferViews[im.bufferView],start=28+jsonLength+v.byteOffset;assert.equal(buffer.subarray(start+1,start+4).toString(),"PNG");}
   disposeDetailed(model);
