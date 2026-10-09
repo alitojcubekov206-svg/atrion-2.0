@@ -23,6 +23,7 @@ import ParticleField from "@/frontend/components/three/ParticleField";
 import {designPromptTarget} from "@/shared/interior/request";
 import {isLivingConcept,requestedMotion} from "@/shared/living/request";
 import OpenDesignButton from "@/frontend/components/OpenDesignButton";
+import DesignExamples from "@/frontend/components/interior/DesignExamples";
 
 const LivingViewer=dynamic(()=>import("@/frontend/components/interior/LivingViewer"),{ssr:false});
 
@@ -973,7 +974,7 @@ export default function DesignEnginePage() {
             <GenerationReveal trigger={revealKey} />
           </>
         ) : (
-          <div className="relative flex h-full flex-col items-center justify-center overflow-y-auto px-5 py-8">
+          <div className="relative flex h-full flex-col items-center overflow-y-auto px-5 py-8">
             <ParticleField layer="absolute" density="subtle" />
             {!panelOpen && (
               <button
@@ -988,7 +989,7 @@ export default function DesignEnginePage() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative flex w-full max-w-2xl flex-col items-center"
+              className="relative my-auto flex w-full max-w-3xl shrink-0 flex-col items-center"
             >
               <div className="holo-ring mb-6 hidden sm:block" />
               <p className="hud-chip rounded-full px-3 py-1 text-[10px] text-[#a78bfa]/90">
@@ -1022,6 +1023,7 @@ export default function DesignEnginePage() {
                   Дальше можно править мышью или голосом: «добавь куб», «удали крышу»,
                   «покрась в синий», «разбери».
                 </p>
+                <DesignExamples disabled={loading}/>
               </div>
             </motion.div>
           </div>
