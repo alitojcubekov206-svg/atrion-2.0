@@ -7,7 +7,8 @@
 import { buildFromPlan, planFor } from "@/backend/procedural-3d";
 import { matchParts } from "@/backend/gen/match";
 import { builderOwnsGeometry, generateAIGeometry, pickBetterGeometry, type JsonRequester } from "@/backend/gen/ai-geometry";
-import type { Blueprint } from "@/backend/gen/blueprint";
+import { lanesIn, type Blueprint } from "@/backend/gen/blueprint";
+import { bridgeEditPrompt } from "@/backend/refinement";
 import { interiorCutHeight, partsBounds } from "@/shared/geometry";
 import { connectedGroups, sanitizeParts } from "@/backend/gen/validate";
 
@@ -220,6 +221,16 @@ const CASES: Case[] = [
       check(`«${prompt}» [${variant}] has ${want} lanes of at least 3 m`, lanes === want && laneWidth >= 3, `${lanes} × ${laneWidth.toFixed(2)} m`);
     }
   }
+  // Everyday wordings that used to leave the default width.
+  for (const [prompt, want] of [["4-х полосный мост", 4], ["6-ти полосный мост", 6], ["6ти полосный мост", 6], ["мост с шестью полосами", 6], ["мост с четырьмя полосами", 4], ["мост в 6 рядов", 6], ["шестирядный мост", 6]] as const) {
+    check(`«${prompt}» has ${want} lanes`, lanesOf(prompt, "w").lanes === want, String(lanesOf(prompt, "w").lanes));
+  }
+  const twoLane = buildFromPlan(planFor("мост на 2 полосы", "edit").blueprint);
+  for (const [instruction, want] of [["сделай 6-ти полосным", 6], ["сделай с шестью полосами", 6], ["сделай в 4 ряда", 4], ["сделай 6 полос", 6]] as const) {
+    const prompt = bridgeEditPrompt(twoLane, instruction);
+    check(`editing a bridge with «${instruction}» asks for ${want} lanes`, prompt !== null && lanesIn(prompt) === want, prompt ?? "not a lane edit");
+  }
+  check("«добавь ряд фонарей» on a bridge is not a lane edit", bridgeEditPrompt(twoLane, "добавь ряд фонарей") === null);
 
   const looks = new Set<string>();
   for (let v = 0; v < 8; v++) {

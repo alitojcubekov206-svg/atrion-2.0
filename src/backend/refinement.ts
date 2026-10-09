@@ -43,7 +43,8 @@ export function isModelRebuild(instruction: string): boolean {
  * asking an AI to move boxes. Returns the prompt to build, or null.
  */
 export function bridgeEditPrompt(concept: ThreeDConcept, instruction: string): string | null {
-  if (!/полос|\blanes?\b/i.test(instruction)) return null;
+  // "в 4 ряда" counts; "добавь ряд фонарей" does not.
+  if (!/полос|\blanes?\b/i.test(instruction) && !lanesIn(instruction)) return null;
   const names = concept.parts.map((p) => p.name);
   const deck = concept.parts.find((p) => p.name === "Проезжая часть");
   if (!deck) return null;
