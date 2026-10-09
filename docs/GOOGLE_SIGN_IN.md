@@ -4,9 +4,9 @@
 
 ## Активация владельцем проекта
 
-1. Создать OAuth-клиент типа **Web application** в [Google Cloud](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid). Настроить название приложения, email поддержки и согласие OAuth; для тестового режима добавить тестовых пользователей.
+1. Создать OAuth-клиент типа **Web application** в [Google Cloud](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid). Настроить название приложения, email поддержки и согласие OAuth. Atrion использует только Sign in with Google (имя/email/идентификатор): [исключение Google для базового входа](https://support.google.com/cloud/answer/15549945) позволяет входить без списка тестовых пользователей даже в режиме Testing. Дополнительные права Gmail/Drive не запрашиваются.
 2. В **Authorized JavaScript origins** добавить `https://atrion-2-0.vercel.app`. Для локальной проверки добавить `http://localhost:3109`. GIS использует popup и callback JavaScript, серверный redirect URI и client secret здесь не нужны.
-3. На проверенной отдельной ветке PostgreSQL применить только добавочную схему `prisma/add-google-auth.sql`, затем эту же схему к базе проекта. Существующие таблицы/пароли не меняются. Не использовать `prisma db push` для рабочей базы.
+3. Перед применением проверить целевую базу скриптом ниже и согласовать только добавочную схему `prisma/add-google-auth.sql`. При наличии доступа к отдельной ветке PostgreSQL предварительно проверить SQL на ней. Схема явно использует `public`, ограничивает ожидание блокировки пятью секундами и время SQL-команды тридцатью секундами; существующие таблицы/пароли не меняются. Не использовать `prisma db push` для рабочей базы.
 4. На Vercel задать `GOOGLE_CLIENT_ID` полученным публичным ID вида `….apps.googleusercontent.com`. После проверки таблицы задать `GOOGLE_AUTH_ENABLED=true` и сделать новый deploy. Не включать флаг для preview, пока его БД/домен не настроены.
 5. Проверить реальным Google-аккаунтом: новая регистрация, повторный вход, выход, вход в существующий email-аккаунт, доступ только к своим проектам. Client ID не секрет; OAuth secret и ID-токены не публиковать.
 
