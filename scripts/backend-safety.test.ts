@@ -117,13 +117,14 @@ function post(path: string, body: unknown) {
 }
 
 test("direct design API generates without project tables or worker and authenticates export", async () => {
-  const body = {scene: newScene(), prompt: "Спальня 4×5 метров с кроватью и шкафом"};
+  const body = {scene: newScene(), prompt: "Современная спальня 4×5 м, кровать и шкаф, реши сам"};
   assert.equal((await inRequest(()=>designPreview(post("/api/design/preview",body)),"invalid")).result.status,401);
   assert.equal((await inRequest(()=>designExport(post("/api/design/export",{scene:newScene()})),"invalid")).result.status,401);
   user.threeDGenerations=5000;
   const {result}=await inRequest(()=>designPreview(post("/api/design/preview",body)));
   const data=await result.json(); assert.equal(result.status,200,JSON.stringify(data));
-  assert.equal(data.kind,"interior"); assert(data.scene.objects.length>0); assert(data.procurement.items.length>0);
+  assert.equal(data.kind,"interior"); assert.equal(data.scene.width,4); assert.equal(data.scene.length,5);
+  assert.deepEqual(data.scene.objects.map((o: {assetId: string})=>o.assetId).sort(),["bed_double","wardrobe_double"]); assert(data.procurement.items.length>0);
   assert.equal(user.threeDGenerations,5001);
   const invalid=(await inRequest(()=>designExport(post("/api/design/export",{scene:{}})))).result;
   assert.equal(invalid.status,400);

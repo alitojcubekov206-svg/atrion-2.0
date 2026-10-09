@@ -74,6 +74,7 @@ function requestedColor(clause: string) {
   return entry ? entry[1] || entry[0].exec(clause)![0] : undefined;
 }
 const ROOM_DEFAULTS: [RegExp, string, string[]][] = [[/спальн|bedroom/i, "bedroom", ["bed_double", "wardrobe_double"]], [/гостин|living\s*room/i, "living", ["sofa_compact", "table_coffee"]], [/кабинет|\boffice\b/i, "office", ["desk_work", "chair_simple"]]];
+const DEFAULT_DECISION = /^(?:на\s+(?:твой|ваш|свой)\s+вкус|(?:выбери|реши|подбери|придумай|решай)\s+сам(?:а|остоятельно)?|на\s+усмотрение|не\s+знаю|you\s+decide)$/i;
 /** Explicit, limited offline commands; unsupported language must not look successful. */
 export function localPlan(prompt: string, scene: InteriorScene, editing: boolean) {
   const actions: Record<string, unknown>[] = [];
@@ -86,6 +87,7 @@ export function localPlan(prompt: string, scene: InteriorScene, editing: boolean
   let intent = "add", excluding = false, namedFurniture = false;
   // Do not split decimal measurements. Carry a verb across a coordinated list.
   for (const clause of prompt.split(/[!?;\n]|(?<!\d)\.(?!\d)|,(?!\d)|\s+(?:и|and)\s+/i).filter(s => s.trim())) {
+    if (DEFAULT_DECISION.test(clause.trim())) continue;
     if (/убер|удал|remove|delete/i.test(clause)) intent = "remove";
     else if (/перестав|передвин|перемест|\bmove/i.test(clause)) intent = "move";
     else if (/поверн|rotate/i.test(clause)) intent = "rotate";

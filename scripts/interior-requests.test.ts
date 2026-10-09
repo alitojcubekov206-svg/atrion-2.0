@@ -52,6 +52,15 @@ test("bare room names get defaults and an explicit empty room stays empty", asyn
   assert.equal((await designWithPlanner(newScene(), "Пустая спальня", false, 0)).scene.objects.length, 0);
 });
 
+test("default decision phrases preserve room furniture without hiding unsupported requests", async () => {
+  for (const decision of ["реши сам", "Подбери сам", "на твой вкус", "you decide"]) {
+    const {scene} = await designWithPlanner(newScene(), `Спальня 4×5 м, ${decision}`, false, 0);
+    assert.deepEqual(scene.objects.map(o => o.assetId).sort(), ["bed_double", "wardrobe_double"]);
+  }
+  assert.throws(() => localPlan("Спальня, реши сам, добавь телепорт", newScene(), false), /Не распознана часть/);
+  assert.throws(() => localPlan("реши сам", newScene(), true), /Не удалось распознать команду/);
+});
+
 test("catalog commands preserve exact furniture types, counts and per-item colors", () => {
   const plan = localPlan("Гостиная: красный диван, синий пуф, обеденный стол и два белых стула", newScene(8, 8), false);
   const added = plan.actions.filter(a => a.type === "ADD_OBJECT");
