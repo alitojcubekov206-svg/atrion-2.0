@@ -38,6 +38,7 @@ import {
 } from "@/backend/gen/details";
 import { describeBlueprint, planFromPrompt, type Blueprint } from "@/backend/gen/blueprint";
 import { buildLivingAnatomy, fitLivingDimensions, hasLivingAnatomy } from "./living-anatomy";
+import {rocketParts} from "./rocket";
 
 /** The main mass, once it exists — everything else anchors to this. */
 type Body = {
@@ -136,6 +137,7 @@ function fitExplicitSize(bp: Blueprint, parts: ModelPart[]): ModelPart[] {
 
 /** Geometry for one blueprint, before grounding — reused for room furniture. */
 function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
+  if(bp.kind==="aircraft"&&bp.matched.includes("ракета")&&/ракет|rocket|носител|баллистич/i.test(bp.prompt))return rocketParts(bp);
   const ctx: Ctx = {
     bp,
     rng: bp.rng,

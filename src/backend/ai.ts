@@ -10,11 +10,14 @@ import type {
   StarterKit,
   ThreeDConcept,
 } from "@/shared/types";
-import { buildFromPlan, buildFromPrompt, detectCategory, planFor } from "@/backend/procedural-3d";
+import { buildFromPrompt, detectCategory, planFor } from "@/backend/procedural-3d";
 import { builderOwnsGeometry, generateAIGeometry, pickBetterGeometry } from "@/backend/gen/ai-geometry";
 import { matchParts } from "@/backend/gen/match";
 import { dimensionsOf, primitiveCount, structureFromGroups } from "@/shared/geometry";
 import { sanitizeParts, scoreParts } from "@/backend/gen/validate";
+import {generationPlan} from "./generation-request";
+import {buildFromBlueprint} from "./gen/build";
+import {DesignError} from "@/shared/design/validation";
 
 const hasKey = () => Boolean(primaryTextProvider());
 
@@ -481,7 +484,7 @@ function mock3DInterview(category = "product"): InterviewQuestion[] {
   if (["building", "landmark", "house", "school", "office", "hospital", "tower", "stadium", "bridge"].includes(category)) {
     return [
       { id: "dimensions", question: "Какая основная длина объекта нужна?", options: ["12 м", "30 м", "60 м"] },
-      { id: "floors", question: "Сколько этажей / уровней?", options: ["1–2", "3–5", "Высотное"] },
+      { id: "floors", question: "Сколько этажей / уровней?", options: ["1 этаж", "2 этажа", "3 этажа", "6 этажей"] },
       { id: "material", question: "Материалы?", options: ["Бетон", "Стекло+сталь", "Дерево"] },
       { id: "budget", question: "Бюджет ориентир?", options: ["До 200 000", "200к–1млн", "Более 1 млн"] },
       { id: "detail", question: "Уровень детализации?", options: ["Силуэт", "Средний", "Максимум"] },
@@ -531,8 +534,9 @@ export async function generate3DModel(
   answers: { question: string; answer: string }[] = [],
   options: { variant?: string } = {}
 ): Promise<ConceptGeneration> {
-  const { blueprint: plan } = planFor(prompt, options.variant);
-  const baseline = withAnswers(buildFromPlan(plan), answers);
+  const { blueprint: plan } = generationPlan(prompt, answers, options.variant);
+  if(plan.kind==="product"&&!hasKey())throw new DesignError("Не распознан основной объект. Уточните, что построить. Неизвестный объект не заменяется случайной фигурой.",422,"GENERATION_SUBJECT_UNKNOWN");
+  const baseline = withAnswers(buildFromBlueprint(plan), answers);
   const notes: string[] = [];
 
   if (!hasKey()) {
@@ -592,6 +596,7 @@ ${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- �
     }
   }
 
+  if(plan.kind==="product"&&!geometry)throw new DesignError("AI не смог построить этот объект. Уточните его форму и размеры; случайная модель не создана.",502,"GENERATION_GEOMETRY_UNAVAILABLE");
   const picked = pickBetterGeometry(baseline, geometry, plan);
   const report = picked.match ?? matchParts(plan, picked.concept.parts);
   if (builderOwned) {

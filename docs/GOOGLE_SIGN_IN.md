@@ -2,6 +2,8 @@
 
 На `/register` и `/login` добавлена кнопка Google Identity Services. При отсутствии настроек она отключена и показывает «Вход через Google ещё не подключён». Обычная регистрация и вход по email остаются доступны.
 
+По запросу пользователя кнопка использует тёмную тему SDK `filled_black`, общую для входа и регистрации. Это [поддерживаемое оформление Google](https://developers.google.com/identity/gsi/web/reference/js-reference#theme); проверки аккаунта и сессии не меняются.
+
 ## Активация владельцем проекта
 
 1. Создать OAuth-клиент типа **Web application** в [Google Cloud](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid). Настроить название приложения, email поддержки и согласие OAuth. Atrion использует только Sign in with Google (имя/email/идентификатор): [исключение Google для базового входа](https://support.google.com/cloud/answer/15549945) позволяет входить без списка тестовых пользователей даже в режиме Testing. Дополнительные права Gmail/Drive не запрашиваются.

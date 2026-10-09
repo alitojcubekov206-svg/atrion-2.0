@@ -27,6 +27,7 @@ next-env.d.ts
 
 /.backend-tests/
 /.local-ai/
+/.datasets/
 
 # agent skills are installed locally, not shipped with the app
 /.claude/skills/

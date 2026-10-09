@@ -8,13 +8,13 @@ import {buildFurnishedHouse,type HouseView} from "@/frontend/house-model";
 import {disposeDetailed} from "@/shared/interior/detailed";
 import ObjectGizmo,{type PlacementMode,type ObjectPose} from "./ObjectGizmo";
 
-function Fit({extent,target,plan}:{extent:number;target:[number,number,number];plan:boolean}) {
+function Fit({extent,target,plan,side}:{extent:number;target:[number,number,number];plan:boolean;side:string}) {
   const {camera,size}=useThree();
   useEffect(()=>{
-    const distance=extent*1.5*Math.max(1,size.height/size.width);
-    const direction=plan?new Vector3(0,1,.0001):new Vector3(.85,1.15,1).normalize();
+    const distance=extent*(plan?1.75:2.2)*Math.max(1,size.height/size.width);
+    const direction=plan?new Vector3(0,1,.0001):new Vector3(side==="west"?-1:side==="east"?1:.85,.85,side==="north"?-1:side==="south"?1:.85).normalize();
     camera.position.copy(new Vector3(...target).addScaledVector(direction,distance));camera.lookAt(...target);camera.updateProjectionMatrix();
-  },[camera,size.width,size.height,extent,target,plan]);
+  },[camera,size.width,size.height,extent,target,plan,side]);
   return null;
 }
 export default function HouseViewer({result,view,selected=null,onSelect,mode="select",onCommit}:{result:LocalModelResult;view:HouseView;selected?:string|null;onSelect?:(id:string|null)=>void;mode?:PlacementMode;onCommit?:(id:string,pose:ObjectPose)=>Promise<boolean>}) {
@@ -22,8 +22,9 @@ export default function HouseViewer({result,view,selected=null,onSelect,mode="se
   const model=useMemo(()=>buildFurnishedHouse(result,view),[result,view.floor,view.plan]);
   useEffect(()=>()=>disposeDetailed(model),[model]);
   const doc=result.document!,floor=view.floor===null?undefined:doc.floors[view.floor],room=floor?.rooms.find(r=>r.id===view.roomId);
-  const extent=room?Math.max(room.width,room.depth)*1.25:Math.max(doc.width,doc.depth,view.floor===null?result.concept.dimensions.height:0);
-  const target=useMemo<[number,number,number]>(()=>room?[room.x+room.width/2-doc.width/2,.6,room.z+room.depth/2-doc.depth/2]:[0,view.floor===null?doc.floors.length*doc.floorHeight/3:.4,0],[room,doc,view.floor]);
+  const extent=room?Math.max(room.width,room.depth)*1.25:view.floor===null?Math.max(result.concept.dimensions.width,result.concept.dimensions.depth,result.concept.dimensions.height):Math.max(doc.width,doc.depth);
+  const height=result.concept.dimensions.height;
+  const target=useMemo<[number,number,number]>(()=>room?[room.x+room.width/2-doc.width/2,.6,room.z+room.depth/2-doc.depth/2]:[0,view.floor===null?height/2:.4,0],[room,doc,view.floor,height]);
   return <Canvas key={`${view.floor}/${view.plan}/${view.roomId??"all"}`} shadows dpr={[1,1.5]} gl={{antialias:true,preserveDrawingBuffer:true,toneMapping:ACESFilmicToneMapping,toneMappingExposure:1}} camera={{position:[15,18,20],fov:42,near:.05,far:800}} aria-label="Дом с обстановкой: вращайте мышью, приближайте колёсиком">
     <color attach="background" args={["#19171f"]}/>
     <ambientLight intensity={.65}/>
@@ -34,6 +35,6 @@ export default function HouseViewer({result,view,selected=null,onSelect,mode="se
     {onCommit&&<ObjectGizmo model={model} selected={selected} mode={mode} locked={result.interiors?.flatMap(r=>r.scene.objects).find(o=>o.id===selected)?.locked} offset={[0,0,0]} onCommit={onCommit} onDragState={active=>{dragging.current=active;}}/>}
     {floor?.rooms.filter(r=>!room||r.id===room.id).map(r=><Html key={r.id} center position={[r.x+r.width/2-doc.width/2,.27,r.z+r.depth/2-doc.depth/2]} style={{pointerEvents:"none"}}><span className="whitespace-nowrap rounded-md bg-black/60 px-2 py-1 text-[10px] text-white">{r.name}</span></Html>)}
     <OrbitControls makeDefault target={target} minDistance={1} maxDistance={Math.max(doc.width,doc.depth)*5} maxPolarAngle={Math.PI/2-.02}/>
-    <Fit extent={extent} target={target} plan={view.plan===true}/>
+    <Fit extent={extent} target={target} plan={view.plan===true} side={doc.floors[0].openings.find(o=>o.id==="entry")?.side??"south"}/>
   </Canvas>;
 }

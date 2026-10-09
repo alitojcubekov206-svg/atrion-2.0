@@ -19,7 +19,7 @@ function Cutaway({model, enabled}: {model: Group; enabled: boolean}) {
   const {camera} = useThree();
   useFrame(() => model.traverse(node => {
     const wall = node.userData.wallSide;
-    if (wall) node.visible = !enabled || !(wall === "south" && camera.position.z > 0 || wall === "north" && camera.position.z < 0 || wall === "east" && camera.position.x > 0 || wall === "west" && camera.position.x < 0);
+    if (wall) node.visible = node.userData.keepInCutaway || !enabled || !(wall === "south" && camera.position.z > 0 || wall === "north" && camera.position.z < 0 || wall === "east" && camera.position.x > 0 || wall === "west" && camera.position.x < 0);
   }));
   return null;
 }

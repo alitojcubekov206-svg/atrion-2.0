@@ -634,8 +634,8 @@ const SIZE_DEFAULTS: Record<SizeClass, { length: number; width: number; height: 
   landmark: { length: 40, width: 30, height: 40 },
 };
 
-function baseBlueprint(prompt: string, variant = ""): Blueprint {
-  const params = parsePromptParams(prompt);
+function baseBlueprint(prompt: string, variant = "", overrides: Partial<PromptParams> = {}): Blueprint {
+  const params = {...parsePromptParams(prompt), ...overrides};
   const rng = new Rng(hashString(`${prompt}::blueprint${variant ? `::${variant}` : ""}`));
   const palette = PALETTES[hashString(`${prompt}${variant}`) % PALETTES.length];
 
@@ -840,10 +840,10 @@ const CONTEXT_WORDS = /^(для|for|у|возле|около|рядом|напр
  */
 function splitPrompt(text: string): { subject: string; segments: Segment[] } {
   const separator =
-    /(?<!\d\s?)\s(со|с|на|во|в|для|из|без|у|возле|около|рядом|напротив|позади|под|над|without|with|on|in|for|made of|near|beside|behind|under|above|next to)\s/gi;
+    /(?<!\d\s?)\s(со|с|на|во|в|для|из|без|у|возле|около|рядом|напротив|позади|под|над|without|with|on|in|for|made of|near|beside|behind|under|above|next to)\s|[.;](?!\d)/gi;
   const marks: { index: number; end: number; word: string }[] = [];
   for (const match of text.matchAll(separator)) {
-    marks.push({ index: match.index ?? 0, end: (match.index ?? 0) + match[0].length, word: match[1] });
+    marks.push({ index: match.index ?? 0, end: (match.index ?? 0) + match[0].length, word: match[1]??"with" });
   }
   if (!marks.length) return { subject: text, segments: [] };
 
@@ -1214,8 +1214,8 @@ const ROOM_DEFAULTS: [RegExp, string[]][] = [
  * another feature onto the same object, which is what lets an unseen
  * combination of words produce an unseen model.
  */
-export function planFromPrompt(prompt: string, variant = ""): Blueprint {
-  const blueprint = baseBlueprint(prompt, variant);
+export function planFromPrompt(prompt: string, variant = "", overrides: Partial<PromptParams> = {}): Blueprint {
+  const blueprint = baseBlueprint(prompt, variant, overrides);
   const text = normalizeCounts(prompt.toLowerCase());
   const { subject, segments } = splitPrompt(text);
   const { rng, params } = blueprint;

@@ -32,6 +32,8 @@ import { GET as interiorJob } from "../src/app/api/jobs/[id]/route";
 import {POST as designPreview} from "../src/app/api/design/preview/route";
 import {POST as designExport} from "../src/app/api/design/export/route";
 import {newScene} from "../src/shared/interior/scene";
+import {generationPlan} from "../src/backend/generation-request";
+import {POST as houseGenerate} from "../src/app/api/house/generate/route";
 
 // A local Prisma boundary stub; no real accounts, secrets or database connections.
 type Row = Record<string, any>;
@@ -174,6 +176,45 @@ test("design model keeps authentication, free access and refunds, without extern
   const blocked = (await inRequest(() => designModel(post("/api/design/model", {prompt: "кот сидит"})))).result;
   assert.equal(blocked.status, 200); assert.equal(user.threeDGenerations, 6);
   assert.equal(network.mock.callCount(), 0);
+});
+test("generation applies interview dimensions, floors and roof to actual geometry, without budget leakage",async()=>{
+  const prompt="Дом 8×6 м, один этаж, без гаража, без террасы, без балконов";
+  const answers=[{question:"Габариты?",answer:"12×9 м"},{question:"Сколько этажей?",answer:"3"},{question:"Форма крыши?",answer:"плоская крыша"},{question:"Бюджет?",answer:"999999 м"}];
+  const plan=generationPlan(prompt,answers,"test").blueprint;
+  assert.equal(plan.width,12);assert.equal(plan.length,9);assert.equal(plan.floors,3);assert.equal(plan.roof,"flat");
+  const response=(await inRequest(()=>generate(post("/api/3d/generate",{prompt,answers})))).result;
+  const data=await response.json();assert.equal(response.status,200,JSON.stringify(data));
+  assert.equal(data.diagnostics.source,"procedural");assert.equal(data.diagnostics.kind,"building");
+  const roofs=data.concept.parts.filter((p:ModelPart)=>p.role==="roof");
+  assert(roofs.length>0);assert(roofs.every((p:ModelPart)=>p.shape!=="prism"));
+  assert(data.concept.dimensions.width<20&&data.concept.dimensions.depth<20&&data.concept.dimensions.height>9);
+  assert.equal(user.threeDGenerations,1);assert.equal(user.aiCallsToday,1);
+});
+test("generation returns bounded JSON errors for unknown subjects, malformed dialogue and oversized bodies",async()=>{
+  const unknown=(await inRequest(()=>generate(post("/api/3d/generate",{prompt:"неизвестный квантобублик"})))).result;
+  assert.equal(unknown.status,422);assert.equal((await unknown.json()).code,"GENERATION_SUBJECT_UNKNOWN");
+  assert.equal(user.threeDGenerations,0);assert.equal(user.aiCallsToday,0);
+  for(const answers of [[{question:"Размер?",answer:"x".repeat(501)}],Array.from({length:11},()=>({question:"Размер?",answer:"12 м"}))]) {
+    assert.equal((await inRequest(()=>generate(post("/api/3d/generate",{prompt:"дом",answers})))).result.status,400);
+  }
+  const oversized=new Request("http://localhost/api/3d/generate",{method:"POST",headers:{"content-type":"application/json","content-length":String(1024*1024+1)},body:"{}"});
+  assert.equal((await inRequest(()=>generate(oversized))).result.status,413);
+  assert.equal(user.threeDGenerations,0);
+});
+test("generation APIs contain storage failures and expose a safe request ID instead of throwing",async()=>{
+  const failure=Object.assign(new Error("private connection data must stay private"),{code:"P1001"});
+  stubUser("updateMany",async()=>{throw failure;});
+  const handlers=[generate,designModel,designPreview,composeDesign];
+  for(const handler of handlers) {
+    const response=(await inRequest(()=>handler(post("/api/test",{prompt:"Дом, реши сам",scene:newScene()})))).result;
+    const data=await response.json();assert.equal(response.status,503,JSON.stringify(data));
+    assert.equal(data.code,"GENERATION_STORAGE_UNAVAILABLE");assert.equal(data.requestId,response.headers.get("X-Request-Id"));
+    assert.match(data.requestId,/^[a-f0-9-]{36}$/);assert(!JSON.stringify(data).includes("private connection"));
+    assert.equal(response.headers.get("Cache-Control"),"private, no-store");
+  }
+  env.EMAIL_VERIFICATION_ENABLED="true";let queries=0;
+  stubUser("findUnique",async()=>{if(++queries%2===0)throw failure;return {...user};});
+  assert.equal((await inRequest(()=>houseGenerate(post("/api/house/generate",{prompt:"дом"})))).result.status,503);
 });
 function part(id = "cube", position: [number, number, number] = [0, 1, 0]): ModelPart {
   return { id, name: id, shape: "box", position, size: [2, 2, 2], rotation: [0, 0, 0],

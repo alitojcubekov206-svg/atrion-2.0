@@ -34,8 +34,11 @@ export function roomProcurement(scene: InteriorScene): ProcurementReport {
 }
 export function modelProcurement(result: LocalModelResult): ProcurementReport {
   if (!result.interiors) return partsProcurement(result.concept.parts);
-  // House furniture is rendered as several primitives but purchased as one catalog object.
-  return report([...partsProcurement(result.concept.parts.filter(p => p.role !== "furniture")).items,
+  // A whole door/window block includes its glazing, frames, panels and handles.
+  const fittings=new Set(["opening-frame","window","door","door-detail","door-hardware"]);
+  const blocks:ProcurementItem[]=(result.document?.floors??[]).flatMap(f=>f.openings.map(o=>({name:o.kind==="window"?"Оконный блок":"Дверной блок",material:"Уточнить у поставщика",color:o.kind==="window"?result.document?.architecture?.frameColor??"":result.document?.architecture?.doorColor??"",size:[o.width,o.height,result.document!.wallThickness],quantity:1,unit:"шт"})));
+  return report([...partsProcurement(result.concept.parts.filter(p => p.role !== "furniture" && (!result.document || !fittings.has(p.role??"")) && !/^Шов /.test(p.name))).items,
+    ...blocks,
     ...result.interiors.flatMap(r => furnitureProcurement(r.scene).items)]);
 }
 export function procurementCsv(value: ProcurementReport): string {
