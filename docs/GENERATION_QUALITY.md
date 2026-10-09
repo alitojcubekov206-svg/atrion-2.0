@@ -21,7 +21,7 @@ For houses, check footprint coverage, door access, window openings, room boundar
 
 Schema validity is only the first check. The generator validates numeric limits, bounds and repeated parts, and can request a bounded repair. Missing-part detection uses recognised names and is not a complete semantic assessment.
 
-Supported procedural fallback is labelled. Unknown prompts must not be treated as successfully understood merely because a primitive was returned.
+Recognised subjects ship from the procedural builders, which vary per request; a text model asked for the same words tends to draw the same typical object. Supported procedural fallback is labelled. Unknown prompts must not be treated as successfully understood merely because a primitive was returned.
 
 Heuristic scores, part counts and a successful build do not prove visual quality.
 

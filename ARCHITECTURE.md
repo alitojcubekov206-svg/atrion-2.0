@@ -16,7 +16,7 @@ Frontend code does not import backend modules. Shared modules contain no credent
 
 ## Editable generation
 
-`/api/3d/generate` calls the generation service in `backend/ai.ts`. Configured text inference can propose part dimensions, positions, shapes and materials. `gen/ai-geometry.ts` validates the response and bounds repair work.
+`/api/3d/generate` calls the generation service in `backend/ai.ts`. `builderOwnsGeometry` in `gen/ai-geometry.ts` decides who draws the model: the procedural builder for a recognised subject whose model has every named part and whose prompt left nothing unread (`Blueprint.unread`), configured text inference otherwise. For the AI path, `gen/ai-geometry.ts` validates the response and bounds repair work.
 
 `gen/blueprint.ts`, `prompt-params.ts` and `gen/build.ts` implement supported procedural categories and prompt parameters. Explicit user values override random variants. The response identifies procedural fallback when used.
 

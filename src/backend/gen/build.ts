@@ -290,6 +290,8 @@ function groundClearance(ctx: Ctx): number {
   if (bp.furnitureLegs > 0 && (bp.tabletop || bp.seat)) {
     return bp.tabletop ? bp.height * 0.86 : bp.height * 0.42;
   }
+  // A bed stands on short legs; with no clearance they were skipped altogether.
+  if (bp.furnitureLegs > 0 && bp.mattress) return bp.height * 0.12;
   if (bp.hull) return bp.height * 0.18;
   return 0;
 }
@@ -2252,7 +2254,7 @@ function addRoof(ctx: Ctx) {
   const w = bp.width + overhang * 2;
   const l = bp.length + overhang * 2;
   const rise = bp.height - body.y1;
-  const roofColor = shade(bp.trim, -0.05);
+  const roofColor = bp.roofColor ?? shade(bp.trim, -0.05);
   const base = body.y1;
 
   const eaves = () =>

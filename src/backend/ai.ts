@@ -577,8 +577,8 @@ ${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- �
     (error: unknown) => ({ ok: false as const, error })
   );
 
-  // Bridges ship from their dedicated builder; the AI still writes the metadata.
-  const builderOwned = builderOwnsGeometry(plan);
+  // Recognised subjects ship from their builder; the AI still writes the metadata.
+  const builderOwned = builderOwnsGeometry(plan, baseline.parts);
   let geometry: Awaited<ReturnType<typeof generateAIGeometry>> = null;
   if (!builderOwned) {
     try {
@@ -599,8 +599,10 @@ ${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n") || "- �
   if(plan.kind==="product"&&!geometry)throw new DesignError("AI не смог построить этот объект. Уточните его форму и размеры; случайная модель не создана.",502,"GENERATION_GEOMETRY_UNAVAILABLE");
   const picked = pickBetterGeometry(baseline, geometry, plan);
   const report = picked.match ?? matchParts(plan, picked.concept.parts);
-  if (builderOwned) {
+  if (builderOwned && plan.bridge) {
     notes.push("Мост собран специальным построителем: полосы с разметкой, тротуары, ограждения, опоры и свободный габарит под вантами.");
+  } else if (builderOwned) {
+    notes.push("Модель собрана построителем Atrion: объект распознан, все названные детали на месте, каждая генерация — новый вариант.");
   } else if(!geometry)notes.push("AI не вернул пригодную геометрию; показана процедурная модель, соответствие запросу не подтверждено.");
   if (geometry) {
     notes.push(

@@ -145,16 +145,52 @@ const CASES: Case[] = [
   check("the same variant is reproducible", a === c);
 }
 
-/* ---------------- bridges ship from their builder, everything else from the AI ---------------- */
+/* ---------------- recognised subjects ship from their builder; unknown and unreadable ones from the AI ---------------- */
 {
-  const owns = (prompt: string) => builderOwnsGeometry(planFor(prompt, "owner").blueprint);
+  const owns = (prompt: string) => {
+    const blueprint = planFor(prompt, "owner").blueprint;
+    return builderOwnsGeometry(blueprint, buildFromPlan(blueprint).parts);
+  };
   for (const prompt of ["сделай мост", "Мост через реку", "мостик через ручей", "виадук", "эстакада", "пешеходный мост", "Golden Gate bridge"]) {
     check(`«${prompt}» is built by the bridge builder`, owns(prompt));
   }
-  for (const prompt of ["мостовой кран", "дом у моста", "капитанский мостик корабля", "кот на мосту", "дом", "машина"]) {
+  for (const prompt of [
+    "дом", "двухэтажный дом с гаражом", "дом на 3 этажа", "дом с красной крышей", "школа", "больница", "торговый центр", "небоскрёб",
+    "замок", "юрта", "ракета", "космический корабль", "самолёт", "вертолёт", "машина", "синий грузовик с прицепом", "поезд", "мотоцикл",
+    "лодка", "стол", "обеденный стол на 6 человек", "стол для кухни", "стул", "диван", "кровать", "шкаф", "пианино", "гитара",
+    "кот", "собака", "дракон", "человек", "рыцарь в доспехах с мечом", "робот", "дерево", "холодильник", "ноутбук",
+  ]) {
+    check(`«${prompt}» is built by our builder`, owns(prompt));
+  }
+  for (const prompt of ["мостовой кран", "дом у моста", "капитанский мостик корабля", "кот на мосту", "дом в форме гриба", "дом с садом", "дом рядом с торговым центром", "абракадабра"]) {
     check(`«${prompt}» is left to the AI`, !owns(prompt));
   }
   check("«мостовой кран» is not planned as a bridge", planFor("мостовой кран", "x").blueprint.bridge === null);
+  check("an unread add-on is recorded", planFor("дом с садом", "x").blueprint.unread.join() === "садом", planFor("дом с садом", "x").blueprint.unread.join());
+  check("a purpose is not an unread add-on", planFor("стол для кухни", "x").blueprint.unread.length === 0);
+
+  // A builder model that lacks a part the prompt names goes to the AI.
+  const car = planFor("машина с колёсами", "owner").blueprint;
+  const wheelless = buildFromPlan(car).parts.filter((item) => !/колес|колёс|wheel|шин|диск/i.test(item.name));
+  check("a builder model missing a named part is left to the AI", !builderOwnsGeometry(car, wheelless));
+
+  const bed = planFor("кровать", "owner").blueprint;
+  check("a bed stands on its legs", matchParts(bed, buildFromPlan(bed).parts).missing.length === 0, matchParts(bed, buildFromPlan(bed).parts).missing.join(","));
+}
+
+/* ---------------- house colours: named roof colours, and a different look per generation ---------------- */
+{
+  const roofOf = (prompt: string, variant = "colour") => {
+    const blueprint = planFor(prompt, variant).blueprint;
+    const roof = buildFromPlan(blueprint).parts.find((item) => /кровл|крыш|скат/i.test(item.name) && item.role !== "detail");
+    return { blueprint, roof: roof?.color };
+  };
+  const red = roofOf("Белый дом с красной крышей");
+  check("«Белый дом с красной крышей» has white walls", red.blueprint.primary === "#eeeae2", red.blueprint.primary);
+  check("«Белый дом с красной крышей» has a red roof", red.roof === "#c1462f", red.roof);
+  check("«дом под зелёной кровлей» has a green roof", roofOf("дом под зелёной кровлей").roof === "#3f8a5b", roofOf("дом под зелёной кровлей").roof);
+  const looks = new Set(["a", "b", "c", "d", "e", "f", "g", "h"].map((variant) => `${roofOf("дом", variant).blueprint.primary}/${roofOf("дом", variant).roof}`));
+  check("plain houses get different facade and roof colours", looks.size >= 4, [...looks].join(" "));
 }
 
 /* ---------------- building types, lanes, and a new look on every generation ---------------- */

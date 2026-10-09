@@ -12,13 +12,13 @@ Password changes invalidate previous sessions through the password fingerprint. 
 
 ## General 3D generation
 
-`POST /api/3d/generate` accepts a prompt and returns a validated concept. A configured text model can generate part geometry. Supported procedural builders supply an explicitly labelled fallback when usable AI geometry is unavailable.
+`POST /api/3d/generate` accepts a prompt and returns a validated concept. Recognised subjects — buildings, bridges, towers, vehicles, aircraft, boats, furniture, lamps, devices, appliances, animals, people, robots and plants — are built by the procedural builders whenever their model contains every part the prompt names; each request gets a new random variant. A configured text model generates the geometry for unknown subjects and for prompts with a piece no builder rule can read (an unknown add-on, an unusual shape, or a scene such as "a cat on a bridge"). When usable AI geometry is unavailable, the procedural model is returned as an explicitly labelled fallback. The text model still writes the metadata for builder models.
 
 Part dimensions are full sizes in metres before rotation. Part rotations use XYZ radians. Repetition, mirroring and custom meshes must be reflected in bounds, editing and quantities.
 
 Explicit dimensions and object counts take precedence over generated variations. Storey modifiers describe building height, rather than the number of buildings. New models initially appear whole; section view is enabled by the user.
 
-Bridge prompts use the dedicated bridge builder. Unknown objects must not be presented as successfully understood merely because a generic primitive can be returned.
+Bridge prompts always use the dedicated bridge builder. A colour named on the roof ("with a red roof") colours the roof; unnamed houses vary their facade and roof colours. Unknown objects must not be presented as successfully understood merely because a generic primitive can be returned.
 
 ## Design and interiors
 

@@ -201,6 +201,13 @@ export type Blueprint = {
   detail: number;
   /** Words the lexicon recognised — surfaced in the generation log. */
   matched: string[];
+  /**
+   * Prompt pieces no rule could read ("с садом", "в форме гриба", "у моста"). A
+   * parametric model would silently drop them, so such prompts go to the AI.
+   */
+  unread: string[];
+  /** Roof colour, when the prompt or the house look sets one; otherwise the trim's. */
+  roofColor?: string;
   /** Objects whose silhouette the generic body cannot make get their own builder. */
   form?: "yurt" | "helicopter" | "castle" | "spaceship" | "saucer" | "pyramid" | "piano" | "guitar";
   /** Car body: decides cabin length, its place and the open bed of a pickup. */
@@ -796,6 +803,7 @@ function baseBlueprint(prompt: string, variant = "", overrides: Partial<PromptPa
     emissiveAccent: false,
     detail: 1,
     matched: [],
+    unread: [],
   };
 }
 
@@ -861,7 +869,7 @@ export function seatCount(raw: string): number | undefined {
 }
 
 type SegmentMode = "attach" | "negate" | "material" | "context";
-type Segment = { text: string; mode: SegmentMode };
+type Segment = { text: string; mode: SegmentMode; word: string };
 
 /** Purpose and surroundings: "будка для собаки" is not a dog, "дом у моста" is not a bridge. */
 const CONTEXT_WORDS = /^(для|for|у|возле|около|рядом|напротив|позади|под|над|near|beside|behind|under|above|next to)$/i;
@@ -887,6 +895,7 @@ function splitPrompt(text: string): { subject: string; segments: Segment[] } {
     const context = CONTEXT_WORDS.test(word) && !/крыш|кровл|roof/i.test(segment);
     return {
       text: segment,
+      word,
       mode: context ? "context" : word === "без" || word === "without" ? "negate" : word === "из" || word === "made of" ? "material" : "attach",
     };
   });
@@ -1064,7 +1073,25 @@ function varyHouse(b: Blueprint) {
   if (rng.chance(0.3)) b.garage = true;
   b.width = Math.max(b.width, rng.pick([10, 11, 12, 13]));
   b.length = Math.max(b.length, rng.pick([8, 9, 10, 11]));
+  // Pale walls under a dark-grey roof every time read as the same house. A
+  // colour the prompt names is applied later and still wins.
+  const look = rng.pick(HOUSE_LOOKS);
+  b.primary = look.walls;
+  b.secondary = shade(look.walls, -0.12);
+  b.roofColor = look.roof;
 }
+
+/** Facade and roof pairs seen on real streets. */
+const HOUSE_LOOKS: { walls: string; roof: string }[] = [
+  { walls: "#f1ece2", roof: "#a9503a" }, // white, terracotta tiles
+  { walls: "#e3cfa8", roof: "#3a3d42" }, // sand, graphite
+  { walls: "#b8674a", roof: "#33302d" }, // brick, dark roof
+  { walls: "#dde5dc", roof: "#3d5a45" }, // pale sage, green metal
+  { walls: "#b98a5e", roof: "#4a3426" }, // timber, brown shingles
+  { walls: "#ece6da", roof: "#3f5670" }, // cream, slate blue
+  { walls: "#9aa4ad", roof: "#2b2e33" }, // cool grey, near-black
+  { walls: "#f3e3c3", roof: "#8c3b2e" }, // butter yellow, red tiles
+];
 
 const LANE_WORDS: Record<string, number> = {
   двух: 2, трёх: 3, трех: 3, четырёх: 4, четырех: 4, пяти: 5, шести: 6, восьми: 8, десяти: 10, двенадцати: 12,
@@ -1201,10 +1228,13 @@ function negateRule(b: Blueprint, rule: Rule, negated: Set<string>) {
   b.matched.push(`без: ${rule.label}`);
 }
 
-function applySegment(b: Blueprint, segment: Segment, fullText: string, negated: Set<string>) {
+/** Applies one add-on; false when no rule could read it, so the builder would drop it. */
+function applySegment(b: Blueprint, segment: Segment, fullText: string, negated: Set<string>): boolean {
+  let read = false;
   if (segment.mode === "negate" && /крыш|кровл|roof/i.test(segment.text)) {
     b.roof = "none";
     negated.add("roof");
+    read = true;
   }
 
   for (const rule of RULES) {
@@ -1215,23 +1245,36 @@ function applySegment(b: Blueprint, segment: Segment, fullText: string, negated:
 
     if (segment.mode === "negate") {
       negateRule(b, rule, negated);
+      read = true;
     } else if (rule.surface) {
       // "дом из кирпича" is a brick house; "дом с металлической крышей" is not metal.
       if (segment.mode === "material") {
         rule.apply(b, count);
         b.matched.push(rule.label);
       }
+      read = true;
     } else if ((b.kind === "room" || b.kind === "building") && rule.furnishing) {
       addFurnishing(b, rule, segment.text);
+      read = true;
     } else if (rule.attach) {
       if (rule.attachWhen && !rule.attachWhen.test(segment.text)) continue;
       rule.attach(b, count);
       b.matched.push(`+${rule.label}`);
+      read = true;
     } else if (!rule.kind) {
       mergeAddon(b, rule, count);
       b.matched.push(`+${rule.label}`);
+      read = true;
     }
   }
+  return read;
+}
+
+/** Numbers, colours, materials, roofs, seats and styles read elsewhere: "на 3 этажа", "8 полос", "на 6 персон". */
+function readByParams(text: string): boolean {
+  const p = parsePromptParams(text);
+  return [p.width, p.depth, p.height, p.size, p.floors, p.count, p.roof, p.material, p.color, seatCount(text)].some((value) => value !== undefined) ||
+    /полос|\blanes?\b|стил|\bstyle\b/i.test(text);
 }
 
 /** What a room gets when the prompt named none. */
@@ -1257,11 +1300,19 @@ export function planFromPrompt(prompt: string, variant = "", overrides: Partial<
 
   applySubject(blueprint, subject, text);
   for (const segment of segments) {
-    if (segment.mode === "context") continue;
+    const piece = segment.text.trim();
+    if (segment.mode === "context") {
+      // A purpose ("для кухни") leaves the shape alone; a place ("у моста", "рядом с ТЦ") is a scene.
+      if (piece && !/^(для|for)$/i.test(segment.word)) blueprint.unread.push(piece);
+      continue;
+    }
     // Nothing in the main phrase said what this is — let the rest decide.
     if (blueprint.kind === "product" && segment.mode === "attach") applySubject(blueprint, segment.text, text);
-    else applySegment(blueprint, segment, text, negated);
+    else if (!applySegment(blueprint, segment, text, negated) && piece && !readByParams(piece)) blueprint.unread.push(piece);
   }
+  // "с красной крышей", "под зелёной кровлей": the colour belongs to the roof.
+  const roofColor = segments.map((segment) => /крыш|кровл|roof/i.test(segment.text) ? colorIn(segment.text) : undefined).find(Boolean);
+  if (roofColor) blueprint.roofColor = roofColor;
 
   // "дом с мебелью" / "с интерьером": a house you can look into.
   if (

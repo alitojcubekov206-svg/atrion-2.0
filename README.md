@@ -38,7 +38,7 @@ See the [walkthrough](docs/DEMO.md) for a short presentation sequence. Test-acco
 
 ## How generation works
 
-The editable workflow converts a prompt into a structured description of parts, validates the geometry and renders a 3D scene. A configured text model can propose the geometry; supported procedural builders provide an explicitly identified fallback. The fast interior workflow uses local planning rules and a furniture catalog.
+The editable workflow converts a prompt into a structured description of parts, validates the geometry and renders a 3D scene. Procedural builders draw recognised subjects (houses, schools, bridges, vehicles, aircraft, furniture, animals, people and more) with a new variant on every request; a configured text model draws unknown or unusual objects, and the procedural model is an explicitly identified fallback when the AI fails. The fast interior workflow uses local planning rules and a furniture catalog.
 
 An optional realistic mode runs an image-to-mesh pipeline on a separate GPU service. Its output is a textured mesh, with different editing capabilities from a structured house or room.
 

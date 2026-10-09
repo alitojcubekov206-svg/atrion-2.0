@@ -327,13 +327,26 @@ function toResult(
  * without a usable road and with parts in odd places, and since valid AI
  * output always ships, users never saw the builder's bridge.
  */
-export function builderOwnsGeometry(plan: Blueprint): boolean {
-  // Only when the bridge is the object itself: "дом у моста" is a house.
-  return Boolean(plan.bridge) && BRIDGE_HEAD.test(plan.prompt);
+/**
+ * Our builders make the geometry for every subject they recognise — houses,
+ * schools, bridges, vehicles, aircraft, boats, furniture, animals, people… —
+ * when their model has every part the request names. A text model asked for
+ * "дом" draws its one typical house each time; the builders vary per request.
+ * The AI draws unknown objects and prompts with a piece no rule can read
+ * ("дом в форме гриба", "кот на мосту"), which a builder would silently drop.
+ */
+export function builderOwnsGeometry(plan: Blueprint, parts?: ModelPart[]): boolean {
+  // The bridge is the object itself: "дом у моста" is a house by a bridge.
+  if (plan.bridge && BRIDGE_HEAD.test(plan.prompt)) return true;
+  if (plan.kind === "product" || plan.unread.length) return false;
+  // A bridge that is not the object ("капитанский мостик корабля") is not drawn by any builder.
+  if (BRIDGE_WORD.test(plan.prompt)) return false;
+  return !parts || matchParts(plan, parts).missing.length === 0;
 }
 
 /** "мост", "мостик", "виадук", "эстакаду", "bridge" — not "моста", "мосту". */
 const BRIDGE_HEAD = /(?:^|[^а-яё])(?:мост|мостик|мосты|виадук|путепровод|эстакад[ау])(?![а-яё])|\bbridges?\b/i;
+const BRIDGE_WORD = /мост|виадук|путепровод|эстакад|\bbridges?\b/i;
 
 /**
  * Choose between AI-authored geometry and the parametric baseline.
