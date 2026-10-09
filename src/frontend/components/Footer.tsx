@@ -13,8 +13,8 @@ export default function Footer() {
           <Link href="/legal#terms" className="transition hover:text-fg">
             Условия
           </Link>
-          <Link href="/legal#refund" className="transition hover:text-fg">
-            Возврат средств
+          <Link href="/legal#access" className="transition hover:text-fg">
+            Бесплатный доступ
           </Link>
           <Link href="/legal#cookies" className="transition hover:text-fg">
             Cookies

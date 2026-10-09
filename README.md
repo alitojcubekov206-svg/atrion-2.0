@@ -28,7 +28,7 @@ Atrion 2.0 is an **AI Software Architect** — a SaaS application that transform
 - **3D & animation:** React Three Fiber, drei, Framer Motion
 - **Database:** PostgreSQL via Prisma (Neon on Vercel)
 - **Auth:** JWT sessions with JOSE, bcrypt and email OTP
-- **AI:** Atrion AI Pro (OpenAI-compatible primary provider with optional automatic fallback)
+- **AI:** Atrion AI (OpenAI-compatible primary provider with optional automatic fallback)
 
 ## Getting Started
 
@@ -39,7 +39,7 @@ npm run dev
 
 Copy `.env.example` to `.env` and fill in your keys. **Never commit `.env`.**
 
-## Atrion AI Pro configuration
+## Atrion AI configuration
 
 Atrion keeps the existing OpenAI-compatible settings, so Groq and other compatible
 providers continue to work:
