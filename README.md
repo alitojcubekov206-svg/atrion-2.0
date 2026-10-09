@@ -1,169 +1,100 @@
 # Atrion 2.0
 
-**Дизайн Atrion:** единый редактор `/dashboard/design` и локальная песочница `/playground/interior`. Используется геометрия мебели из FORMA, её отдельный интерфейс удалён. Материалы, шаблоны и границы переноса — [docs/FORMA_INTEGRATION.md](docs/FORMA_INTEGRATION.md).
+**Опишите объект словами — получите редактируемую 3D-модель за минуты.**
 
-**Дизайн интерьера:** новый экран `/dashboard/design` и серверные сцены, мебель, история и очередь. Для запуска нужны новая схема и отдельный worker; инструкция и текущие ограничения — [docs/INTERIOR_DESIGN.md](docs/INTERIOR_DESIGN.md).
+[![CI](https://github.com/alitojcubekov206-svg/atrion-2.0/actions/workflows/ci.yml/badge.svg)](https://github.com/alitojcubekov206-svg/atrion-2.0/actions/workflows/ci.yml)
 
-> **From Idea to Intelligent Architecture**
+🔗 **Демо:** https://atrion-2-0.vercel.app<br>
+🎟️ **Вход без регистрации (для жюри):** https://atrion-2-0.vercel.app/api/auth/demo — создаёт гостевой аккаунт и сразу открывает 3D-студию.
 
-Atrion 2.0 is an **AI Software Architect** — a SaaS application that transforms a raw product idea into a complete, professional technical plan: analysis, interview, architecture, database schema, API design, roadmap, and project scoring.
+*English version below ↓*
 
-## Features
+| Дом с башней и куполом | Спорткар | Спальня 4×5 м |
+|---|---|---|
+| ![Дом](docs/images/generator-house.jpg) | ![Машина](docs/images/generator-car.jpg) | ![Спальня](docs/images/generator-bedroom.jpg) |
 
-- **AI Project Discovery** — analyze an idea: product, audience, problem, competitors, potential
-- **AI Interview Mode** — the AI asks clarifying questions before designing
-- **Project Blueprint** — a full project document (overview, audience, problem, solution)
-- **Architecture Generator** — frontend / backend / database / AI / storage stack
-- **Database Designer** — tables, fields, relationships
-- **API Architect** — endpoint list with descriptions
-- **Roadmap Generator** — phased development plan with time estimates
-- **Project Score** — Innovation / Difficulty / Market Potential / Cost / Risk
-- **AI Critic Mode** — honest criticism, not agreement
-- **Design Engine** — text → fully CAD-editable 3D model (procedural generator + AI-authored geometry per object category — house, character, vehicle, animal, furniture, product, room, and more), with Move/Rotate/Scale on every part, explode view, undo/redo, GLB/STL/OBJ export and voice control
-- **Export System** — Markdown / JSON / PDF
+## Что это
 
-## Tech Stack
+Atrion — браузерная студия, которая превращает обычный текст («двухэтажный дом с башней и аркадой из 6 арок», «мост на 8 полос», «уютная спальня 4×5 м») в 3D-модель из отдельных деталей. Каждую деталь можно двигать, вращать, масштабировать и править через чат или голосом, а результат — скачать для Unity, Blender или 3D-печати.
 
-- **Frontend:** Next.js (App Router), React, TypeScript, Tailwind CSS
-- **3D & animation:** React Three Fiber, drei, Framer Motion
-- **Database:** PostgreSQL via Prisma (Neon on Vercel)
-- **Auth:** JWT sessions with JOSE, bcrypt and email OTP
-- **AI:** Atrion AI (OpenAI-compatible primary provider with optional automatic fallback)
+## Возможности
 
-## Getting Started
+- **Текст → 3D.** Здания (дом, торговый центр, школа, больница, склад, храм и др.) с собственной формой для каждого типа, мосты с учётом числа полос, машины, мебель, комнаты, персонажи и животные.
+- **CAD-редактор.** Move / Rotate / Scale для каждой детали, разнесённый вид, режим «Разрез», undo/redo.
+- **Правки словами.** «Сделай окна шире», «увеличь крышу на 20%» — через чат или голосовые команды.
+- **Дизайн интерьера.** Комнаты, мебель из библиотеки FORMA, отделка; список закупки с выгрузкой в CSV.
+- **Экспорт.** GLB (цвета и материалы, tangents для Unity), STL, OBJ.
+- **Устойчивый AI.** Основной провайдер, резервный провайдер и локальный процедурный генератор — модель появляется, даже если внешний AI недоступен.
+
+## Как это работает
+
+```
+текст → разбор запроса → blueprint (тип, размеры, части) → геометрия
+      → проверка (габариты, связность без «летающих» деталей, всё ли названное есть)
+      → исправление → 3D-сцена
+```
+
+Сервер сам оценивает результат: для каждой модели считаются качество, цельность и соответствие запросу, а пропущенные элементы («колёса», «крыша») возвращаются на доработку. Это видно в панели «Вердикт» на скриншотах.
+
+## Стек
+
+Next.js 15 (App Router) · React 19 · TypeScript · Tailwind CSS · React Three Fiber + drei · three-bvh-csg · Prisma + PostgreSQL (Neon) · JWT (jose) · OpenAI-совместимые AI-провайдеры · Vercel.
+
+## Запуск локально
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Copy `.env.example` to `.env` and fill in your keys. **Never commit `.env`.**
+Без базы и ключей можно открыть песочницу генератора: http://localhost:3000/playground/generator (только в development). Для полного приложения скопируйте `.env.example` в `.env` и заполните значения — подробности в [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) и [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-## Atrion AI configuration
-
-Atrion keeps the existing OpenAI-compatible settings, so Groq and other compatible
-providers continue to work:
-
-```env
-OPENAI_API_KEY="primary-provider-key"
-OPENAI_BASE_URL="https://api.groq.com/openai/v1"
-OPENAI_MODEL="openai/gpt-oss-120b"
-```
-
-For higher availability, use Gemini as the independent second provider. Create
-the key in Google AI Studio:
-
-```env
-AI_FALLBACK_API_KEY="your-gemini-api-key"
-AI_FALLBACK_BASE_URL="https://generativelanguage.googleapis.com/v1beta/openai/"
-AI_FALLBACK_MODEL="gemini-3.8-flash"
-```
-
-Every JSON generation first uses the primary provider. On a network, rate-limit,
-provider, or invalid-JSON failure, Atrion tries the fallback once. If both providers
-are unavailable, generators return their existing local demo fallback where one is
-defined. API keys are server-only and are never logged. This improves resilience but
-does not promise unlimited availability: provider quotas, billing, and service limits
-still apply.
-
-In Vercel, add the six variables above in **Project Settings → Environment Variables**
-for Production (and Preview if required), then redeploy. `OPENAI_BASE_URL` and all
-three `AI_FALLBACK_*` values are optional; without `OPENAI_API_KEY`, AI runs in demo mode.
-
-## Email verification
-
-Off by default (`EMAIL_VERIFICATION_ENABLED="false"`). Registration and
-password checks work without it — it only gates access behind a 6-digit
-email code when turned on.
-
-Sending goes through [Brevo](https://brevo.com) (free tier: 300 emails/day,
-forever), not a custom-domain provider — no domain purchase required. Brevo
-verifies a single sender **email address** (click a confirmation link),
-not a domain, so any real inbox you already own (a Gmail works) is enough:
-
-```env
-BREVO_API_KEY="your-brevo-api-key"
-EMAIL_FROM_ADDRESS="you@example.com"   # the address you verified in Brevo
-EMAIL_FROM_NAME="Atrion"
-EMAIL_VERIFICATION_ENABLED="false"     # flip to "true" only after a real code arrives
-EMAIL_DEV_RETURN_CODE="false"          # только NODE_ENV=development: OTP при сбое доставки
-```
-
-Sign up free, add and verify a sender under **Senders & IP → Senders**, then
-create a key under **SMTP & API → API Keys**. Test with
-`EMAIL_VERIFICATION_ENABLED="false"` and `EMAIL_DEV_RETURN_CODE="true"` first —
-register an account and confirm the code shows up in the email inbox, not
-just the dev fallback — before flipping verification on for real users.
-
-## Effects levels
-
-Decorative motion (cinematic intro, particle fields, route wipes, generation
-reveals) runs at one of three levels stored in the browser
-(`effects` in `src/frontend/settings.ts`): **full**, **lite** (fewer particles,
-lower frame rate, no ripple) and **off**. Phones and low-spec machines start on
-lite via `detectEffectsLevel()`; the OS reduced-motion preference always forces
-off. Users change it in Settings or from the footer toggle. Components read it
-through `useEffects()` in `src/frontend/effects.ts` and must render nothing
-WebGL-related while it is `null` (pre-hydration) or `off`.
-
-## Limits and abuse protection
-
-- Все функции доступны бесплатно, без подписки и тарифных лимитов. Счётчики AI/3D используются для учёта; ошибки возвращают списание однократно.
-- **Генерация 3D** идёт напрямую из текста в геометрию. Путь через изображение
-  и интеграция Modal удалены; персонажи и животные используют обычный генератор.
-- **Сессии** отзываются при смене или восстановлении пароля. При первом выпуске
-  нового формата JWT пользователи должны войти заново; миграция БД не требуется.
-- **Auth endpoints** (login, register, verify, resend, forgot/reset password,
-  account changes) are rate-limited per IP in `src/backend/rate-limit.ts`.
-  The limiter is in-memory per serverless instance - good enough for now,
-  swap in Upstash if it needs to be global.
-- API routes require a verified email when `EMAIL_VERIFICATION_ENABLED="true"`
-  (`requireApiUser` in `src/backend/api-auth.ts`).
-
-Схема находится в `prisma/schema.prisma`; каталога `prisma/migrations/` пока нет.
-Переход на Prisma Migrate с baseline описан в `docs/DEVELOPMENT.md` и должен быть
-выполнен отдельно. До этого `db:deploy` не создаёт схему на пустой базе.
-
-## Project Structure
-
-The code is split into three layers so a frontend and a backend developer can
-work in the same repository without touching the same files. Ownership is
-enforced on pull requests through `.github/CODEOWNERS`.
-
-```
-Atrion 2.0/
-  prisma/              # database schema                           (backend)
-  scripts/             # dev tools: generation report, CSG smoke test
-  src/
-    app/
-      api/             # HTTP endpoints — server only              (backend)
-      **/page.tsx      # routes and screens                       (frontend)
-    backend/           # server-only code, never imported by a client component
-      ai.ts            #   model providers with fallback
-      auth.ts          #   JWT sessions, plans
-      db.ts            #   Prisma client
-      procedural-3d.ts #   entry point of the model generator
-      gen/             #   text → blueprint → geometry, validation & repair
-    frontend/          # browser-only code
-      components/      #   UI, 3D viewport, CAD toolbar, voice panel
-      csg.ts           #   boolean operations on parts
-      export-3d.ts     #   GLB / STL / OBJ writers
-      voice-commands.ts#   speech → scene actions
-    shared/            # used by both sides
-      types.ts         #   the data contract (ModelPart, ThreeDConcept, …)
-      geometry.ts      #   primitive expansion, bounds, palettes
-```
-
-**The rule:** `frontend` never imports from `backend`, and `backend` never
-imports from `frontend`. Anything both sides need lives in `shared`. The two
-sides talk over the HTTP endpoints in `src/app/api` only.
-
-### Dev tools
+Проверки (выполняются и в CI на каждый push):
 
 ```bash
-npx tsx scripts/gen-report.ts          # what each prompt generates, with a summary
-npx tsx scripts/gen-report.ts "фраза"  # inspect one prompt
-npx tsx scripts/csg-smoke.ts           # verify the boolean engine
+npm run test:backend
+npx tsc --noEmit
+npm run build
 ```
 
-Дизайн работает через прямой `/api/design/preview` без worker. В результате доступны список закупки, CSV и экспорт GLB для Unity: [инструкция](docs/UNITY_EXPORT.md).
+## Честно об ограничениях
+
+- Модели — AI-концепты, а не инженерный расчёт: несущие конструкции, нормы и сметы не проверяются.
+- Экспорт GLB проверен загрузчиком геометрии; импорт внутри Unity Editor не тестировался.
+- Риггинг и анимация персонажей в экспорт не входят.
+
+## Документация
+
+[SPEC.md](SPEC.md) — поведение · [ARCHITECTURE.md](ARCHITECTURE.md) — устройство · [docs/GENERATION_QUALITY.md](docs/GENERATION_QUALITY.md) — требования к качеству · [docs/INTERIOR_DESIGN.md](docs/INTERIOR_DESIGN.md) — интерьеры · [docs/UNITY_EXPORT.md](docs/UNITY_EXPORT.md) — экспорт в Unity · [docs/TEAM_WORKFLOW.md](docs/TEAM_WORKFLOW.md) — кто где работает
+
+---
+
+## English
+
+**Describe an object in words — get an editable 3D model in minutes.**
+
+🔗 **Live demo:** https://atrion-2-0.vercel.app<br>
+🎟️ **No-signup login for judges:** https://atrion-2-0.vercel.app/api/auth/demo — creates a guest account and opens the 3D studio.
+
+Atrion is a browser studio that turns plain text ("a two-storey house with a tower and a 6-arch arcade", "an 8-lane bridge", "a cozy 4×5 m bedroom") into a 3D model built from separate parts. Every part can be moved, rotated, scaled and edited by chat or voice, and the result exports to Unity, Blender or a 3D printer.
+
+**Features**
+
+- **Text → 3D:** buildings with a distinct shape per type (house, mall, school, hospital, warehouse, temple…), bridges that respect the requested lane count, vehicles, furniture, rooms, characters and animals.
+- **CAD editor:** per-part Move / Rotate / Scale, exploded view, section view, undo/redo.
+- **Edit with words:** "make the windows wider", "scale the roof up 20%" — by chat or voice.
+- **Interior design:** rooms, furniture from the FORMA library, finishes, and a procurement list with CSV export.
+- **Export:** GLB (colors, materials, Unity-ready tangents), STL, OBJ.
+- **Resilient AI:** primary provider, fallback provider and a local procedural generator, so a model appears even when external AI is down.
+
+**How it works:** text → request parsing → blueprint (type, dimensions, parts) → geometry → validation (bounds, connected parts with nothing floating, every named element present) → repair → 3D scene. The server scores each model for quality, integrity and match to the request, shown in the "Verdict" panel.
+
+**Stack:** Next.js 15, React 19, TypeScript, Tailwind CSS, React Three Fiber, three-bvh-csg, Prisma + PostgreSQL (Neon), JWT (jose), OpenAI-compatible AI providers, Vercel.
+
+**Run locally:** `npm ci && npm run dev`, then open http://localhost:3000/playground/generator — no database or API keys needed (development only). Full setup: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md), [docs/CONFIGURATION.md](docs/CONFIGURATION.md). Checks: `npm run test:backend`, `npx tsc --noEmit`, `npm run build` (also run in CI).
+
+**Limitations:** models are AI concepts, not engineering calculations; GLB export is validated by a geometry loader but not tested inside the Unity Editor; rigging is not included.
+
+## Лицензия / License
+
+All rights reserved — см. [LICENSE](LICENSE).
