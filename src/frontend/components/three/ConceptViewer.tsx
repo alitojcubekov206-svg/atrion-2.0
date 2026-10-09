@@ -528,7 +528,7 @@ function EditablePart({
         <TransformControls
           object={anchor}
           mode={cadTool === "rotate" ? "rotate" : cadTool === "scale" ? "scale" : "translate"}
-          onObjectChange={() => {
+          onMouseUp={() => {
             const node = meshes.current[0];
             if (!node || !onPartChange) return;
             let px = node.position.x;

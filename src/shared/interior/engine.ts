@@ -73,7 +73,7 @@ function requestedColor(clause: string) {
   const entry = COLORS.find(([pattern]) => pattern.test(clause));
   return entry ? entry[1] || entry[0].exec(clause)![0] : undefined;
 }
-const ROOM_DEFAULTS: [RegExp, string, string[]][] = [[/спальн|bedroom/i, "bedroom", ["bed_double", "wardrobe_double"]], [/гостин|living\s*room/i, "living", ["sofa_compact", "table_coffee"]], [/кабинет|\boffice\b/i, "office", ["desk_work", "chair_simple"]]];
+const ROOM_DEFAULTS: [RegExp, string, string[]][] = [[/спальн|bedroom/i, "bedroom", ["bed_double", "wardrobe_double"]], [/гостин|living\s*room/i, "living", ["sofa_compact", "table_coffee"]], [/офис|кабинет|\boffice\b/i, "office", ["desk_work", "chair_simple", "bookcase_open", "plant_pot"]]];
 const DEFAULT_DECISION = /^(?:на\s+(?:твой|ваш|свой)\s+вкус|(?:выбери|реши|подбери|придумай|решай)\s+сам(?:а|остоятельно)?|на\s+усмотрение|не\s+знаю|you\s+decide)$/i;
 /** Explicit, limited offline commands; unsupported language must not look successful. */
 export function localPlan(prompt: string, scene: InteriorScene, editing: boolean) {
@@ -128,7 +128,7 @@ export function localPlan(prompt: string, scene: InteriorScene, editing: boolean
     }
     if (/стен|\bwalls?\b/i.test(clause) && tint) actions.push({type: "CHANGE_WALL_MATERIAL", color: tint});
     if (/пол(?:а|ом|ы)?(?:\s|$)|\bfloor\b/i.test(clause) && tint) actions.push({type: "CHANGE_FLOOR_MATERIAL", color: tint});
-    if (!matched.length && !tint && !STYLE_TERMS.some(([p]) => p.test(clause)) && !/спальн|гостин|кабинет|комнат|интерьер|bedroom|living|office|room|interior|свет|освещ|light|\d\s*(?:м|метр|[x×*]|на)|ширин|длин|высот/i.test(clause)) {
+    if (!matched.length && !tint && !STYLE_TERMS.some(([p]) => p.test(clause)) && !/спальн|гостин|кабинет|офис|комнат|интерьер|bedroom|living|office|room|interior|свет|освещ|light|\d\s*(?:м|метр|[x×*]|на)|ширин|длин|высот/i.test(clause)) {
       throw new DesignError(`Не распознана часть запроса: «${clause.trim()}». Уточните предмет или действие.`, 422, "DESIGN_ACTION_UNSUPPORTED");
     }
   }

@@ -35,3 +35,9 @@
 # Локальный AI-путь композиции
 
 `DesignWorkspace` → `/api/playground/design` (`engine: local-ai`, dev) или приватный `/api/design/compose` → `backend/design/local-ai.ts` → loopback llama.cpp. Модель получает запрос, диалог и предыдущий JSON; возвращает вопрос или композицию. `shared/design/composition.ts` проверяет данные; `frontend/composition-model.ts` строит одинаковую геометрию для просмотра/GLB. Каталог используется как детали, классификатор ключевых слов не вызывается. Конфигурация, запуск и границы: [docs/LOCAL_AI.md](docs/LOCAL_AI.md).
+
+## Редактирование и движение — 2026-10-09
+
+shared/house/edit.ts обновляет конкретную пару floorId/roomId и перестраивает мебельные части, сохраняет другие комнаты и количества. Перенос между помещениями сохраняет ID/масштаб/материал и проходит проверку размещения. shared/design/edit-model.ts синхронизирует правки деталей и композиции. ObjectGizmo подтверждает трансформацию при отпускании мыши и восстанавливает её при отказе; существующие API сохранения проверяют владельца и revision. Локальные модели живут в состоянии страницы.
+
+shared/living/request.ts — чистые метаданные движения; shared/living/motion.ts — геометрические шарниры и AnimationClip без browser/backend. LivingViewer и GLB используют одну функцию анимации. Скелет Humanoid и skinning не создаются. Полное описание: [docs/DESIGN_EDITING_MOTION.md](docs/DESIGN_EDITING_MOTION.md).

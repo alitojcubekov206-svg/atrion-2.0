@@ -1,8 +1,9 @@
 /** Route the subject, not a room mentioned inside a house or beside an object. */
 export function designPromptTarget(prompt: string): "interior" | "model" {
   const subject = prompt.toLowerCase().split(/\s+(?:с|со|with|рядом|возле|для|внутри|в|in)\s+|[:;.!?]/u)[0];
+  if (/офисн[а-яё]*\s+здани|office\s+building/i.test(subject)) return "model";
   const building = /(?:^|\s)(?:дом[а-яё]*|коттедж[а-яё]*|здани[а-яё]*|школ[а-яё]*|замок[а-яё]*|house|building|castle|school)(?=\s|[,;.!?:]|$)/u.exec(subject);
-  const room = /спальн|гостин|кабинет|комнат|интерьер|bedroom|living\s*room|office|interior|\broom\b/i.exec(subject);
+  const room = /спальн|гостин|кабинет|офис|комнат|интерьер|bedroom|living\s*room|office|interior|\broom\b/i.exec(subject);
   if (building && (!room || building.index < room.index)) return "model";
   if (room) return "interior";
   // Keep the established furniture-list workflow; a single chair is a model.

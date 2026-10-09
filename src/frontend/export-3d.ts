@@ -372,6 +372,7 @@ function disposeScene(root: THREE.Object3D): void {
 export async function exportConceptGlb(concept: ThreeDConcept): Promise<Blob> {
   requireParts(concept);
   const scene = buildConceptScene(concept);
+  const animations = (await import("@/shared/living/motion")).attachLivingMotion(scene, concept);
   await texturesReady(scene);
 
   return new Promise<Blob>((resolve, reject) => {
@@ -386,7 +387,7 @@ export async function exportConceptGlb(concept: ThreeDConcept): Promise<Blob> {
         reject(new Error("GLTFExporter вернул не бинарный результат."));
       },
       (error: unknown) => reject(asError(error, "Не удалось собрать GLB.")),
-      { binary: true, onlyVisible: true }
+      { binary: true, onlyVisible: true, animations }
     );
   }).finally(() => disposeScene(scene));
 }

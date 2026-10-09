@@ -211,6 +211,8 @@ export interface ThreeDConcept {
   disclaimer: string;
   /** Detected object category, e.g. "house", "character". */
   category?: string;
+  /** Procedural living models export both Idle and Walk joint loops. */
+  motion?: "idle" | "walk";
   /** Prompt-derived seed — same prompt reproduces the same model. */
   seed?: number;
   /** Where the geometry came from. */

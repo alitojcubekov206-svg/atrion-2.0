@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import {useRouter} from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { DrawingView } from "@/frontend/components/three/ConceptViewer";
@@ -18,6 +19,10 @@ import GenerationReveal from "@/frontend/components/GenerationReveal";
 import ProcurementList from "@/frontend/components/ProcurementList";
 import {partsProcurement} from "@/shared/procurement";
 import ParticleField from "@/frontend/components/three/ParticleField";
+import {designPromptTarget} from "@/shared/interior/request";
+import {isLivingConcept,requestedMotion} from "@/shared/living/request";
+
+const LivingViewer=dynamic(()=>import("@/frontend/components/interior/LivingViewer"),{ssr:false});
 
 const ConceptViewer = dynamic(() => import("@/frontend/components/three/ConceptViewer"), {
   ssr: false,
@@ -35,6 +40,8 @@ const PIPELINE = [
 ] as const;
 
 const EXAMPLES = [
+  "Создай офис",
+  "Создай человека, который идёт",
   "Аниме девушка 3D модель с длинными волосами",
   "Уютная спальня 4×5 м с кроватью и столом",
   "Двухэтажный дом 12×9 м с двускатной крышей",
@@ -83,6 +90,8 @@ function usePhoneLayout() {
 }
 
 export default function DesignEnginePage() {
+  const router=useRouter();
+  const [livingPlaying,setLivingPlaying]=useState(true);
   const [prompt, setPrompt] = useState("");
   const [panelOpen, setPanelOpen] = useState(true);
   const [treeOpen, setTreeOpen] = useState(true);
@@ -216,6 +225,10 @@ export default function DesignEnginePage() {
       setError("Укажите название объекта — минимум 3 символа.");
       return;
     }
+    if(designPromptTarget(cleaned)==="interior") {
+      router.push(`/dashboard/design?prompt=${encodeURIComponent(cleaned)}&generate=1`);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -240,6 +253,8 @@ export default function DesignEnginePage() {
       }>("/api/3d/generate", { prompt: cleaned, answers: interviewAnswers }, 90_000);
 
       if (result.ok && result.data.concept) {
+        if(isLivingConcept(result.data.concept)) result.data.concept.motion=requestedMotion(cleaned);
+        setLivingPlaying(true);
         setPipelineStep(PIPELINE.length - 1);
         setDiagnostics(result.data.diagnostics ?? null);
         await playAssemble(result.data.concept);
@@ -269,10 +284,8 @@ export default function DesignEnginePage() {
   function applyPartChange(id: string, patch: Partial<ModelPart>) {
     const concept = conceptRef.current;
     if (!concept) return;
-    if (!cadHistoryGate.current) {
-      pushHistory(concept);
-      cadHistoryGate.current = true;
-    }
+    // TransformControls commits once on release, so each drag is one undo step.
+    pushHistory(concept);
     setConcept({
       ...concept,
       parts: concept.parts.map((part) => (part.id === id ? { ...part, ...patch } : part)),
@@ -840,7 +853,7 @@ export default function DesignEnginePage() {
       <div className="relative min-h-0 min-w-0 flex-1">
         {concept ? (
           <>
-            <ConceptViewer
+            {isLivingConcept(concept)&&livingPlaying&&!assembling&&cadTool==="select"&&!exploded&&sectionHeight===null&&view==="perspective"?<LivingViewer concept={concept}/>:<ConceptViewer
               concept={concept}
               selectedId={selectedId}
               onSelect={handleSelect}
@@ -860,7 +873,8 @@ export default function DesignEnginePage() {
               snapStep={snapStep}
               onPartChange={applyPartChange}
               className="h-full"
-            />
+            />}
+            {isLivingConcept(concept)&&<button className="absolute right-4 top-28 z-20 rounded-xl border border-white/15 bg-black/80 px-3 py-2 text-sm" aria-pressed={livingPlaying} onClick={()=>setLivingPlaying(v=>!v)}>{livingPlaying?"Пауза анимации":"Движение"}</button>}
             <CadToolbar
               tool={cadTool}
               onTool={(t) => {

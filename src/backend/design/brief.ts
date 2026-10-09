@@ -103,13 +103,15 @@ export function resolveDesignBrief(rawPrompt: unknown, rawAnswers?: unknown): De
   const effective = [subject, ...answers.filter(a => a.questionId !== "subject" && !SELF.test(a.answer)).map(a => a.answer)].join(". ");
   const interior = designPromptTarget(subject) === "interior";
   if (interior) {
-    if (!/спальн|гостин|кабинет|bedroom|living|office|кроват|диван|шкаф|стол|стул|кресл|пуф|пуст|без мебел|\bbed\b|sofa|desk|chair|empty/i.test(effective) && !latest("roomType") && !autoAll) return ask({id: "roomType", text: "Какое назначение комнаты?", hint: "От этого зависит набор и размещение мебели.", options: ["Спальня", "Гостиная", "Кабинет"]});
-    if (!/кроват|диван|шкаф|стол|стул|кресл|пуф|пуст|без мебел|bed\b|sofa|desk|chair|empty/i.test(effective) && !latest("furniture") && !autoAll) return ask({id: "furniture", text: "Какую мебель нужно разместить?", hint: "Перечислите нужные предметы и количество. Размеры возьмём из полей комнаты, если вы не указали их в тексте.", options: /спальн|bedroom/i.test(effective) ? ["Кровать и шкаф", "Кровать, шкаф и рабочий стол", "Пустая комната", "Подбери сам"] : /кабинет|office/i.test(effective) ? ["Рабочий стол и стул", "Стол, кресло и стеллаж", "Подбери сам"] : ["Диван, кресло и журнальный стол", "Пустая комната", "Подбери сам"]});
+    const office = /офис|кабинет|\boffice\b/i.test(effective);
+    if (!/спальн|гостин|кабинет|офис|bedroom|living|office|кроват|диван|шкаф|стол|стул|кресл|пуф|пуст|без мебел|\bbed\b|sofa|desk|chair|empty/i.test(effective) && !latest("roomType") && !autoAll) return ask({id: "roomType", text: "Какое назначение комнаты?", hint: "От этого зависит набор и размещение мебели.", options: ["Спальня", "Гостиная", "Кабинет"]});
+    if (!office && !/кроват|диван|шкаф|стол|стул|кресл|пуф|пуст|без мебел|bed\b|sofa|desk|chair|empty/i.test(effective) && !latest("furniture") && !autoAll) return ask({id: "furniture", text: "Какую мебель нужно разместить?", hint: "Перечислите нужные предметы и количество. Размеры возьмём из полей комнаты, если вы не указали их в тексте.", options: /спальн|bedroom/i.test(effective) ? ["Кровать и шкаф", "Кровать, шкаф и рабочий стол", "Пустая комната", "Подбери сам"] : ["Диван, кресло и журнальный стол", "Пустая комната", "Подбери сам"]});
+    if (office && !/стол|стул|кресл|мебел|desk|chair|empty|пуст/i.test(effective)) assumptions.push("Предложены рабочий стол, стул, стеллаж и растение; размеры — из параметров комнаты");
     const prefix = latest("roomType") ?? "";
     return {kind: "ready", prompt: [prefix, effective].filter(Boolean).join(". "), answers, understood: ["Интерьер", ...answers.map(a => a.answer)], assumptions};
   }
   if (!latest("details") && !autoAll) {
-    if (category === "animal" && !/сид|сто[ия]|леж|беж|лет|sit|stand|lying|run/i.test(source)) return ask({id: "details", text: "В какой позе показать животное?", hint: "Это определяет силуэт и положение лап.", options: ["Сидит", "Стоит", "Выбери сам"]});
+    if (category === "animal" && !/сид|сто[ия]|леж|беж|лет|ид[её]т|идут|идущ|идти|ход[ия]т|ходьб|шага|движени|двига|sit|stand|lying|run|walk/i.test(source)) return ask({id: "details", text: "В какой позе показать животное?", hint: "Это определяет силуэт и положение лап.", options: ["Сидит", "Стоит", "Идёт", "Выбери сам"]});
     if (category === "vehicle" && !/спорт|седан|грузов|купе|автобус|внедорож|sport|truck|sedan|suv/i.test(source)) return ask({id: "details", text: "Какой тип машины нужен?", hint: "Укажите форму кузова; цвет и размеры тоже можно добавить в ответ.", options: ["Спорткар", "Седан", "Грузовик", "Выбери сам"]});
   }
   check(effective.length <= 1500, "Описание с ответами длиннее 1500 символов. Сократите его.");

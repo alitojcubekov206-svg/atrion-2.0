@@ -112,11 +112,19 @@ export function furnishHouse(doc: HouseDocument, brief: HouseBrief) {
     const entry={floorId:floor.id,roomId:room.id,name:room.name,purpose,origin,scene,warnings:roomWarnings};rooms.push(entry);
     warnings.push(...roomWarnings.map(w=>`${room.name} (этаж ${fi+1}): ${w}`));
     const tile:ModelPart={id:`${floor.id}_${room.id}_finish`,name:`Пол · ${room.name}`,group:floor.id,role:"floor-finish",shape:"box",size:[width,.02,length],position:[origin[0]+width/2,origin[1]-.01,origin[2]+length/2],rotation:[0,0,0],color:scene.floorColor,roughness:.75,material:"Пол",quantity:1};parts.push(tile);
-    for(const o of scene.objects) {
-      const c=Math.cos(o.rotation.y),s=Math.sin(o.rotation.y);
-      for(const p of assetParts(o.assetId,o.color)){const [x,y,z]=p.position;parts.push({...p,id:`${o.id}_${p.id}`,group:floor.id,role:"furniture",parentId:o.id,
-        position:[origin[0]+o.position.x+x*c+z*s,origin[1]+y,origin[2]+o.position.z-x*s+z*c],rotation:[0,o.rotation.y,0]});}
-    }
   }
-  return {rooms,parts,warnings};
+  return {rooms,parts:[...parts,...houseFurnitureParts(rooms)],warnings};
+}
+
+export function houseFurnitureParts(rooms: HouseRoomInterior[]): ModelPart[] {
+  return rooms.flatMap(({scene,origin,floorId})=>scene.objects.flatMap(o=>{
+    const c=Math.cos(o.rotation.y),s=Math.sin(o.rotation.y);
+    return assetParts(o.assetId,o.color).map(p=>{
+      const [x,y,z]=p.position.map((n,i)=>n*[o.scale.x,o.scale.y,o.scale.z][i]);
+      return {...p,id:`${o.id}_${p.id}`,group:floorId,role:"furniture" as const,parentId:o.id,
+        size:[p.size[0]*o.scale.x,p.size[1]*o.scale.y,p.size[2]*o.scale.z] as [number,number,number],
+        position:[origin[0]+o.position.x+x*c+z*s,origin[1]+o.position.y+y,origin[2]+o.position.z-x*s+z*c] as [number,number,number],
+        rotation:[p.rotation[0],p.rotation[1]+o.rotation.y,p.rotation[2]] as [number,number,number]};
+    });
+  }));
 }

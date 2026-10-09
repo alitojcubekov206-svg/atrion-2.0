@@ -337,7 +337,7 @@ const RULES: Rule[] = [
   /* --- creature anatomy --- */
   {
     label: "четвероногое", kind: "animal",
-    re: w("кот|кошк|котён|котен|собак|пёс|пес|щенок|волк|wolf|лис[аыу]|медвед|тигр|лев|леопард|panther|пантер|лошад|конь|пони|осёл|осел|корова|бык|коз[аыл]|овц|баран|свин|кабан|олен|лось|зебр|жираф|слон|носорог|бегемот|верблюд|кролик|заяц|bunny|крыс|мыш[ьи]|хомяк|белк|енот|барсук|панд|коал|кенгур|\\bcat\\b|\\bdog\\b|\\bhorse\\b|\\bbear\\b|\\blion\\b|\\bwolf\\b|животн|зверь|зверя|animal|динозавр|dinosaur|ящер|варан|крокодил"),
+    re: w("кот(?:а|у|ом|е|ы|ов|ам|ами|ах)?(?![а-яё])|котик|котят|кошк|котён|котен|собак|пёс|пес|щенок|волк|wolf|лис[аыу]|медвед|тигр|лев|леопард|panther|пантер|лошад|конь|пони|осёл|осел|корова|бык|коз[аыл]|овц|баран|свин|кабан|олен|лось|зебр|жираф|слон|носорог|бегемот|верблюд|кролик|заяц|bunny|крыс|мыш[ьи]|хомяк|белк|енот|барсук|панд|коал|кенгур|\\bcat\\b|\\bdog\\b|\\bhorse\\b|\\bbear\\b|\\blion\\b|\\bwolf\\b|животн|зверь|зверя|animal|динозавр|dinosaur|ящер|варан|крокодил"),
     apply: (b) => {
       b.legs = Math.max(b.legs, 4);
       b.legStyle = "organic";
@@ -355,7 +355,7 @@ const RULES: Rule[] = [
       b.detail += 0.2;
     },
   },
-  { label: "кошачьи уши", re: w("кот|кошк|котён|котен|лис[аыу]|\\bcat\\b|\\bfox\\b|волк|wolf"), apply: (b) => { b.ears = "pointed"; b.muzzle = 0.35; b.tail = Math.max(b.tail, 7); } },
+  { label: "кошачьи уши", re: w("кот(?:а|у|ом|е|ы|ов|ам|ами|ах)?(?![а-яё])|котик|котят|кошк|котён|котен|лис[аыу]|\\bcat\\b|\\bfox\\b|волк|wolf"), apply: (b) => { b.ears = "pointed"; b.muzzle = 0.35; b.tail = Math.max(b.tail, 7); } },
   { label: "длинные уши", re: w("кролик|заяц|bunny|осёл|осел|слон"), apply: (b) => { b.ears = "long"; } },
   { label: "грива", re: w("лев|лошад|конь|пони|\\blion\\b|\\bhorse\\b"), apply: (b) => { b.mane = true; b.legLength = 0.55; b.muzzle = 0.8; b.tail = Math.max(b.tail, 8); } },
   { label: "хобот", re: w("слон|elephant|мамонт"), apply: (b) => { b.muzzle = 1.4; b.ears = "long"; b.legLength = 0.5; b.horns = Math.max(b.horns, 2); } },
@@ -388,7 +388,7 @@ const RULES: Rule[] = [
   { label: "змея", kind: "animal", re: w("зме[йяию]|питон|удав|червяк|гусениц[аы] насеком|\\bsnake\\b"), apply: (b) => { b.legs = 0; b.tail = Math.max(b.tail, 14); b.bodyShape = "capsule"; b.head = 1; b.eyes = 2; b.massPlan = "elongated"; b.length = Math.max(b.length, 2.4); b.width = Math.max(b.width, 0.16); b.height = Math.max(b.height, 0.2); b.sizeClass = "furniture"; } },
   {
     label: "человек", kind: "character",
-    re: w("человек|людь|персонаж|character|девуш|девоч|парен|мальчик|женщин|мужчин|аниме|anime|manga|waifu|\\bgirl\\b|\\bboy\\b|woman|\\bman\\b|герой|героин|воин|рыцар|ниндзя|самурай|солдат|школьниц|школьник|студент|врач|повар|танцор|спортсмен|avatar|humanoid|фигурк|статуэтк"),
+    re: w("человек|люд[ьи]|людей|людям|персонаж|character|девуш|девоч|парен|мальчик|женщин|мужчин|аниме|anime|manga|waifu|\\bgirl\\b|\\bboy\\b|woman|\\bman\\b|герой|героин|воин|рыцар|ниндзя|самурай|солдат|школьниц|школьник|студент|врач|повар|танцор|спортсмен|avatar|humanoid|фигурк|статуэтк"),
     apply: (b) => {
       b.legs = 2;
       b.legStyle = "organic";
