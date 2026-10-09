@@ -1034,9 +1034,15 @@ const COPY_WORDS: [RegExp, number][] = [
   [/(^|\s)(шесть|six)\s*$/, 6],
 ];
 
+// Adjectives that a number completes: "3 этажный дом" is one three-storey house,
+// written with a space instead of "3-этажный", not three houses.
+const NUMBERED_ADJECTIVE = /^(?:этажн|комнатн|местн|кол[её]сн|дверн|спальн|ярусн|уровнев|секционн|подъездн|створчат|пол[оа]сн|пролётн|пролетн)/i;
+
 /** "три стула", "2 кресла" — a count standing right before the head noun (one adjective allowed). */
 function countBefore(prefix: string): number | undefined {
-  const trimmed = prefix.trim().replace(/\s+\S+(ых|их|ые|ие|ой|ый|ий|ая|яя)$/i, "");
+  const adjective = prefix.trim().match(/\s+(\S+(?:ых|их|ые|ие|ой|ый|ий|ая|яя))$/i);
+  if (adjective && NUMBERED_ADJECTIVE.test(adjective[1])) return undefined;
+  const trimmed = adjective ? prefix.trim().slice(0, adjective.index) : prefix.trim();
   const digit = trimmed.match(/(^|\s)(\d+)$/);
   if (digit) {
     const value = Number(digit[2]);
