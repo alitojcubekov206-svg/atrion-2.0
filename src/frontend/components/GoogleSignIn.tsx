@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 type GoogleAPI = { accounts: { id: {
   initialize: (options: {client_id: string; nonce: string; callback: (response: {credential: string}) => void; auto_select: boolean}) => void;
@@ -54,6 +55,7 @@ export default function GoogleSignIn({onSuccess}:{onSuccess:()=>void}) {
     <div ref={host} className={`flex min-h-11 justify-center ${state!=="ready"?"hidden":""}`} aria-label="Вход через Google" />
     {state!=="ready"&&<button type="button" disabled={state!=="error"} onClick={()=>setAttempt(v=>v+1)} className="w-full rounded-full border border-white/15 bg-white/5 px-4 py-3 text-sm text-white disabled:opacity-50">{state==="signing"?"Входим через Google…":state==="loading"?"Подключаем Google…":"Войти через Google"}</button>}
     {state==="unconfigured"&&<p className="mt-2 text-xs text-muted">Вход через Google ещё не подключён</p>}
+    {(state==="ready"||state==="signing")&&<p className="mt-2 text-xs leading-relaxed text-muted">Для входа Atrion использует имя, email и идентификатор Google-аккаунта. <Link href="/legal#privacy" className="text-accent hover:underline">Конфиденциальность</Link></p>}
     {error&&<p role="alert" className="mt-2 text-xs text-red-400">{error}</p>}
     <div className="my-4 flex items-center gap-3 text-xs text-muted"><span className="h-px flex-1 bg-white/10"/>или через email<span className="h-px flex-1 bg-white/10"/></div>
   </div>;

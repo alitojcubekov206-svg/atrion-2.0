@@ -30,11 +30,27 @@ export default function LegalPage() {
           при регистрации. Пароли хранятся в виде хэша (bcrypt) и никогда — в открытом виде.
         </p>
         <p className="mt-3">
+          При входе через Google Atrion получает имя, подтверждённый email и идентификатор
+          Google-аккаунта. Они сохраняются для создания аккаунта, повторного входа и привязки
+          к существующему аккаунту с тем же подтверждённым email. Токен Google проверяется
+          при входе и не сохраняется. Доступ к письмам, контактам и файлам Google не запрашивается.
+        </p>
+        <p className="mt-3">
+          Данные Google-входа используются для работы аккаунта и не используются для рекламы
+          или обучения моделей. Чтобы запросить удаление аккаунта и привязки Google, напишите
+          на{" "}
+          <a href="mailto:masterstvo050@gmail.com" className="text-accent hover:underline">masterstvo050@gmail.com</a>
+          . Также можно отозвать доступ Atrion в настройках Google-аккаунта; это не удаляет
+          сохранённые проекты в Atrion автоматически.
+        </p>
+        <p className="mt-3">
           Все функции Atrion доступны бесплатно. Платёжные данные для использования сервиса не нужны.
         </p>
         <p className="mt-3">
-          Мы не передаём ваши данные третьим лицам. Мы не используем рекламные или
-          аналитические cookie - см.{" "}
+          Для работы сервиса используются хостинг Vercel и база данных Neon. Google
+          обрабатывает вход через Google, а Brevo доставляет письма подтверждения и
+          восстановления доступа. Мы не продаём данные и не используем рекламные или
+          аналитические cookie — см.{" "}
           <a href="#cookies" className="text-accent hover:underline">раздел про cookie</a> ниже.
         </p>
         <p className="mt-3">
@@ -72,9 +88,11 @@ export default function LegalPage() {
       <section id="cookies" className="mt-12 scroll-mt-24">
         <h2 className="display text-xl font-semibold text-fg">Файлы cookie</h2>
         <p className="mt-3">
-          Мы используем только один обязательный (strictly necessary) cookie — сессию входа
-          (подписанный JWT), без которого вход в аккаунт невозможен. Мы не используем
-          рекламные, маркетинговые или аналитические cookie.
+          Для входа используется обязательная cookie сессии atrion_session (подписанный JWT)
+          со сроком до 30 дней. Google-вход дополнительно использует временную cookie
+          atrion_google_challenge на 10 минут для проверки ответа Google и защиты запроса.
+          После проверки она очищается. Эти cookie недоступны JavaScript на странице.
+          Рекламные, маркетинговые и аналитические cookie Atrion не использует.
         </p>
         <p className="mt-3">
           Если в будущем мы добавим аналитику, перед этим появится баннер с запросом согласия.
@@ -83,6 +101,10 @@ export default function LegalPage() {
 
       <section id="contact" className="mt-12 scroll-mt-24">
         <h2 className="display text-xl font-semibold text-fg">Контакты</h2>
+        <p className="mt-3">
+          Поддержка Atrion:{" "}
+          <a href="mailto:masterstvo050@gmail.com" className="text-accent hover:underline">masterstvo050@gmail.com</a>.
+        </p>
         <p className="mt-3">
           {waLink ? (
             <>
@@ -93,7 +115,7 @@ export default function LegalPage() {
               .
             </>
           ) : (
-            "Контактный канал сейчас настраивается."
+            "Вопросы о входе и запросы об удалении данных принимаются по email поддержки."
           )}
         </p>
       </section>
