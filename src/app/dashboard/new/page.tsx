@@ -28,7 +28,6 @@ export default function NewProjectPage() {
   const [idea, setIdea] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [limitReached, setLimitReached] = useState(false);
   const [created, setCreated] = useState(false);
 
   async function create() {
@@ -45,7 +44,6 @@ export default function NewProjectPage() {
       setTimeout(() => navigate(href), 1150);
     } else {
       setError(res.data.error ?? "Ошибка");
-      setLimitReached(res.data.code === "LIMIT_REACHED");
       setLoading(false);
     }
   }
@@ -70,6 +68,9 @@ export default function NewProjectPage() {
           <p className="mt-2 text-sm leading-relaxed text-muted">
             Одно-два предложения. AI проведёт интервью и соберёт план. Для 3D - Design Engine.
           </p>
+          <Link href="/dashboard/design" className="mt-4 block rounded-2xl border border-sky-400/30 bg-sky-400/10 p-4 text-sm text-sky-200">
+            Дизайн интерьера → <span className="mt-1 block text-xs text-slate-400">Комната, мебель, расстановка и редактируемая 3D-сцена</span>
+          </Link>
 
           <label htmlFor="project-idea" className="sr-only">
             Описание идеи
@@ -103,11 +104,7 @@ export default function NewProjectPage() {
           {error && (
             <div className="mt-4" role="alert">
               <p className="text-sm text-red-400">{error}</p>
-              {limitReached && (
-                <Link href="/pricing" className="mt-2 inline-block text-sm font-semibold text-accent hover:underline">
-                  Посмотреть тариф Pro →
-                </Link>
-              )}
+
             </div>
           )}
 

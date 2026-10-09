@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { db } from "@/backend/db";
 import { getCurrentUser } from "@/backend/auth";
-import { FREE_PROJECT_LIMIT } from "@/backend/plans";
 import type { Blueprint } from "@/shared/types";
 import StarkHudFrame, { StarkPanel } from "@/frontend/components/StarkHudFrame";
 import CountUp from "@/frontend/components/CountUp";
@@ -39,8 +38,6 @@ export default async function DashboardPage() {
     where: { userId: user.id },
     orderBy: { updatedAt: "desc" },
   });
-  const isPro = user.plan === "pro";
-  const limitReached = !isPro && projects.length >= FREE_PROJECT_LIMIT;
 
   const generated = projects.filter((p) => p.status === "generated");
   const scores = generated
@@ -71,28 +68,14 @@ export default async function DashboardPage() {
             </p>
             <h1 className="display mt-4 text-3xl font-semibold tracking-tight text-white md:text-4xl">
               Мои проекты
-              {isPro && (
-                <span
-                  title={user.planExpiresAt ? `Pro до ${formatDate(user.planExpiresAt)}` : "Pro"}
-                  className="ml-3 rounded border border-accent/35 bg-accent/10 px-2.5 py-1 align-middle text-[10px] font-semibold uppercase tracking-wider text-accent"
-                >
-                  PRO
-                </span>
-              )}
             </h1>
             <p className="mt-2 text-sm text-muted">
               {projects.length > 0
                 ? `${projects.length} проект(ов), ${generated.length} с готовым планом`
                 : "Начните с идеи или откройте Design Engine"}
-              {!isPro && ` · ${Math.min(projects.length, FREE_PROJECT_LIMIT)} / ${FREE_PROJECT_LIMIT} бесплатно`}
-              {isPro && user.planExpiresAt && ` · Pro до ${formatDate(user.planExpiresAt)}`}
             </p>
           </div>
-          {limitReached ? (
-            <Link href="/pricing" className="btn-primary rounded-full px-6 py-2.5 text-sm">
-              Перейти на Pro
-            </Link>
-          ) : (
+
             <Link
               href="/dashboard/new"
               data-tour="new-project"
@@ -100,22 +83,11 @@ export default async function DashboardPage() {
             >
               + Новый проект
             </Link>
-          )}
+
         </div>
       </StarkPanel>
 
-      {limitReached && (
-        <StarkPanel delay={0.05} className="mt-6">
-          <div className="card glass flex flex-wrap items-center justify-between gap-4 p-5">
-            <p className="text-sm text-muted">
-              Все {FREE_PROJECT_LIMIT} бесплатных проектов использованы. Pro снимает лимит.
-            </p>
-            <Link href="/pricing" className="text-sm font-semibold text-accent hover:underline">
-              Смотреть тарифы →
-            </Link>
-          </div>
-        </StarkPanel>
-      )}
+
 
       <StarkPanel delay={0.08} className="mt-8">
         <Link

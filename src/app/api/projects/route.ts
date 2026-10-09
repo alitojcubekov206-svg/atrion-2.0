@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/backend/db";
-import { isProPlanActive } from "@/backend/auth";
 import { requireApiUser } from "@/backend/api-auth";
-import { canCreateProject, FREE_PROJECT_LIMIT } from "@/backend/plans";
 
 export async function GET() {
   const auth = await requireApiUser();
@@ -36,29 +34,7 @@ export async function POST(req: Request) {
   }
 
   const title = idea.length > 60 ? idea.slice(0, 57) + "..." : idea;
-  const result = await db.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
-    const user = await tx.user.findUnique({
-      where: { id: userId },
-      select: { plan: true, planExpiresAt: true },
-    });
-    const plan =
-      user && isProPlanActive(user.plan, user.planExpiresAt) ? "pro" : "free";
-    const count = await tx.project.count({ where: { userId } });
-    if (!canCreateProject(plan, count)) return null;
-    return tx.project.create({
-      data: { userId, title, idea, status: "draft" },
-    });
-  });
-  if (!result) {
-    return NextResponse.json(
-      {
-        error: `Бесплатный лимит - ${FREE_PROJECT_LIMIT} проектов. Перейдите на Pro для безлимита.`,
-        code: "LIMIT_REACHED",
-      },
-      { status: 403 }
-    );
-  }
+  const result = await db.project.create({data: {userId, title, idea, status: "draft"}});
 
   return NextResponse.json({ project: result });
 }

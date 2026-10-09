@@ -10,10 +10,14 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
+    "design:worker": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/design-worker.ts",
+    "design:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/design-ai.ps1",
     "postinstall": "prisma generate",
-    "test:backend": "tsc -p tsconfig.backend-tests.json && node --test .backend-tests/scripts/backend-generation.test.js"
+    "test:backend": "tsc -p tsconfig.backend-tests.json && node --test .backend-tests/scripts/backend-generation.test.js && tsx --test scripts/backend-safety.test.ts scripts/ai-geometry-prompts.test.ts scripts/interior*.test.ts && tsx scripts/gen-check.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1147.0",
+    "@aws-sdk/s3-request-presigner": "3.1147.0",
     "@neon/config": "^1.5.0",
     "@neon/env": "^1.3.4",
     "@prisma/client": "^6.8.2",
@@ -24,13 +28,15 @@
     "framer-motion": "^12.15.0",
     "jose": "^6.0.11",
     "matter-js": "^0.20.0",
-    "next": "^15.3.3",
+    "next": "15.5.27",
     "openai": "^5.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "sharp": "0.35.5",
     "three": "^0.177.0",
     "three-bvh-csg": "^0.0.17",
-    "three-mesh-bvh": "^0.9.14"
+    "three-mesh-bvh": "^0.9.14",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.8",
@@ -40,6 +46,7 @@
     "@types/three": "^0.177.0",
     "prisma": "^6.8.2",
     "tailwindcss": "^4.1.8",
+    "tsx": "4.23.15",
     "typescript": "^5"
   }
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/backend/db";
 import { requireApiUser } from "@/backend/api-auth";
-import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
+import { consumeAiQuota } from "@/backend/ai-quota";
 import { generateStarterKit } from "@/backend/ai";
 import type { Blueprint } from "@/shared/types";
 
@@ -32,7 +32,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     const kit = await generateStarterKit(project.idea, blueprint);
     return NextResponse.json({ kit });
   } catch (error) {
-    await refundAiQuota(userId);
+    await quota.refund();
     console.error("starter kit generation failed", error);
     return NextResponse.json({ error: "Не удалось создать стартовый код" }, { status: 502 });
   }

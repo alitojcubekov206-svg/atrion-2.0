@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/backend/db";
 import { requireApiUser } from "@/backend/api-auth";
-import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
+import { consumeAiQuota } from "@/backend/ai-quota";
 import { consultProjectExpert } from "@/backend/ai";
 import type { Blueprint, ExpertRole } from "@/shared/types";
 
@@ -58,7 +58,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const reply = await consultProjectExpert(role, project.idea, blueprint, question, history);
     return NextResponse.json({ reply });
   } catch (error) {
-    await refundAiQuota(userId);
+    await quota.refund();
     console.error("expert consultation failed", error);
     return NextResponse.json({ error: "Эксперт временно недоступен" }, { status: 502 });
   }

@@ -80,7 +80,7 @@ export default function CommandPalette() {
       { id: "engine", label: "Открыть Design Engine", hint: "Текст → 3D", group: "Действия", run: () => go("/dashboard/design-engine") },
       { id: "projects", label: "Мои проекты", group: "Действия", run: () => go("/dashboard") },
       { id: "settings", label: "Настройки", hint: "Голос, пароль, аккаунт", group: "Действия", run: () => go("/dashboard/settings") },
-      { id: "pricing", label: "Тарифы", group: "Действия", run: () => go("/pricing") },
+      { id: "pricing", label: "Бесплатный доступ", group: "Действия", run: () => go("/pricing") },
       { id: "legal", label: "Правовая информация", group: "Действия", run: () => go("/legal") },
       {
         id: "logout",

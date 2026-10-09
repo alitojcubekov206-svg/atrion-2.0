@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/backend/api-auth";
-import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
+import { consumeAiQuota } from "@/backend/ai-quota";
 import { chatAboutConcept } from "@/backend/ai";
 
 export const maxDuration = 60;
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json(reply);
   } catch (error) {
-    await refundAiQuota(userId);
+    await quota.refund();
     console.error("3D voice chat failed", error);
     return NextResponse.json(
       { error: "Не удалось ответить голосом. Попробуй ещё раз." },

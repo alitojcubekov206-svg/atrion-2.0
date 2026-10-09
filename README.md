@@ -1,5 +1,9 @@
 # Atrion 2.0
 
+**Дизайн Atrion:** единый редактор `/dashboard/design` и локальная песочница `/playground/interior`. Используется геометрия мебели из FORMA, её отдельный интерфейс удалён. Материалы, шаблоны и границы переноса — [docs/FORMA_INTEGRATION.md](docs/FORMA_INTEGRATION.md).
+
+**Дизайн интерьера:** новый экран `/dashboard/design` и серверные сцены, мебель, история и очередь. Для запуска нужны новая схема и отдельный worker; инструкция и текущие ограничения — [docs/INTERIOR_DESIGN.md](docs/INTERIOR_DESIGN.md).
+
 > **From Idea to Intelligent Architecture**
 
 Atrion 2.0 is an **AI Software Architect** — a SaaS application that transforms a raw product idea into a complete, professional technical plan: analysis, interview, architecture, database schema, API design, roadmap, and project scoring.
@@ -82,7 +86,7 @@ BREVO_API_KEY="your-brevo-api-key"
 EMAIL_FROM_ADDRESS="you@example.com"   # the address you verified in Brevo
 EMAIL_FROM_NAME="Atrion"
 EMAIL_VERIFICATION_ENABLED="false"     # flip to "true" only after a real code arrives
-EMAIL_DEV_RETURN_CODE="true"           # dev only: echoes the OTP back if delivery fails
+EMAIL_DEV_RETURN_CODE="false"          # только NODE_ENV=development: OTP при сбое доставки
 ```
 
 Sign up free, add and verify a sender under **Senders & IP → Senders**, then
@@ -104,10 +108,11 @@ WebGL-related while it is `null` (pre-hydration) or `off`.
 
 ## Limits and abuse protection
 
-- **AI calls** are metered per user per UTC day: `AI_DAILY_LIMIT` in
-  `src/backend/plans.ts` (Free 25 / Pro 300). Every AI route reserves a call
-  up front and refunds it if the provider fails.
-- **3D generations** for Free are a lifetime allowance (`FREE_3D_LIMIT`, 5).
+- Все функции доступны бесплатно, без подписки и тарифных лимитов. Счётчики AI/3D используются для учёта; ошибки возвращают списание однократно.
+- **Генерация 3D** идёт напрямую из текста в геометрию. Путь через изображение
+  и интеграция Modal удалены; персонажи и животные используют обычный генератор.
+- **Сессии** отзываются при смене или восстановлении пароля. При первом выпуске
+  нового формата JWT пользователи должны войти заново; миграция БД не требуется.
 - **Auth endpoints** (login, register, verify, resend, forgot/reset password,
   account changes) are rate-limited per IP in `src/backend/rate-limit.ts`.
   The limiter is in-memory per serverless instance - good enough for now,
@@ -115,10 +120,9 @@ WebGL-related while it is `null` (pre-hydration) or `off`.
 - API routes require a verified email when `EMAIL_VERIFICATION_ENABLED="true"`
   (`requireApiUser` in `src/backend/api-auth.ts`).
 
-The database schema is managed with Prisma Migrate (`prisma/migrations/`):
-`npm run db:migrate` on a development Neon branch, `npm run db:deploy` for
-production, both over the direct (non-pooled) connection. The one-time switch
-from `db push` is described in `docs/DEVELOPMENT.md`.
+Схема находится в `prisma/schema.prisma`; каталога `prisma/migrations/` пока нет.
+Переход на Prisma Migrate с baseline описан в `docs/DEVELOPMENT.md` и должен быть
+выполнен отдельно. До этого `db:deploy` не создаёт схему на пустой базе.
 
 ## Project Structure
 
@@ -128,7 +132,7 @@ enforced on pull requests through `.github/CODEOWNERS`.
 
 ```
 Atrion 2.0/
-  prisma/              # database schema & migrations              (backend)
+  prisma/              # database schema                           (backend)
   scripts/             # dev tools: generation report, CSG smoke test
   src/
     app/
@@ -161,3 +165,5 @@ npx tsx scripts/gen-report.ts          # what each prompt generates, with a summ
 npx tsx scripts/gen-report.ts "фраза"  # inspect one prompt
 npx tsx scripts/csg-smoke.ts           # verify the boolean engine
 ```
+
+Дизайн работает через прямой `/api/design/preview` без worker. В результате доступны список закупки, CSV и экспорт GLB для Unity: [инструкция](docs/UNITY_EXPORT.md).

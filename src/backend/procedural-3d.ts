@@ -38,8 +38,7 @@ export function buildFromPlan(blueprint: Blueprint): ThreeDConcept {
   } catch (error) {
     console.error(
       "Procedural build failed",
-      { prompt: blueprint.prompt, plan: describeBlueprint(blueprint) },
-      error
+      { promptLength: blueprint.prompt.length, name: error instanceof Error ? error.name : "UnknownError" }
     );
     // A blank plan still produces a body — better than failing the request.
     return buildFromBlueprint(planFromPrompt("объект"));

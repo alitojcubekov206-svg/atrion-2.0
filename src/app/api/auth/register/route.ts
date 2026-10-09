@@ -57,6 +57,6 @@ export async function POST(req: Request) {
     ? (await issueVerificationCode(user.id, user.email)).devCode
     : undefined;
 
-  await createSession(user.id);
+  await createSession(user.id, passwordHash);
   return NextResponse.json({ ok: true, devCode });
 }

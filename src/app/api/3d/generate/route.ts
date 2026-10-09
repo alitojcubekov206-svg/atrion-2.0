@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { getUserPlan } from "@/backend/auth";
 import { requireApiUser } from "@/backend/api-auth";
-import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
+import { reserveGenerationQuota } from "@/backend/generation-quota";
 import { generate3DModel } from "@/backend/ai";
 import { planFor } from "@/backend/procedural-3d";
-import { db } from "@/backend/db";
-import { FREE_3D_LIMIT } from "@/backend/plans";
+import {partsProcurement} from "@/shared/procurement";
 
 // 60 is the Vercel Hobby ceiling; anything higher fails the deploy on that plan.
 export const maxDuration = 60;
@@ -25,9 +23,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Некорректный запрос." }, { status: 400 });
   }
 
-  if (typeof prompt !== "string" || prompt.trim().length < 10) {
+  if (typeof prompt !== "string" || prompt.trim().length < 3) {
     return NextResponse.json(
-      { error: "Опишите объект подробнее - минимум 10 символов." },
+      { error: "Укажите название объекта — минимум 3 символа." },
       { status: 400 }
     );
   }
@@ -35,45 +33,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Описание слишком длинное." }, { status: 400 });
   }
 
-  const plan = await getUserPlan(userId);
-
-  let freeGenerationReserved = false;
-  if (plan !== "pro") {
-    const reservation = await db.user.updateMany({
-      where: {
-        id: userId,
-        plan: { not: "pro" },
-        threeDGenerations: { lt: FREE_3D_LIMIT },
-      },
-      data: { threeDGenerations: { increment: 1 } },
-    });
-    if (reservation.count === 0) {
-      return NextResponse.json(
-        {
-          error: `Бесплатный лимит: ${FREE_3D_LIMIT} генераций 3D. Перейди на Pro.`,
-          code: "THREE_D_LIMIT_REACHED",
-        },
-        { status: 403 }
-      );
-    }
-    freeGenerationReserved = true;
-  }
-
-  async function refundFreeGeneration() {
-    if (!freeGenerationReserved) return;
-    freeGenerationReserved = false;
-    await db.user
-      .updateMany({
-        where: { id: userId, threeDGenerations: { gt: 0 } },
-        data: { threeDGenerations: { decrement: 1 } },
-      })
-      .catch((e) => console.error("3D quota refund failed", e));
-  }
-
-  const quota = await consumeAiQuota(userId);
+  const quota = await reserveGenerationQuota(userId);
   if (!quota.ok) {
-    await refundFreeGeneration();
-    return NextResponse.json({ error: quota.error, code: quota.code }, { status: 429 });
+    return NextResponse.json({ error: quota.error, code: quota.code }, { status: quota.status });
   }
 
   try {
@@ -109,13 +71,16 @@ export async function POST(req: Request) {
       parts: result.concept.parts.length,
       notes: result.notes,
     };
-    console.info("[3d/generate]", { prompt: cleanPrompt, ...diagnostics });
+    console.info("[3d/generate]", {
+      requestId: crypto.randomUUID(), promptLength: cleanPrompt.length,
+      kind: diagnostics.kind, source: diagnostics.source,
+      parts: diagnostics.parts, primitives: diagnostics.primitives,
+    });
 
-    return NextResponse.json({ concept: result.concept, diagnostics });
+    return NextResponse.json({ concept: result.concept, diagnostics, procurement: partsProcurement(result.concept.parts) });
   } catch (error) {
-    await refundFreeGeneration();
-    await refundAiQuota(userId);
-    console.error("3D concept generation failed", error);
+    await quota.refund();
+    console.error("3D concept generation failed", { name: error instanceof Error ? error.name : "UnknownError" });
     return NextResponse.json(
       { error: "Не удалось создать модель. Уточните описание и попробуйте снова." },
       { status: 502 }

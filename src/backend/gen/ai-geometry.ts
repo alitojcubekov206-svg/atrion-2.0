@@ -167,22 +167,27 @@ Return the JSON object now.`;
 
   let best: AIGeometryResult | null = null;
   let passes = 0;
+  let invalidReason = "No usable parts were returned.";
 
   try {
-    const raw = await request<RawGeometry>(system, user);
     passes++;
+    const raw = await request<RawGeometry>(system, user);
+    invalidReason = invalidGeometryReason(raw) ?? invalidReason;
     best = toResult(raw, baseline, passes, params, plan);
   } catch (error) {
-    console.warn("AI geometry pass 1 failed", error instanceof Error ? error.name : error);
-    return null;
+    console.warn("AI geometry pass 1 failed", error instanceof Error ? error.name : "UnknownError");
+    // A malformed response can be regenerated. Auth, rate limits and transport
+    // failures are handled by the provider layer, not another geometry request.
+    if (!(error instanceof SyntaxError)) return null;
+    invalidReason = "The response was empty or invalid JSON. Return one complete JSON object.";
   }
 
-  if (!best) return null;
-  if (options.singlePass || !best.issues.length) return best;
+  if (options.singlePass || (best && !best.issues.length)) return best;
 
   // Second pass: hand the model its own output plus the concrete defects.
   try {
-    const critique = buildCritique(best);
+    const critique = best ? buildCritique(best) : invalidReason;
+    passes++;
     const repaired = await request<RawGeometry>(
       `${GEOMETRY_RULES}
 
@@ -190,26 +195,23 @@ You are fixing geometry you already produced. Return the COMPLETE corrected part
 not a patch. Keep the requested silhouette, dimensions, materials and intentional spacing.
 Fix only the reported validation issues. Remove redundant parts when necessary.
 Part count and primitive variety are not quality targets.`,
-      `Original request: ${prompt}
-Clarifications: ${answers.map((item) => `${item.question}: ${item.answer}`).join("; ") || "none"}
+      `${user}
 
-Your current model "${best.name}" has ${best.parts.length} parts (${best.primitives} rendered instances).
+${best ? `Your current model has ${best.parts.length} parts (${best.primitives} rendered instances).` : "The first response failed schema validation. Rebuild the requested object with valid primitives."}
 Problems to fix:
 ${critique}
 
-Current parts:
-${JSON.stringify(best.parts.map(compactPart))}
+${best ? `Current parts:\n${JSON.stringify(best.parts.map(compactPart))}` : "Every part needs a supported shape, numeric position and positive size."}
 
 Return the corrected JSON object now.`
     );
-    passes++;
     const second = toResult(repaired, baseline, passes, params, plan);
-    if (second && second.issues.length < best.issues.length) return second;
+    if (second && (!best || second.issues.length < best.issues.length)) return second;
   } catch (error) {
-    console.warn("AI geometry repair pass failed", error instanceof Error ? error.name : error);
+    console.warn("AI geometry repair pass failed", error instanceof Error ? error.name : "UnknownError");
   }
 
-  return {...best, passes};
+  return best ? {...best, passes} : null;
 }
 
 function buildCritique(result: AIGeometryResult): string {
@@ -238,25 +240,35 @@ function compactPart(item: ModelPart) {
   };
 }
 
-function toResult(
-  raw: RawGeometry,
-  baseline: ThreeDConcept,
-  passes: number,
-  measurements: {width?:number;height?:number;depth?:number},
-  plan: Blueprint
-): AIGeometryResult | null {
-  if (!raw || typeof raw !== "object") return null;
-
+function invalidGeometryReason(raw: RawGeometry): string | null {
+  if (!raw || typeof raw !== "object") return "Expected a JSON object with a parts array.";
   // A missing shape/size must not silently become a unit box. This boundary is
   // deliberately stricter than the legacy saved-concept normalizer.
   const vector = (value: unknown, positive = false, limit=400): boolean => Array.isArray(value) && value.length === 3 &&
     value.every((n) => typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= limit && (!positive || n >= 0.01));
-  if (!Array.isArray(raw.parts) || !raw.parts.length || raw.parts.length > MAX_PARTS || raw.parts.some((part) =>
-    !part || typeof part !== "object" || !isSupportedPrimitive(part.shape) || !vector(part.size, true) ||
-    !vector(part.position) || (part.rotation !== undefined && !vector(part.rotation,false,Math.PI*4)) ||
-    (part.repeat!==undefined && (!part.repeat || !Number.isInteger(part.repeat.count) || part.repeat.count<1 || part.repeat.count>64 || !vector(part.repeat.step) ||
-      (part.repeat.rotationStep!==undefined&&!vector(part.repeat.rotationStep,false,Math.PI*2)))) ||
-    (part.mirror!==undefined && !["x","z","xz"].includes(part.mirror)))) return null;
+  if (!Array.isArray(raw.parts) || !raw.parts.length || raw.parts.length > MAX_PARTS) return `parts must contain 1-${MAX_PARTS} entries.`;
+  for (const [index, part] of raw.parts.entries()) {
+    const path = `parts[${index}]`;
+    if (!part || typeof part !== "object") return `${path} must be an object.`;
+    if (!isSupportedPrimitive(part.shape)) return `${path}.shape must be a supported primitive.`;
+    if (!vector(part.size, true)) return `${path}.size must have three finite dimensions between 0.01 and 400 metres.`;
+    if (!vector(part.position)) return `${path}.position must have three finite coordinates within +/-400 metres.`;
+    if (part.rotation !== undefined && !vector(part.rotation, false, Math.PI * 4)) return `${path}.rotation must have three bounded angles in radians.`;
+    if (part.repeat !== undefined && (!part.repeat || !Number.isInteger(part.repeat.count) || part.repeat.count < 1 || part.repeat.count > 64 || !vector(part.repeat.step) ||
+      (part.repeat.rotationStep !== undefined && !vector(part.repeat.rotationStep, false, Math.PI * 2)))) return `${path}.repeat needs count 1-64, a numeric step vector and optional rotationStep in radians.`;
+    if (part.mirror !== undefined && !["x", "z", "xz"].includes(part.mirror)) return `${path}.mirror must be x, z or xz.`;
+  }
+  return null;
+}
+
+function toResult(
+  raw: RawGeometry,
+  baseline: ThreeDConcept,
+  passes: number,
+  measurements: {width?:number;height?:number;depth?:number;size?:number},
+  plan: Blueprint
+): AIGeometryResult | null {
+  if (invalidGeometryReason(raw)) return null;
 
   // Baseline dimensions are estimates, not measurements. Do not shrink the AI
   // model to them or merge separate requested objects by bounding-box proximity.
@@ -273,6 +285,10 @@ function toResult(
     if (expected && Math.abs(actual[axis] - expected) > Math.max(.005, expected * .01)) {
       repaired.issues.push(`Габарит ${axis}: задано ${expected} м, получено ${actual[axis]} м. Исправьте общий размер, сохранив состав объекта.`);
     }
+  }
+  const longest = Math.max(actual.width, actual.height, actual.depth);
+  if (measurements.size && Math.abs(longest - measurements.size) > Math.max(.005, measurements.size * .01)) {
+    repaired.issues.push(`Наибольший габарит: задано ${measurements.size} м, получено ${longest} м. Исправьте общий размер, сохранив состав объекта.`);
   }
 
   // A component the user named and the model lacks is a concrete defect for

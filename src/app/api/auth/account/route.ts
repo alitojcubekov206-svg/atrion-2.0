@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/backend/db";
-import { destroySession, getSessionUserId } from "@/backend/auth";
+import { createSession, destroySession, getSessionUserId } from "@/backend/auth";
 import { clientIp, rateLimit, rateLimitedResponse } from "@/backend/rate-limit";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -44,10 +44,20 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Неверный текущий пароль" }, { status: 400 });
   }
 
-  await db.user.update({
-    where: { id: userId },
-    data: { password: await bcrypt.hash(newPassword, 10) },
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  const changed = await db.user.updateMany({
+    where: { id: userId, password: user.password },
+    data: {
+      password: passwordHash,
+      passwordResetCode: null,
+      passwordResetExpires: null,
+      passwordResetAttempts: 0,
+    },
   });
+  if (changed.count !== 1) {
+    return NextResponse.json({ error: "Пароль уже изменён. Войдите заново." }, { status: 409 });
+  }
+  await createSession(userId, passwordHash);
   return NextResponse.json({ ok: true });
 }
 

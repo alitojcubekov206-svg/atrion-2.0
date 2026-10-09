@@ -47,7 +47,9 @@ export default function AuthForm({
     if (res.ok) {
       setTransitioning(true);
       setTimeout(() => {
-        router.push(mode === "register" ? "/verify" : "/dashboard");
+        const requestedPage = new URLSearchParams(window.location.search).get("next");
+        const loginDestination = ["/dashboard/forma", "/dashboard/design"].includes(requestedPage ?? "") ? "/dashboard/design" : "/dashboard";
+        router.push(mode === "register" ? "/verify" : loginDestination);
         router.refresh();
       }, 1100);
     } else {

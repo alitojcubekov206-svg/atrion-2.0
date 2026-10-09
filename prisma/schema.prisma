@@ -29,6 +29,91 @@ model User {
   threeDGenerations   Int       @default(0)
   createdAt DateTime  @default(now())
   projects  Project[]
+  designProjects DesignProject[]
+  formaProjects FormaProject[]
+  formaFiles FormaFile[]
+}
+
+model FormaProject {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title String
+  document Json
+  revision Int @default(1)
+  archived Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, updatedAt])
+  @@map("forma_projects")
+}
+
+model FormaFile {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  objectKey String @unique
+  createdAt DateTime @default(now())
+  @@index([userId])
+  @@map("forma_files")
+}
+
+model DesignProject {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name String
+  status String @default("draft")
+  roomType String
+  style String
+  prompt String @default("")
+  scene Json
+  plan Json?
+  revision Int @default(0)
+  currentVersionId String?
+  redoIds Json @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  versions DesignVersion[]
+  jobs DesignJob[]
+  @@index([userId, updatedAt])
+  @@map("design_projects")
+}
+
+model DesignVersion {
+  id String @id @default(cuid())
+  projectId String
+  project DesignProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentId String?
+  source String
+  actionType String
+  before Json
+  after Json
+  createdAt DateTime @default(now())
+  @@index([projectId, createdAt])
+  @@map("design_versions")
+}
+
+model DesignJob {
+  id String @id @default(cuid())
+  projectId String
+  project DesignProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type String
+  status String @default("queued")
+  progress Int @default(0)
+  stage String @default("queued")
+  input Json
+  result Json?
+  error String?
+  baseRevision Int
+  quotaDay DateTime
+  freeCharge Int @default(0)
+  refunded Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, createdAt])
+  @@index([projectId])
+  @@map("design_jobs")
 }
 
 model Project {

@@ -53,16 +53,25 @@ export async function POST(req: Request) {
     return invalidCode();
   }
 
-  await db.user.update({
-    where: { id: user.id },
+  const passwordHash = await bcrypt.hash(password, 10);
+  // Consume the code atomically: simultaneous resets cannot both succeed.
+  const changed = await db.user.updateMany({
+    where: {
+      id: user.id,
+      password: user.password,
+      passwordResetCode: code,
+      passwordResetExpires: { gt: new Date() },
+      passwordResetAttempts: { lt: MAX_ATTEMPTS },
+    },
     data: {
-      password: await bcrypt.hash(password, 10),
+      password: passwordHash,
       passwordResetCode: null,
       passwordResetExpires: null,
       passwordResetAttempts: 0,
     },
   });
+  if (changed.count !== 1) return invalidCode();
 
-  await createSession(user.id);
+  await createSession(user.id, passwordHash);
   return NextResponse.json({ ok: true });
 }

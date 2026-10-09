@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/backend/auth";
-import { isDemoMode } from "@/backend/ai";
+import { primaryTextProvider } from "@/backend/text-ai";
 
 export async function GET() {
   const userId = await getSessionUserId();
@@ -8,5 +8,6 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return NextResponse.json({ aiConfigured: !isDemoMode() });
+  const provider = primaryTextProvider();
+  return NextResponse.json({aiConfigured: Boolean(provider), model: provider?.model ?? null, provider: provider?.kind ?? "procedural"});
 }

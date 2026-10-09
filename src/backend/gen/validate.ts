@@ -89,7 +89,7 @@ export function isSupportedPrimitive(value: unknown): boolean {
     Object.hasOwn(SHAPE_ALIASES, value.trim().toLowerCase()));
 }
 
-function normalizeShape(value: unknown): PartShape {
+export function normalizeShape(value: unknown): PartShape {
   if (typeof value !== "string") return "box";
   const key = value.trim().toLowerCase();
   if (key === "mesh") return "mesh";

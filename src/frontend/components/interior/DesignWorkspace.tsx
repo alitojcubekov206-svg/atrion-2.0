@@ -1,0 +1,230 @@
+"use client";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import {ASSETS, STYLES, findAsset, type InteriorStyle} from "@/shared/interior/catalog";
+import {DEFAULT_PROMPT, newScene, type InteriorScene, type Opening} from "@/shared/interior/scene";
+import {ROOM_TEMPLATES, templateScene} from "@/shared/interior/templates";
+import {applyActions} from "@/shared/interior/engine";
+import {designPromptTarget} from "@/shared/interior/request";
+import type {DesignPreviewResult, LocalModelResult} from "@/shared/design/result";
+import ProcurementList from "../ProcurementList";
+import {roomProcurement} from "@/shared/procurement";
+import ModelResult from "./ModelResult";
+import ClarificationPanel from "./ClarificationPanel";
+import type {BriefAnswer, Clarification} from "@/shared/design/brief";
+import type {PlanAnalysis, StoredPlan} from "@/shared/interior/plan";
+const Viewer = dynamic(() => import("./InteriorViewer"), {ssr: false, loading: () => <div className="p-8 text-muted">Загрузка 3D…</div>});
+type Project = {id: string; name: string; scene: InteriorScene; revision: number; currentVersionId: string | null; redoIds: string[]; status: string; plan?: StoredPlan | null};
+type Job = {id: string; status: string; progress: number; stage: string; error?: string; result?: {variants?: {scene: InteriorScene; source: string}[]; analysis?: PlanAnalysis}};
+type Version = {id: string; actionType: string; source: string; createdAt: string};
+const input = "w-full rounded-xl border border-white/15 bg-surface2 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-accent";
+const button = "rounded-xl border border-white/15 px-3 py-2 text-sm text-slate-200 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed";
+async function api<T>(path: string, method = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
+  let response: Response;
+  try {response = await fetch(path, {method, signal, headers: body ? {"Content-Type": "application/json"} : undefined, body: body ? JSON.stringify(body) : undefined});}
+  catch (e) {if (signal?.aborted) throw e; throw new Error("Нет соединения с сервером Atrion. Проверьте, что сервер запущен, и повторите запрос. Текущая модель сохранена на странице.");}
+  const data = await response.json();
+  if (!response.ok) throw Object.assign(new Error(data.error?.message || data.error || "Не удалось выполнить запрос"), {code: data.error?.code || data.code});
+  return data;
+}
+function download(blob: Blob, name: string) {const url = URL.createObjectURL(blob), a = document.createElement("a"); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);}
+export default function DesignWorkspace({initialScene, preview = false}: {initialScene?: InteriorScene; preview?: boolean}) {
+  const [project, setProject] = useState<Project | null>(null), [projects, setProjects] = useState<{id: string; name: string}[]>([]);
+  const [scene, setScene] = useState<InteriorScene>(() => initialScene ?? newScene()), [name, setName] = useState(initialScene?.roomType === "living" ? "Моя гостиная" : "Моя спальня");
+  const [prompt, setPrompt] = useState(initialScene?.roomType === "living" ? "Светлая гостиная: диван, кресло, журнальный стол, стеллаж, торшер и растение." : DEFAULT_PROMPT), [command, setCommand] = useState("");
+  const [selected, setSelected] = useState<string | null>(null), [ghostWalls, setGhostWalls] = useState(true);
+  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [job, setJob] = useState<Job | null>(null);
+  const [history, setHistory] = useState<Version[]>([]), [saved, setSaved] = useState("");
+  const [canSave, setCanSave] = useState(!preview);
+  useEffect(() => {const requested = new URLSearchParams(location.search).get("prompt"); if (requested?.trim()) setPrompt(requested.trim().slice(0, 1500));}, []);
+  const [tab, setTab] = useState<"room" | "assets" | "history">("room");
+  const [assetQuery, setAssetQuery] = useState(""), [resetKey, setResetKey] = useState(0);
+  const [model, setModel] = useState<LocalModelResult | null>(null);
+  const procurement = useMemo(() => roomProcurement(scene), [scene]);
+  const [engine, setEngine] = useState<"local-ai" | "rules">("rules"), [aiConfigured, setAiConfigured] = useState(false);
+  const pendingEdit = useRef(false);
+  const aiRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => aiRequest.current?.abort(), []);
+  useEffect(() => {let live = true; api<{localAI: boolean}>(preview ? "/api/playground/design" : "/api/design/compose").then(data => {if (live) {setAiConfigured(data.localAI); if (data.localAI) setEngine("local-ai");}}).catch(() => {}); return () => {live = false;};}, [preview]);
+  const [clarification, setClarification] = useState<Clarification | null>(null), [answers, setAnswers] = useState<BriefAnswer[]>([]);
+  useEffect(() => {setClarification(null);setAnswers([]);}, [prompt]);
+  const output = useRef<HTMLElement | null>(null);
+  useEffect(() => {if (model) output.current?.scrollIntoView({behavior: "smooth", block: "start"});}, [model]);
+  const capture = useRef<(() => Promise<Blob>) | null>(null), latestScene = useRef(scene), inFlight = useRef(false);
+  latestScene.current = scene;
+  const running = job?.status === "queued" || job?.status === "processing", dirty = project && JSON.stringify(scene) !== JSON.stringify(project.scene);
+  const disabled = busy || running, root = project ? `/api/design/projects/${project.id}` : "";
+  const listProjects = useCallback(async () => {const data = await api<{projects: {id: string; name: string}[]}>("/api/design/projects"); setProjects(data.projects);}, []);
+  const accept = (p: Project) => {setProject(p); setScene(p.scene); setModel(null); setName(p.name); setSaved("Сохранено");};
+  const reload = useCallback(async (id: string) => {
+    const data = await api<{project: Project; job: Job | null}>(`/api/design/projects/${id}`);
+    accept(data.project); setJob(data.job); setSelected(null);
+    const hist = await api<{versions: Version[]}>(`/api/design/projects/${id}/history`); setHistory(hist.versions);
+  }, []);
+  useEffect(() => {if (preview) return; listProjects().catch(e => {if (e.code === "DATABASE_SCHEMA_NOT_READY") {setCanSave(false); setSaved("Сохранение пока недоступно — скачайте результат");} else setError(e.message);}); const id = new URLSearchParams(location.search).get("project"); if (id) reload(id).catch(e => setError(e.message));}, [listProjects, reload, preview]);
+  useEffect(() => {
+    if (!job || !running || !project) return;
+    let cancelled = false, timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const data = await api<{job: Job}>(`/api/jobs/${job.id}`); if (cancelled) return;
+        if (data.job.status === "completed") {
+          const [current, h] = await Promise.all([api<{project: Project}>(root), api<{versions: Version[]}>(`${root}/history`)]);
+          if (!cancelled) {accept(current.project); setCommand(""); setHistory(h.versions);}
+        } else if (data.job.status === "failed") setError(data.job.error || "Генерация не выполнена");
+        else timer = setTimeout(poll, 3000);
+        // Finish polling only after accepting the saved scene. A terminal status
+        // reruns this effect's cleanup and would otherwise discard the response.
+        if (!cancelled) setJob(data.job);
+      } catch (e) {if (!cancelled) {setError((e as Error).message); timer = setTimeout(poll, 5000);}}
+    };
+    timer = setTimeout(poll, 1500);
+    return () => {cancelled = true; clearTimeout(timer);};
+  }, [job?.id, running, project?.id, root]);
+  useEffect(() => {
+    if (!project || !dirty || disabled || inFlight.current) return;
+    const timer = setTimeout(async () => {
+      inFlight.current = true; setBusy(true); setSaved("Сохранение…"); const snapshot = latestScene.current;
+      try {const data = await api<{project: Project}>(root + "/scene", "PATCH", {scene: snapshot, revision: project.revision}); setProject(data.project); setSaved("Сохранено");}
+      catch (e) {setError((e as Error).message); setSaved("Не сохранено"); setScene(project.scene);}
+      finally {inFlight.current = false; setBusy(false);}
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [scene, project, dirty, disabled, root]);
+  useEffect(() => {const warn = (e: BeforeUnloadEvent) => {if (dirty || busy) e.preventDefault();}; window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);}, [dirty, busy]);
+  async function run(task: () => Promise<void>) {if (preview) {setError("Сохранение в базу недоступно в локальном режиме. Скачайте GLB или JSON."); return;} if (disabled || inFlight.current) return; setError(""); setBusy(true); try {await task();} catch (e) {setError((e as Error).message);} finally {setBusy(false);}}
+  async function create() {
+    const data = await api<{project: Project}>("/api/design/projects", "POST", {name, scene}); accept(data.project); historyUrl(data.project.id); await listProjects(); return data.project;
+  }
+  function historyUrl(id: string) {window.history.replaceState(null, "", `/dashboard/design?project=${encodeURIComponent(id)}`);}
+  async function generate(editing: boolean, nextAnswers = answers) {
+    pendingEdit.current = editing;
+    if (engine === "local-ai") {
+      const controller = new AbortController(); aiRequest.current = controller;
+      let result: LocalModelResult | Clarification;
+      try {result = await api<LocalModelResult | Clarification>(preview ? "/api/playground/design" : "/api/design/compose", "POST", {engine, prompt: editing ? command : prompt, answers: nextAnswers, previous: editing ? model?.composition : undefined}, controller.signal);}
+      catch (e) {if (controller.signal.aborted) throw new Error("Генерация остановлена. Предыдущая сцена сохранена."); throw e;}
+      finally {aiRequest.current = null;}
+      if (result.kind === "clarification") {setClarification(result);setAnswers(result.answers);return;}
+      setModel(result);setClarification(null);setAnswers([]);setCommand("");setSaved("Локальный AI-концепт");return;
+    }
+    {
+      const result = await api<DesignPreviewResult>(preview ? "/api/playground/design" : "/api/design/preview", "POST", {scene, prompt: editing ? command : prompt, editing, answers: nextAnswers});
+      if (result.kind === "clarification") {setClarification(result);setAnswers(result.answers);return;}
+      setClarification(null);setAnswers(nextAnswers);
+      if (result.kind === "model") setModel(result);
+      else {
+        if (project) accept((await api<{project: Project}>(root + "/scene", "PATCH", {scene: result.scene, revision: project.revision})).project);
+        else {setScene(result.scene);setModel(null);}
+        setSelected(null);setCommand("");setResetKey(k => k + 1);
+      }
+      setSaved(project ? "Сохранено" : "Результат на этой странице — скачайте файл");return;
+    }
+  }
+  async function action(actions: Record<string, unknown>[]) {
+    if (!project) {try {setScene(applyActions(scene, {actions}));setError("");} catch (e) {setError((e as Error).message);} return;}
+    await run(async () => {const data = await api<{project: Project}>(root + "/scene", "PATCH", {actions, revision: project.revision}); accept(data.project);});
+  }
+  function answerQuestion(answer: string) {
+    if (!clarification) return;
+    const next = [...clarification.answers, {questionId: clarification.question.id, question: clarification.question.text, answer}];
+    void (preview ? localTask : run)(() => generate(pendingEdit.current, next));
+  }
+  async function exportFile(format: "glb" | "json" | "png") {
+    if (format === "json") {download(new Blob([JSON.stringify(scene,null,2)],{type:"application/json"}),"atrion-interior.json");return;}
+    if (format === "png") {if (capture.current) download(await capture.current(), "interior.png"); return;}
+    const response = await fetch(preview ? "/api/playground/design/export" : "/api/design/export", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({scene})});
+    if (!response.ok) {const data = await response.json(); throw new Error(data.error?.message || data.error || "Ошибка экспорта");}
+    download(await response.blob(), `interior.${format}`);
+  }
+  async function localTask(task: () => Promise<void>) {if (busy) return;setBusy(true);setError("");try {await task();} catch (e) {setError((e as Error).message);} finally {setBusy(false);}}
+  async function upload(file: File) {
+    if (!project) throw new Error("Сначала сохраните комнату");
+    const response = await fetch(root + "/plan", {method: "POST", headers: {"Content-Type": file.type, "If-Match": String(project.revision)}, body: file});
+    const data = await response.json(); if (!response.ok) throw new Error(data.error?.message || "План не загружен");
+    accept(data.project);
+  }
+  const object = scene.objects.find(o => o.id === selected);
+  const updateOpening = (id: string, patch: Partial<Opening>) => setScene(s => ({...s, openings: s.openings.map(o => o.id === id ? {...o, ...patch} : o)}));
+  return <div className="mx-auto max-w-[1700px] px-4 py-6 md:px-8">
+    {preview && <p className="mb-4 rounded-xl border border-accent/20 bg-accent/5 px-4 py-2 text-xs text-muted">Локальный проект · комнаты и 3D-объекты по тексту без внешних API. Скачайте результат перед закрытием страницы.</p>}
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+      <div><p className="text-xs uppercase tracking-[.22em] text-accent">ATRION / DESIGN STUDIO</p><h1 className="mt-1 text-2xl font-semibold text-white">Ваше пространство в 3D</h1><p className="mt-1 text-sm text-muted">Опишите комнату, дом или отдельный объект. Рассмотрите результат в 3D.</p></div>
+      <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-muted" role="status">{saved || "Новая комната"}</span>
+        <select aria-label="Открыть проект дизайна" className={input + " !w-auto max-w-52"} value={project?.id || ""} disabled={disabled || Boolean(dirty)} onChange={e => {if (e.target.value) void run(async () => {await reload(e.target.value); historyUrl(e.target.value);});}}><option value="">Мои дизайны</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        <button className={button} disabled={disabled || Boolean(dirty)} onClick={() => {setProject(null);setClarification(null);setAnswers([]);setModel(null);setScene(newScene()); setName("Новая комната"); setJob(null); setHistory([]); setSaved(""); window.history.replaceState(null, "", preview ? "/playground/interior" : "/dashboard/design");}}>Новый</button>
+        <Link href="/dashboard/design-engine" className={button}>Генератор 3D</Link>
+      </div>
+    </div>
+    <div className={model || engine === "local-ai" ? "mx-auto max-w-6xl space-y-4" : "grid gap-4 lg:grid-cols-[250px_minmax(0,1fr)] 2xl:grid-cols-[260px_minmax(0,1fr)_240px]"}>
+      {!model && engine === "rules" && <aside className="rounded-2xl border border-white/10 bg-surface p-4">
+        <div className="mb-4 grid grid-cols-3 gap-1" role="tablist" aria-label="Параметры дизайна">{([["room", "Комната"], ["assets", "Мебель"], ["history", "История"]] as const).map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={button + " !px-1 !text-xs" + (tab === id ? " bg-accent/15 text-accent" : "")} onClick={() => setTab(id)}>{label}</button>)}</div>
+        {tab === "room" && !project && <div className="mb-5 space-y-2"><p className="text-[10px] uppercase tracking-[.18em] text-muted">Начать с пространства</p>{ROOM_TEMPLATES.map(t => <button key={t.id} className={button+" block w-full text-left"} disabled={disabled} onClick={() => {setScene(templateScene(t.id));setName(t.name);setSelected(null);setResetKey(k=>k+1);setSaved(preview ? "Локальный проект" : "Новая комната");}}><span className="block text-sm text-fg">{t.name}</span><span className="text-[11px] text-muted">{t.description}</span></button>)}</div>}
+        {tab === "room" && <fieldset disabled={disabled} className="space-y-4">
+          <label className="block text-xs text-muted">Название<input className={input + " mt-1"} value={name} maxLength={120} onChange={e => setName(e.target.value)} onBlur={() => {if (project && name.trim() && name !== project.name) void run(async () => {const data = await api<{project: Project}>(root, "PATCH", {name, revision: project.revision}); setProject(data.project); await listProjects();});}}/></label>
+          <label className="block text-xs text-muted">Тип помещения<select className={input + " mt-1"} value={scene.roomType} onChange={e => setScene({...scene, roomType: e.target.value})}>{[["bedroom", "Спальня"], ["living", "Гостиная"], ["office", "Кабинет"], ["other", "Другая комната"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+          <div className="grid grid-cols-3 gap-2">{([["width", "Ширина"], ["length", "Длина"], ["height", "Высота"]] as const).map(([key, label]) => <label key={key} className="text-xs text-muted">{label}, м<input type="number" min={2} max={key === "height" ? 6 : 30} step={.1} className={input + " mt-1"} value={scene[key]} onChange={e => setScene({...scene, [key]: Number(e.target.value)})}/></label>)}</div>
+          <label className="block text-xs text-muted">Стиль<select className={input + " mt-1"} value={scene.style} onChange={e => {const style = e.target.value as InteriorStyle; setScene({...scene, style, wallColor: STYLES[style].wall, floorColor: STYLES[style].floor, objects: scene.objects.map(o => o.locked ? o : {...o, color: STYLES[style].accent})});}}>{Object.entries(STYLES).map(([key, v]) => <option key={key} value={key}>{v.name}</option>)}</select></label>
+          <div className="flex gap-4">{([["wallColor", "Стены"], ["floorColor", "Пол"]] as const).map(([key, label]) => <label key={key} className="text-xs text-muted">{label}<input type="color" className="mt-1 block h-9 w-16 cursor-pointer rounded" value={scene[key]} onChange={e => setScene({...scene, [key]: e.target.value})}/></label>)}</div>
+          <div><h2 className="mb-2 text-sm font-medium text-white">Двери и окна</h2><p className="mb-3 text-xs text-muted">Начальные проёмы — пример. Укажите реальные позиции; отсчёт вдоль стены от левого края плана.</p>
+            {scene.openings.map(o => <div key={o.id} className="mb-3 space-y-2 rounded-xl border border-white/10 p-2">
+              <div className="flex justify-between text-xs text-slate-300"><span>{o.kind === "door" ? "Дверь" : "Окно"} · {o.id}</span><button aria-label={`Удалить ${o.id}`} onClick={() => setScene({...scene, openings: scene.openings.filter(x => x.id !== o.id)})}>×</button></div>
+              <select aria-label={`Стена ${o.id}`} className={input} value={o.wall} onChange={e => updateOpening(o.id, {wall: e.target.value as Opening["wall"]})}>{[["north", "Север"], ["south", "Юг"], ["west", "Запад"], ["east", "Восток"]].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select>
+              <div className="grid grid-cols-2 gap-2">{([["offset", "Отступ"], ["width", "Ширина"], ["bottom", "От пола"], ["height", "Высота"]] as const).map(([key,label]) => <label key={key} className="text-[10px] text-muted">{label}, м<input className={input} type="number" step={.1} min={0} value={o[key]} onChange={e => updateOpening(o.id, {[key]: Number(e.target.value)})}/></label>)}</div>
+            </div>)}
+            <div className="flex gap-2"><button className={button} onClick={() => setScene({...scene, openings: [...scene.openings, {id: `window_${Date.now()}`, kind: "window", wall: "east", offset: .3, width: 1, bottom: .9, height: 1.2}]})}>+ Окно</button>
+            <button className={button} onClick={() => setScene({...scene, openings: [...scene.openings, {id: `door_${Date.now()}`, kind: "door", wall: "west", offset: .3, width: .9, bottom: 0, height: 2.1}]})}>+ Дверь</button></div>
+          </div>
+          {!project && <button className={button + " w-full bg-sky-500/15"} disabled={!canSave || disabled} onClick={() => void run(async () => {await create();})}>Сохранить комнату</button>}
+          <div className="space-y-2 border-t border-white/10 pt-4"><h2 className="text-sm text-white">План помещения</h2><p className="text-xs leading-5 text-muted">PNG, JPEG, SVG до 15 МБ; PDF до 25 МБ. Анализ получает изображение через Cloudflare. Сначала сохраните комнату.</p>
+            <input aria-label="Загрузить план помещения" type="file" accept="image/png,image/jpeg,image/svg+xml,application/pdf" className="w-full text-xs text-muted file:mr-2 file:rounded-lg file:border-0 file:bg-slate-800 file:p-2 file:text-accent2" disabled={!project || Boolean(dirty)} onChange={e => {const file = e.target.files?.[0]; if (file) void run(() => upload(file)); e.target.value = "";}}/>
+            {project?.plan && <><p className="text-xs text-accent2">План загружен{project.plan.mime === "application/pdf" ? ". Для AI-анализа сохраните нужную страницу как PNG/JPEG." : ""}</p>
+              <button className={button + " w-full"} disabled={Boolean(dirty) || !project.plan.processedKey} onClick={() => void run(async () => setJob((await api<{job: Job}>(root + "/analyze-plan", "POST", {revision: project.revision})).job))}>Распознать размеры</button>
+              {project.plan.analysis && <div className="space-y-2 text-xs text-slate-300"><p>Проверьте размеры по оригиналу. Неуверенные значения оставлены пустыми.</p>{project.plan.analysis.rooms.map(r => <div key={r.id} className="rounded-lg border border-white/10 p-2"><p>{r.name}</p><p>{r.width.value ?? "?"} × {r.length.value ?? "?"} м · высота {r.height.value ?? "?"} м</p><button className="mt-1 text-accent disabled:text-slate-600" disabled={!r.width.value || !r.length.value} onClick={() => setScene({...scene, width: r.width.value!, length: r.length.value!, height: r.height.value ?? scene.height})}>Применить после проверки</button></div>)}{!project.plan.analysis.rooms.length && <p>Читаемые размеры комнат не найдены. Заполните их вручную.</p>}</div>}
+            </>}
+          </div>
+        </fieldset>}
+        {tab === "assets" && <div className="space-y-2"><p className="mb-3 text-xs text-muted">Мебель и предметы. Каждый объект можно настроить в сцене.</p><input aria-label="Поиск мебели" placeholder="Найти предмет…" className={input+" mb-2"} value={assetQuery} onChange={e=>setAssetQuery(e.target.value)}/>{ASSETS.filter(a=>(a.name+" "+a.tags.join(" ")).toLocaleLowerCase().includes(assetQuery.toLocaleLowerCase())).map(a => <button key={a.id} className={button + " w-full text-left"} disabled={disabled || Boolean(dirty)} onClick={() => void action([{type: "ADD_OBJECT", id: `item_${Date.now()}`, assetId: a.id}])}><span className="block">+ {a.name}</span><span className="text-xs text-muted">{a.width} × {a.depth} × {a.height} м</span></button>)}</div>}
+        {tab === "history" && <div className="space-y-2"><button className={button} disabled={!project || disabled} onClick={() => void run(async () => setHistory((await api<{versions: Version[]}>(root + "/history")).versions))}>Обновить историю</button>{!history.length && <p className="text-sm text-muted">Изменения появятся после сохранения.</p>}{history.map(v => <button key={v.id} className={button + " w-full text-left"} disabled={disabled || Boolean(dirty)} onClick={() => void run(async () => accept((await api<{project: Project}>(root + "/restore", "POST", {revision: project!.revision, versionId: v.id})).project))}><span className="block">{new Date(v.createdAt).toLocaleString("ru-RU")}</span><span className="text-xs text-muted">{v.actionType} · {v.source} · восстановить</span></button>)}</div>}
+      </aside>}
+      <section ref={output} className="min-w-0 space-y-4">
+        {model ? <ModelResult key={model.concept.name} result={model} onReturn={() => {setModel(null);setEngine("rules");}}/> : engine === "local-ai" ? <div className="rounded-2xl border border-white/10 bg-surface2 px-6 py-10 text-center"><h2 className="text-xl font-medium text-white">Сцена начинается с вашей идеи</h2><p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted">Опишите объекты, их расположение и детали. При необходимости модель задаст вопрос, затем соберёт композицию.</p></div> : <div className="overflow-hidden rounded-2xl border border-white/10 bg-surface2">
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3"><label className="text-xs text-slate-300"><input type="checkbox" className="mr-2" checked={ghostWalls} onChange={e => setGhostWalls(e.target.checked)}/>Разрез комнаты</label>
+            <div className="flex gap-2"><button className={button} onClick={()=>setResetKey(k=>k+1)}>Общий вид</button>{(["undo", "redo"] as const).map(a => <button key={a} className={button} disabled={disabled || Boolean(dirty) || !project || (a === "undo" ? !project.currentVersionId : !project.redoIds.length)} onClick={() => void run(async () => accept((await api<{project: Project}>(root + "/" + a, "POST", {revision: project!.revision})).project))}>{a === "undo" ? "↶ Отменить" : "↷ Повторить"}</button>)}</div>
+          </div>
+          <div className="h-[clamp(320px,55vh,640px)]"><Viewer scene={scene} selected={selected} onSelect={setSelected} ghostWalls={ghostWalls} capture={capture} resetKey={resetKey}/></div>
+          <div className="flex flex-wrap justify-between gap-2 p-3 text-xs text-muted"><span>{scene.width} × {scene.length} м · {scene.objects.length} предметов · вращайте сцену мышью</span><div className="flex gap-2">{(["glb", "json", "png"] as const).map(f => <button key={f} className="text-accent disabled:text-slate-600" disabled={disabled || Boolean(dirty)} onClick={() => void (preview ? localTask : run)(() => exportFile(f))}>{f.toUpperCase()} ↓</button>)}</div></div>
+        </div>}
+        {!model && engine === "rules" && <ProcurementList value={procurement}/>}
+        {running && <div role="status" className="rounded-xl border border-accent/30 bg-sky-950/30 p-4"><div className="flex justify-between text-sm text-sky-100"><span>{job.status === "queued" ? "В очереди" : job.stage === "analyzing_plan" ? "Распознаём размеры на плане" : "Расставляем мебель и проверяем проходы"}</span><span>{job.progress}%</span></div><progress className="mt-2 h-2 w-full" value={job.progress} max={100}/><p className="mt-2 text-xs text-muted">Проект можно открыть позже — задача сохранена.</p></div>}
+        {job?.status === "completed" && job.result?.variants && <div className="flex flex-wrap gap-2">{job.result.variants.map((v, i) => <button key={i} className={button} disabled={disabled || Boolean(dirty)} onClick={() => void run(async () => accept((await api<{project: Project}>(root + "/variant", "POST", {revision: project!.revision, jobId: job.id, index: i})).project))}>Вариант {i+1} · {v.source === "local" ? "локальная расстановка" : "AI"}</button>)}</div>}
+        <div className="rounded-2xl border border-white/10 bg-surface p-4"><label htmlFor="design-brief" className="text-sm font-medium text-white">Что создаём?</label><textarea id="design-brief" className={input + " mt-2 min-h-24"} value={prompt} maxLength={1500} onChange={e => setPrompt(e.target.value)} disabled={disabled}/>
+          <label className="mt-3 flex items-center gap-3 text-xs text-muted">Генерация<select aria-label="Способ генерации" className={input + " !w-auto"} value={engine} disabled={disabled} onChange={e => {setEngine(e.target.value as "local-ai" | "rules");setAnswers([]);setClarification(null);}}><option value="local-ai">Локальная нейросеть · CPU</option><option value="rules">Быстро · по правилам</option></select></label>
+          {engine === "local-ai" && <p className="mt-2 text-xs text-muted">{aiConfigured ? "Модель составляет сцену по всему описанию. На процессоре это может занять несколько минут." : "Подключение локальной модели пока не настроено."} Сложные формы и точное соблюдение всех деталей не гарантируются.</p>}
+          {busy && engine === "local-ai" && <div className="my-3 flex items-center gap-3"><p role="status" className="text-sm text-accent">Модель составляет сцену и проверяет размещение…</p><button type="button" className={button} onClick={() => aiRequest.current?.abort()}>Остановить</button></div>}
+          {error && <div role="alert" className="my-3 flex items-start justify-between gap-4 rounded-xl border border-rose-400/40 bg-rose-950/30 p-3 text-sm text-rose-100"><span>{error}</span><button aria-label="Закрыть ошибку" onClick={() => setError("")}>×</button></div>}
+          <div className="my-2 flex flex-wrap gap-2">{["Дом", "Красный спорткар", "Кот", "Спальня 4×5 м с кроватью и шкафом"].map(example => <button key={example} className={button + " !py-1 !text-xs"} disabled={disabled} onClick={() => setPrompt(example)}>{example}</button>)}</div>
+          <p className="my-2 text-xs text-muted">Если важных деталей не хватает, Atrion уточнит их перед построением. Можно ответить своими словами или доверить выбор. {engine === "local-ai" ? "Укажите размеры и стиль в описании. Новый запрос создаст отдельную композицию." : designPromptTarget(prompt) === "model" ? "Текущая комната сохранится на странице." : "Новая расстановка заменит незакреплённую мебель."}</p>
+          {clarification && <ClarificationPanel key={`${clarification.question.id}-${clarification.answers.length}`} value={clarification} busy={Boolean(disabled)} onAnswer={answerQuestion} onCancel={() => {setClarification(null);setAnswers([]);}}/>}
+          {!clarification && <div className="flex justify-between gap-2"><span className="self-center text-xs text-muted">Бесплатная генерация</span><button className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40" disabled={disabled || Boolean(dirty) || !prompt.trim()} onClick={() => void (preview ? localTask : run)(() => generate(false))}>{busy ? "Обрабатываем…" : "Создать 3D"}</button></div>}
+        </div>
+        {((!model && engine === "rules") || (model?.composition && engine === "local-ai")) && <form className="flex gap-2" onSubmit={e => {e.preventDefault();setAnswers([]);setClarification(null); void (preview ? localTask : run)(() => generate(true, []));}}><input aria-label="Команда редактирования" className={input} placeholder="Убери стол и поставь диван" value={command} maxLength={1500} disabled={disabled} onChange={e => setCommand(e.target.value)}/><button className={button} disabled={disabled || Boolean(dirty) || !command.trim()}>Изменить</button></form>}
+      </section>
+      {!model && engine === "rules" && <aside className="lg:col-start-2 2xl:col-start-auto space-y-4 rounded-2xl border border-white/10 bg-surface p-4"><h2 className="text-sm font-semibold text-white">Предметы в комнате</h2>
+        {!scene.objects.length && <p className="text-sm leading-6 text-muted">Здесь появится мебель. Создайте дизайн по описанию или добавьте предмет из библиотеки.</p>}
+        <div className="max-h-64 space-y-1 overflow-auto">{scene.objects.map(o => <button key={o.id} className={button + " w-full text-left" + (selected === o.id ? " border-accent bg-accent/10" : "")} onClick={() => setSelected(o.id)}>{findAsset(o.assetId).name}{o.locked ? " · закреплён" : ""}</button>)}</div>
+        {object && <fieldset disabled={disabled || Boolean(dirty)} className="space-y-3 border-t border-white/10 pt-4"><legend className="sr-only">Редактирование предмета</legend><p className="text-sm text-white">{findAsset(object.assetId).name}</p>
+          <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={object.locked} onChange={e => void action([{type: "LOCK_OBJECT", objectId: object.id, locked: e.target.checked}])}/>Закрепить предмет</label>
+          <div className="grid grid-cols-2 gap-2">{(["x", "z"] as const).map(axis => <label className="text-xs text-muted" key={axis}>{axis.toUpperCase()}, м<input key={`${object.id}-${object.position[axis]}`} className={input} type="number" defaultValue={object.position[axis]} step={.1} disabled={object.locked} onBlur={e => {const n = Number(e.target.value); if (n !== object.position[axis]) void action([{type: "MOVE_OBJECT", objectId: object.id, position: {...object.position, [axis]: n}}]);}}/></label>)}</div>
+          <div className="grid grid-cols-3 gap-2">{(["x", "y", "z"] as const).map(axis => <label className="text-xs text-muted" key={axis}>Масштаб {axis.toUpperCase()}<input key={`${object.id}-scale-${object.scale[axis]}`} className={input} type="number" min={.5} max={2} defaultValue={object.scale[axis]} step={.1} disabled={object.locked} onBlur={e => {const n = Number(e.target.value); if (n !== object.scale[axis]) void action([{type: "SCALE_OBJECT", objectId: object.id, scale: {...object.scale, [axis]: n}}]);}}/></label>)}</div>
+          <label className="flex items-center justify-between text-xs text-slate-300">Цвет предмета<input aria-label="Цвет предмета" type="color" defaultValue={object.color} key={`${object.id}-${object.color}`} disabled={object.locked} onBlur={e => {if (e.target.value !== object.color) void action([{type: "CHANGE_MATERIAL", objectId: object.id, color: e.target.value}]);}}/></label>
+          <button className={button + " w-full"} disabled={object.locked} onClick={() => void action([{type: "ROTATE_OBJECT", objectId: object.id, angle: (object.rotation.y + Math.PI / 2) % (Math.PI * 2)}])}>Повернуть на 90°</button>
+          <button className={button + " w-full"} disabled={object.locked} onClick={() => void action([{type: "MOVE_NEAR_WINDOW", objectId: object.id}])}>Переставить к окну</button>
+          <button className={button + " w-full text-rose-300"} disabled={object.locked} onClick={() => void action([{type: "REMOVE_OBJECT", objectId: object.id}])}>Удалить предмет</button>
+        </fieldset>}
+        <p className="border-t border-white/10 pt-4 text-xs leading-5 text-muted">Концепт прямоугольной комнаты. Проверка проходов использует габариты мебели; открывание дверец и строительные нормы нужно проверить отдельно.</p>
+      </aside>}
+    </div>
+  </div>;
+}

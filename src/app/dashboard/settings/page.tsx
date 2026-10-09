@@ -15,7 +15,6 @@ function formatDate(date: Date) {
 export default async function SettingsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const isPro = user.plan === "pro";
 
   return (
     <StarkHudFrame>
@@ -38,24 +37,7 @@ export default async function SettingsPage() {
               <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-accent/80">Профиль</p>
               <h2 className="display mt-2 text-xl font-semibold text-white">{user.name}</h2>
               <p className="mt-1 text-sm text-muted">{user.email}</p>
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${
-                    isPro ? "border-accent/40 bg-accent/15 text-accent2" : "border-line text-muted"
-                  }`}
-                >
-                  {isPro ? "PRO" : "FREE"}
-                </span>
-                {isPro && user.planExpiresAt && (
-                  <span className="text-xs text-muted">до {formatDate(user.planExpiresAt)}</span>
-                )}
-                <Link
-                  href="/pricing"
-                  className="rounded border border-line px-2.5 py-1 text-[10px] uppercase tracking-wider text-muted transition hover:border-accent/40 hover:text-accent2"
-                >
-                  {isPro ? "Продлить" : "Тарифы"}
-                </Link>
-              </div>
+              <p className="mt-4 text-sm text-accent">Все функции бесплатно</p>
               <p className="mt-5 text-xs text-muted">
                 В аккаунте с {formatDate(user.createdAt)} ·{" "}
                 <Link href="/legal" className="text-accent hover:underline">

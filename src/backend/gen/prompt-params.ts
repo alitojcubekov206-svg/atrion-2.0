@@ -129,13 +129,13 @@ function extractNumbers(text: string): number[] {
 /** Convert to metres when the prompt used cm / mm. */
 function toMetres(value: number, unit: string | undefined): number {
   if (!unit) return value;
-  if (/^(мм|mm)$/i.test(unit)) return value / 1000;
-  if (/^(см|cm)$/i.test(unit)) return value / 100;
-  if (/^(км|km)$/i.test(unit)) return value * 1000;
+  if (/^(мм|mm|миллиметр|millimet)/i.test(unit)) return value / 1000;
+  if (/^(см|cm|сантиметр|centimet)/i.test(unit)) return value / 100;
+  if (/^(км|km|километр|kilomet)/i.test(unit)) return value * 1000;
   return value;
 }
 
-const UNIT = "(мм|см|м|км|mm|cm|m|km)?";
+const UNIT = "(миллиметр[а-яё]*|сантиметр[а-яё]*|километр[а-яё]*|метр[а-яё]*|(?:milli|centi|kilo)?met(?:er|re)s?|мм|см|км|м|mm|cm|km|m)?";
 
 export function parsePromptParams(prompt: string): PromptParams {
   const raw = prompt.trim();

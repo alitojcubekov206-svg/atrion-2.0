@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import { isDeepStrictEqual } from "node:util";
+import { EditNotApplied, editableParts, isModelRebuild, localRefine, restoreEditedMeshes } from "./refinement";
 import { primaryTextProvider, fallbackTextProvider, requestTextJSON, type TextRequestOptions } from "./text-ai";
 import type {
   Blueprint,
@@ -12,7 +14,7 @@ import { buildFromPlan, buildFromPrompt, detectCategory, planFor } from "@/backe
 import { builderOwnsGeometry, generateAIGeometry, pickBetterGeometry } from "@/backend/gen/ai-geometry";
 import { matchParts } from "@/backend/gen/match";
 import { dimensionsOf, primitiveCount, structureFromGroups } from "@/shared/geometry";
-import { sanitizeParts, scoreParts, validateAndRepair } from "@/backend/gen/validate";
+import { sanitizeParts, scoreParts } from "@/backend/gen/validate";
 
 const hasKey = () => Boolean(primaryTextProvider());
 
@@ -48,7 +50,7 @@ async function chatJSON<T>(system: string, user: string, options:TextRequestOpti
     if (!fallback || !isProviderFailure(error)) throw error;
 
     console.warn(
-      "Atrion AI Pro primary provider failed; trying fallback",
+      "Atrion AI primary provider failed; trying fallback",
       errorSummary(error)
     );
     try {
@@ -57,7 +59,7 @@ async function chatJSON<T>(system: string, user: string, options:TextRequestOpti
       return await requestTextJSON<T>(fallback, system, user, {...options,timeoutMs:remaining});
     } catch (fallbackError) {
       console.warn(
-        "Atrion AI Pro fallback provider failed; using local fallback",
+        "Atrion AI fallback provider failed; using local fallback",
         errorSummary(fallbackError)
       );
       throw fallbackError;
@@ -66,7 +68,7 @@ async function chatJSON<T>(system: string, user: string, options:TextRequestOpti
 }
 
 function localFallback<T>(label: string, error: unknown, value: () => T): T {
-  console.warn(`Atrion AI Pro ${label} unavailable; using local fallback`, errorSummary(error));
+  console.warn(`Atrion AI ${label} unavailable; using local fallback`, errorSummary(error));
   return value();
 }
 
@@ -662,35 +664,6 @@ export async function generate3DConcept(
   return (await generate3DModel(prompt, answers)).concept;
 }
 
-/**
- * The subject of a 3D request as a short English description for an image
- * model — FLUX reads English far better than Russian. Falls back to the
- * request itself when no text provider is configured or it fails.
- */
-export async function describeForImage(
-  prompt: string,
-  answers: { question: string; answer: string }[] = []
-): Promise<string> {
-  if (!hasKey()) return prompt;
-  try {
-    const data = await chatJSON<{ subject?: unknown }>(
-      `Rewrite a 3D model request as one English image description of the object itself.
-Keep every visual detail the user gave (colours, clothing, hair, materials, style, count).
-Do not add a background or scene. At most 40 words.
-Return JSON: {"subject":"..."}`,
-      `Request: ${prompt}
-${answers.map((item) => `${item.question}: ${item.answer}`).join("\n")}`,
-      { timeoutMs: 12_000, maxTokens: 200 }
-    );
-    return typeof data.subject === "string" && data.subject.trim()
-      ? data.subject.trim().slice(0, 400)
-      : prompt;
-  } catch (error) {
-    console.warn("Image prompt rewrite unavailable", errorSummary(error));
-    return prompt;
-  }
-}
-
 function withAnswers(
   concept: ThreeDConcept,
   answers: { question: string; answer: string }[]
@@ -789,26 +762,27 @@ User said: ${input.message}`
  * Apply a natural-language edit to an existing model.
  *
  * "Сделай мне вместо этого башню" rebuilds from scratch; "добавь балкон" edits
- * the geometry in place. The edited parts are validated and only accepted when
- * they do not collapse the model — otherwise the local heuristic edit stands.
+ * the geometry in place. Accept valid geometry regardless of part count. If
+ * neither AI nor the local fallback can apply an edit, report failure explicitly.
  */
 export async function refine3DConcept(
   concept: ThreeDConcept,
   instruction: string,
   selectedPartId?: string | null
 ): Promise<ThreeDConcept> {
-  const rebuild =
-    /построй|замени на|вместо (этого|него)|новый объект|переделай в|сделай вместо/i.test(
-      instruction
-    ) && instruction.trim().length > 12;
-
-  if (rebuild) {
-    const rebuilt = await generate3DModel(instruction);
+  if (isModelRebuild(instruction)) {
+    const rebuilt = await generate3DModel(instruction, [], { variant: crypto.randomUUID().slice(0, 8) });
     return { ...rebuilt.concept, description: `${rebuilt.concept.description} · ${instruction}` };
   }
 
   const local = localRefine(concept, instruction, selectedPartId);
-  if (!hasKey()) return local;
+  const fallback = () => {
+    if (local) return local;
+    throw new EditNotApplied();
+  };
+  // Exact supported transforms do not need an AI interpretation of percentages.
+  if (local) return local;
+  if (!hasKey()) return fallback();
 
   const selected = selectedPartId
     ? concept.parts.find((item) => item.id === selectedPartId)
@@ -821,6 +795,7 @@ Return the COMPLETE parts list after the edit — every part that should remain,
 Keep untouched parts byte-identical. Keep the object standing on y = 0 and centred on x/z.
 "size" is always the full bounding box [width, height, depth] — never a radius.
 Available shapes: box, plane, cylinder, sphere, cone, pyramid, prism, wedge, torus, capsule, tube.
+Existing mesh parts must keep their id and shape; you can change their transform or material, never invent mesh vertices.
 A part may carry "repeat": {"count":n,"step":[x,y,z]} and "mirror": "x" | "z" | "xz".
 Answer in the user's language.
 Return JSON: {"name":"...","description":"...","parts":[...]}`,
@@ -848,28 +823,8 @@ ${JSON.stringify(
 )}`
     );
 
-    const targetMaxSize = Math.max(
-      concept.dimensions.width,
-      concept.dimensions.height,
-      concept.dimensions.depth
-    );
-    // Mesh vertices never go to the model (they would blow the prompt), so a
-    // returned mesh part gets its baked geometry back by id.
-    const meshes = new Map(
-      concept.parts.filter((item) => item.mesh).map((item) => [item.id, item.mesh])
-    );
-    const returned = Array.isArray(result?.parts)
-      ? result.parts.map((item) => {
-          const raw = item as { id?: unknown; mesh?: unknown } | null;
-          return raw && typeof raw.id === "string" && meshes.has(raw.id) && !raw.mesh
-            ? { ...raw, shape: "mesh", mesh: meshes.get(raw.id) }
-            : item;
-        })
-      : result?.parts;
-    const repaired = validateAndRepair(returned, { targetMaxSize });
-
-    // An edit that shreds the model is worse than no edit at all.
-    if (repaired.parts.length >= 4 && repaired.score >= scoreParts(concept.parts) * 0.8) {
+    const parts = restoreEditedMeshes(result?.parts, concept.parts);
+    if (editableParts(parts) && !isDeepStrictEqual(parts, concept.parts)) {
       return {
         ...concept,
         name:
@@ -880,16 +835,16 @@ ${JSON.stringify(
           typeof result?.description === "string" && result.description.trim()
             ? result.description.trim().slice(0, 400)
             : `${concept.description} · ${instruction}`,
-        parts: repaired.parts,
-        structure: structureFromGroups(repaired.parts),
-        dimensions: dimensionsOf(repaired.parts),
+        parts,
+        structure: structureFromGroups(parts),
+        dimensions: dimensionsOf(parts),
         source: "ai",
       };
     }
-    return local;
   } catch (error) {
-    return localFallback("3D refine", error, () => local);
+    console.warn("3D refine unavailable", errorSummary(error));
   }
+  return fallback();
 }
 
 function normalize3DConcept(value: unknown): ThreeDConcept {
@@ -1016,38 +971,4 @@ function normalize3DConcept(value: unknown): ThreeDConcept {
 
 function mock3DConcept(prompt: string): ThreeDConcept {
   return buildFromPrompt(prompt);
-}
-
-function localRefine(
-  concept: ThreeDConcept,
-  instruction: string,
-  selectedPartId?: string | null
-): ThreeDConcept {
-  const lower = instruction.toLowerCase();
-  const scale =
-    lower.includes("увелич") || lower.includes("больше") || lower.includes("30%")
-      ? 1.2
-      : lower.includes("уменш") || lower.includes("меньше")
-        ? 0.85
-        : 1;
-  const wood = lower.includes("дерев") || lower.includes("wood");
-  const parts = concept.parts.map((part) => {
-    const targeted = !selectedPartId || part.id === selectedPartId;
-    if (!targeted) return part;
-    return {
-      ...part,
-      size: [part.size[0] * scale, part.size[1] * scale, part.size[2] * scale] as [
-        number,
-        number,
-        number,
-      ],
-      material: wood ? "Дерево" : part.material,
-      color: wood ? "#b45309" : part.color,
-    };
-  });
-  return {
-    ...concept,
-    description: `${concept.description} · правка: ${instruction}`,
-    parts,
-  };
 }

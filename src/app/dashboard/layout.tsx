@@ -9,20 +9,16 @@ import CommandPalette, { CommandPaletteTrigger } from "@/frontend/components/Com
 const NAV = [
   { href: "/dashboard", label: "Проекты", always: false },
   { href: "/dashboard/design-engine", label: "Design Engine", always: true },
+  { href: "/dashboard/design", label: "Интерьер", always: false },
   { href: "/dashboard/settings", label: "Настройки", always: false },
-  { href: "/pricing", label: "Тарифы", always: false },
 ];
 
-function formatDate(date: Date) {
-  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-}
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (isEmailVerificationEnabled() && !user.emailVerified) redirect("/verify");
 
-  const isPro = user.plan === "pro";
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-bg">
@@ -50,21 +46,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <span className="hidden font-mono text-[10px] uppercase tracking-wider text-muted sm:inline">
               {user.name}
             </span>
-            {isPro ? (
-              <span
-                title={user.planExpiresAt ? `Pro до ${formatDate(user.planExpiresAt)}` : "Pro"}
-                className="rounded border border-accent/35 bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-accent"
-              >
-                PRO
-              </span>
-            ) : (
-              <TransitionLink
-                href="/pricing"
-                className="rounded border border-accent/30 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-accent transition hover:bg-accent/10"
-              >
-                Улучшить
-              </TransitionLink>
-            )}
+            <span className="hidden text-xs text-accent sm:inline">Бесплатно</span>
             <LogoutButton />
           </div>
         </nav>

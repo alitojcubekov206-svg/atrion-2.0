@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { generateAIGeometry, pickBetterGeometry, type JsonRequester } from "../src/backend/gen/ai-geometry";
 import { buildFromPrompt, detectCategory } from "../src/backend/procedural-3d";
+import { parsePromptParams } from "../src/backend/gen/prompt-params";
 
 // Capture the actual provider boundary; no external AI call or account quota is used.
 for(const prompt of ["создай мне ракету","самолёт длиной 12 метров","двухэтажный дом 12×9 м","деревянный стул","микроскоп"]){
@@ -107,4 +108,59 @@ test("supported primitive aliases remain renderable", async () => {
 test("coincident repeat instances are reported instead of counting as real detail",async()=>{
   const {result}=await resultFor([{...part("fin"),repeat:{count:4,step:[0,0,0]}}],true);
   assert(result?.issues.some(issue=>issue.includes("повторения полностью совпадают")));
+});
+
+test("invalid first geometry gets one corrective attempt with the original request", async () => {
+  let calls = 0;
+  const prompt = "красный куб 2 метра";
+  const request: JsonRequester = async <T>(_system: string, user: string) => {
+    calls++;
+    if (calls === 1) return {parts: [{...part("cube"), shape: "unknown"}]} as T;
+    assert(user.includes(prompt));
+    assert(user.includes("Цвет: красный"));
+    assert(user.includes("parts[0].shape"));
+    return {parts: [part("cube")]} as T;
+  };
+  const result = await generateAIGeometry({prompt, baseline: buildFromPrompt(prompt), category: "handheld",
+    answers: [{question: "Цвет", answer: "красный"}], request});
+  assert.equal(calls, 2);
+  assert.equal(result?.passes, 2);
+  assert.equal(result?.parts[0].id, "cube");
+});
+
+test("malformed JSON is retried once but provider failures are not geometry defects", async () => {
+  for (const error of [new SyntaxError("bad JSON"), Object.assign(new Error("rate limit"), {status: 429})]) {
+    let calls = 0;
+    const request: JsonRequester = async <T>() => {
+      calls++;
+      if (calls === 1) throw error;
+      return {parts: [part("cube")]} as T;
+    };
+    const result = await generateAIGeometry({prompt: "куб 2 метра", baseline: buildFromPrompt("куб"), category: "handheld", request});
+    assert.equal(calls, error instanceof SyntaxError ? 2 : 1);
+    assert.equal(Boolean(result), error instanceof SyntaxError);
+  }
+});
+
+test("a size without an axis is checked against the longest rendered side", async () => {
+  let calls = 0;
+  const request: JsonRequester = async <T>(_system: string, user: string) => {
+    calls++;
+    if (calls === 2) assert(user.includes("задано 2 м, получено 3 м"));
+    return {parts: [part("cube", [0, 1, 0], [calls === 1 ? 3 : 2, 2, 2])]} as T;
+  };
+  const result = await generateAIGeometry({prompt: "куб 2 метра", baseline: buildFromPrompt("куб"), category: "handheld", request});
+  assert.equal(calls, 2);
+  assert.equal(result?.parts[0].size[0], 2);
+  assert.deepEqual(result?.issues, []);
+});
+
+test("labelled and paired measurements accept full unit names", () => {
+  for (const prompt of ["стол высотой 75 сантиметров", "стол высотой 750 миллиметров", "table height 75 centimeters", "table height 750 millimetres"]) {
+    assert.equal(parsePromptParams(prompt).height, .75, prompt);
+  }
+  assert.equal(parsePromptParams("мост длиной 2 километра").depth, 2000);
+  assert.equal(parsePromptParams("панель 120×90 сантиметров").width, 1.2);
+  assert.equal(parsePromptParams("панель 120×90 сантиметров").depth, .9);
+  assert.equal(parsePromptParams("стол высотой 75 см").height, .75);
 });

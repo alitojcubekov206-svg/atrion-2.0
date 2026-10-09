@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { db } from "@/backend/db";
 import { sendPasswordResetEmail } from "@/backend/mail";
+import { canReturnEmailCode } from "@/backend/email-development";
 import { clientIp, rateLimit, rateLimitedResponse } from "@/backend/rate-limit";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -57,6 +58,6 @@ export async function POST(req: Request) {
     },
   });
   const sent = await sendPasswordResetEmail(email, code);
-  const devCode = !sent && process.env.EMAIL_DEV_RETURN_CODE === "true" ? code : undefined;
+  const devCode = !sent && canReturnEmailCode() ? code : undefined;
   return NextResponse.json({ ok: true, devCode });
 }

@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { db } from "./db";
 import { sendVerificationEmail } from "./mail";
+import { canReturnEmailCode } from "./email-development";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
@@ -28,7 +29,7 @@ export async function issueVerificationCode(userId: string, email: string) {
   });
 
   const sent = await sendVerificationEmail(email, code);
-  const devReturnCode = process.env.EMAIL_DEV_RETURN_CODE === "true";
+  const devReturnCode = canReturnEmailCode();
 
   return { sent, devCode: !sent && devReturnCode ? code : undefined };
 }

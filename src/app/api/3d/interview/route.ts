@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/backend/api-auth";
-import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
+import { consumeAiQuota } from "@/backend/ai-quota";
 import { generate3DInterview } from "@/backend/ai";
 
 export const maxDuration = 60;
@@ -18,9 +18,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Некорректный запрос." }, { status: 400 });
   }
 
-  if (typeof prompt !== "string" || prompt.trim().length < 10) {
+  if (typeof prompt !== "string" || prompt.trim().length < 3) {
     return NextResponse.json(
-      { error: "Опишите объект подробнее - минимум 10 символов." },
+      { error: "Укажите название объекта — минимум 3 символа." },
       { status: 400 }
     );
   }
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     const questions = await generate3DInterview(prompt.trim());
     return NextResponse.json({ questions });
   } catch (error) {
-    await refundAiQuota(userId);
+    await quota.refund();
     console.error("3D interview generation failed", error);
     return NextResponse.json(
       { error: "AI не смог подготовить вопросы. Попробуйте ещё раз." },

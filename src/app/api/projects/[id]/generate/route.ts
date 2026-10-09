@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/backend/db";
 import { requireApiUser } from "@/backend/api-auth";
-import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
+import { consumeAiQuota } from "@/backend/ai-quota";
 import { generateBlueprint } from "@/backend/ai";
 import type { InterviewState } from "@/shared/types";
 
@@ -63,7 +63,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
     return NextResponse.json({ blueprint });
   } catch (e) {
-    await refundAiQuota(userId);
+    await quota.refund();
     console.error("blueprint generation failed", e);
     return NextResponse.json({ error: "AI недоступен, попробуйте ещё раз" }, { status: 502 });
   }

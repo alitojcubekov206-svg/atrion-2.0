@@ -30,6 +30,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Неверный email или пароль" }, { status: 401 });
   }
 
-  await createSession(user.id);
+  await createSession(user.id, user.password);
   return NextResponse.json({ ok: true });
 }

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { DrawingView } from "@/frontend/components/three/ConceptViewer";
-import type { RealisticStatus } from "@/frontend/realistic-3d";
 import type { InterviewQuestion, ModelPart, PartShape, ThreeDConcept } from "@/shared/types";
 import { download } from "@/frontend/export";
 import { loadSettings, speakText, stopSpeaking } from "@/frontend/settings";
@@ -16,6 +15,8 @@ import { describeCommand, parseVoiceCommand } from "@/frontend/voice-commands";
 import { BOOLEAN_LABELS, type BooleanOp } from "@/frontend/csg-types";
 import { postJson } from "@/frontend/api";
 import GenerationReveal from "@/frontend/components/GenerationReveal";
+import ProcurementList from "@/frontend/components/ProcurementList";
+import {partsProcurement} from "@/shared/procurement";
 import ParticleField from "@/frontend/components/three/ParticleField";
 
 const ConceptViewer = dynamic(() => import("@/frontend/components/three/ConceptViewer"), {
@@ -44,7 +45,7 @@ const EXAMPLES = [
 
 type ChatMessage = { role: "user" | "assistant"; text: string };
 type ExportFormat = "glb" | "stl" | "obj" | "ply" | "usdz";
-type Providers = { aiConfigured?: boolean };
+type Providers = { aiConfigured?: boolean; model?: string | null; provider?: string };
 /** What the server read out of the prompt — ТЗ 4.1 debugging log. */
 type Diagnostics = {
   plan?: string;
@@ -59,16 +60,6 @@ type Diagnostics = {
   parts?: number;
   notes?: string[];
 };
-/** Kinds the block generator can only caricature — they get a realistic mesh on their own. */
-const ORGANIC_KINDS = new Set(["character", "animal"]);
-
-type RealisticState = {
-  busy: boolean;
-  status: RealisticStatus | null;
-  error: string | null;
-};
-const REALISTIC_IDLE: RealisticState = { busy: false, status: null, error: null };
-
 type Measurement = {
   from: string;
   to: string;
@@ -108,7 +99,6 @@ export default function DesignEnginePage() {
   const [loading, setLoading] = useState(false);
   const [pipelineStep, setPipelineStep] = useState(-1);
   const [error, setError] = useState<string | null>(null);
-  const [limitReached, setLimitReached] = useState(false);
   const [providers, setProviders] = useState<Providers>({});
   const [cadTool, setCadTool] = useState<CadTool>("select");
   const [snap, setSnap] = useState(true);
@@ -125,10 +115,6 @@ export default function DesignEnginePage() {
   const [booleanBusy, setBooleanBusy] = useState(false);
   const [pendingBoolean, setPendingBoolean] = useState<BooleanOp | null>(null);
   const [booleanFirst, setBooleanFirst] = useState<string | null>(null);
-  const [realistic, setRealistic] = useState<RealisticState>(REALISTIC_IDLE);
-  const realisticAbort = useRef<AbortController | null>(null);
-  /** The prompt and answers the current model was generated from. */
-  const lastRequest = useRef<{ prompt: string; answers: { question: string; answer: string }[] } | null>(null);
   const assembleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cadHistoryGate = useRef(false);
   const [chat, setChat] = useState<ChatMessage[]>([
@@ -139,6 +125,7 @@ export default function DesignEnginePage() {
   ]);
   const [chatInput, setChatInput] = useState("");
   const [voiceMode, setVoiceMode] = useState(false);
+  const procurement = useMemo(() => concept ? partsProcurement(concept.parts) : null, [concept]);
   const units = loadSettings().units;
   const snapStep = units === "cm" ? 0.05 : 0.1;
 
@@ -148,8 +135,6 @@ export default function DesignEnginePage() {
   conceptRef.current = concept;
   const selectedRef = useRef<string | null>(selectedId);
   selectedRef.current = selectedId;
-
-  useEffect(() => () => realisticAbort.current?.abort(), []);
 
   // On a phone the panel would take half the screen from the prompt and the
   // model, so it starts closed there and only opens on its own to show an error.
@@ -208,54 +193,6 @@ export default function DesignEnginePage() {
     }));
   }, [concept]);
 
-  /**
-   * Realistic mesh for the current model, built on Atrion's Modal app (TRELLIS
-   * on a GPU). The block model stays on screen (and in undo history) until the
-   * mesh is ready; any failure just leaves it there.
-   */
-  async function startRealistic(base: ThreeDConcept) {
-    const request = lastRequest.current ?? { prompt: prompt.trim() || base.name, answers: [] };
-    realisticAbort.current?.abort();
-    const controller = new AbortController();
-    realisticAbort.current = controller;
-    setRealistic({ busy: true, status: null, error: null });
-
-    try {
-      const { generateRealisticConcept } = await import("@/frontend/realistic-3d");
-      const next = await generateRealisticConcept(request.prompt, base, {
-        answers: request.answers,
-        signal: controller.signal,
-        onStatus: (status) => {
-          if (!controller.signal.aborted) setRealistic((prev) => ({ ...prev, status }));
-        },
-      });
-      if (controller.signal.aborted) return;
-      const current = conceptRef.current;
-      if (current) pushHistory(current);
-      await playAssemble(next);
-      setRealistic(REALISTIC_IDLE);
-      setChat((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          text: "Готова реалистичная модель. Блочная версия осталась в истории — «Отменить» вернёт её.",
-        },
-      ]);
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      setRealistic({
-        busy: false,
-        status: null,
-        error: error instanceof Error ? error.message : "Не удалось построить реалистичную модель.",
-      });
-    }
-  }
-
-  function cancelRealistic() {
-    realisticAbort.current?.abort();
-    setRealistic(REALISTIC_IDLE);
-  }
-
   async function runPipelineVisual() {
     for (let i = 0; i < PIPELINE.length - 1; i++) {
       setPipelineStep(i);
@@ -275,27 +212,24 @@ export default function DesignEnginePage() {
    */
   async function runGeneration(text: string, echoPrompt: boolean) {
     const cleaned = text.trim();
-    if (cleaned.length < 10) {
-      setError("Опиши объект подробнее — минимум 10 символов.");
+    if (cleaned.length < 3) {
+      setError("Укажите название объекта — минимум 3 символа.");
       return;
     }
 
     setLoading(true);
     setError(null);
-    setLimitReached(false);
     // Give the build progress and the new model the whole phone screen. A live
     // voice session lives in the panel, so it stays open while one is running.
     if (phone && !voiceMode) setPanelOpen(false);
-    cancelRealistic();
     setConcept(null);
     setQuestions([]);
     setDiagnostics(null);
     setMeasurement(null);
     setMeasureFrom(null);
     if (echoPrompt) setChat((prev) => [...prev, { role: "user", text: cleaned }]);
-    await runPipelineVisual();
-
     try {
+      await runPipelineVisual();
       const interviewAnswers = questions.map((question) => ({
         question: question.question,
         answer: answers[question.id],
@@ -308,14 +242,7 @@ export default function DesignEnginePage() {
       if (result.ok && result.data.concept) {
         setPipelineStep(PIPELINE.length - 1);
         setDiagnostics(result.data.diagnostics ?? null);
-        lastRequest.current = {
-          prompt: cleaned,
-          answers: interviewAnswers.filter((item) => typeof item.answer === "string"),
-        };
         await playAssemble(result.data.concept);
-        if (ORGANIC_KINDS.has(result.data.diagnostics?.kind ?? "")) {
-          void startRealistic(result.data.concept);
-        }
         setChat((prev) => [
           ...prev,
           {
@@ -327,11 +254,7 @@ export default function DesignEnginePage() {
       }
 
       setPipelineStep(-1);
-      const limited = result.data.code === "THREE_D_LIMIT_REACHED";
-      setLimitReached(limited);
-      const message = limited
-        ? "Бесплатные генерации закончились. Нужен Pro."
-        : (result.data.error ?? "Не удалось создать модель.");
+      const message = result.data.error ?? "Не удалось создать модель.";
       setError(message);
       setChat((prev) => [...prev, { role: "assistant", text: message }]);
     } finally {
@@ -659,7 +582,7 @@ export default function DesignEnginePage() {
     }
 
     if (!concept) {
-      if (raw.length >= 10) {
+      if (raw.length >= 3) {
         say("Строю модель…");
         await generateFromPrompt(raw);
         return conceptRef.current
@@ -1022,7 +945,7 @@ export default function DesignEnginePage() {
                 </div>
                 <button
                   type="button"
-                  disabled={loading || prompt.trim().length < 10}
+                  disabled={loading || prompt.trim().length < 3}
                   onClick={startInterview}
                   className="btn-primary w-full rounded-full px-6 py-3.5 text-sm disabled:opacity-40"
                 >
@@ -1034,55 +957,6 @@ export default function DesignEnginePage() {
                 </p>
               </div>
             </motion.div>
-          </div>
-        )}
-
-        {concept && (realistic.busy || realistic.error) && (
-          <div className="absolute bottom-[7.5rem] left-1/2 z-20 w-[min(24rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-2xl border border-[#a78bfa]/25 bg-[#050507]/85 p-3 text-xs text-[#d8d3cb] shadow-lg shadow-black/40 backdrop-blur-xl">
-            {realistic.busy ? (
-              <div className="flex items-center gap-3">
-                {realistic.status?.imageUrl ? (
-                  <img
-                    src={realistic.status.imageUrl}
-                    alt="Референс для 3D"
-                    className="h-12 w-12 shrink-0 rounded-lg object-cover"
-                  />
-                ) : (
-                  <span className="thinking-dot h-2 w-2 shrink-0 rounded-full bg-[#a78bfa]" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="text-[#a78bfa]">Реалистичная модель</p>
-                  <p className="truncate text-[#b8b2a8]">{realistic.status?.message ?? "Готовимся…"}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={cancelRealistic}
-                  className="shrink-0 rounded-full px-2 py-1 text-[#8f8a82] hover:text-white"
-                >
-                  Отмена
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-amber-300/90">{realistic.error}</p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void startRealistic(concept)}
-                    className="rounded-full px-2 py-1 text-[#a78bfa] hover:text-white"
-                  >
-                    Повторить
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRealistic(REALISTIC_IDLE)}
-                    className="rounded-full px-2 py-1 text-[#8f8a82] hover:text-white"
-                  >
-                    Закрыть
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -1113,6 +987,7 @@ export default function DesignEnginePage() {
             >
               Панель
             </button>
+            <Link href={`/dashboard/design?prompt=${encodeURIComponent(prompt.trim() || concept.description || concept.name)}`} className="shrink-0 rounded-full px-3 py-1.5 text-xs text-[#a78bfa] hover:text-white" title="Открыть дизайн по этому описанию">Дизайн</Link>
             {(
               [
                 ["perspective", "Обзор"],
@@ -1168,17 +1043,6 @@ export default function DesignEnginePage() {
               }`}
             >
               Разрез
-            </button>
-            <button
-              type="button"
-              disabled={realistic.busy}
-              onClick={() => void startRealistic(concept)}
-              title="Нейросеть TRELLIS: настоящая 3D-модель с цветом вместо блоков (~1–2 мин)"
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs ${
-                realistic.busy ? "bg-[#a78bfa]/20 text-[#a78bfa]" : "text-[#a78bfa] hover:text-white"
-              }`}
-            >
-              {realistic.busy ? "Строим…" : "Реалистично"}
             </button>
             <button
               type="button"
@@ -1285,6 +1149,7 @@ export default function DesignEnginePage() {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-white">{concept.name}</p>
                   <p className="mt-1 text-xs leading-relaxed text-[#8f8a82]">{concept.description}</p>
+                  <p className="mt-2 text-[11px] text-[#a78bfa]">Генератор: {concept.source === "ai" ? providers.model || "AI" : "процедурная геометрия"}</p>
                 </div>
                 <button
                   type="button"
@@ -1304,11 +1169,7 @@ export default function DesignEnginePage() {
           {error && (
             <div className="mx-4 mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
               {error}
-              {limitReached && (
-                <Link href="/pricing" className="mt-2 block font-semibold text-[#a78bfa] underline">
-                  Pro
-                </Link>
-              )}
+
             </div>
           )}
 
@@ -1682,6 +1543,7 @@ export default function DesignEnginePage() {
                     </button>
                   </div>
                 )}
+                {procurement && <ProcurementList value={procurement}/>}
                 <div className="flex gap-2">
                   <input
                     value={chatInput}

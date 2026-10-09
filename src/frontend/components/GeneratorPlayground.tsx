@@ -48,7 +48,7 @@ export default function GeneratorPlayground({ initialPrompt }: { initialPrompt?:
   }, [prompt]);
 
   const { verdict, summary, blueprint } = result;
-  // A realistic mesh or a loaded GLB replaces the block model until the prompt changes.
+  // A loaded GLB replaces the generated model until the prompt changes.
   const [override, setOverride] = useState<ThreeDConcept | null>(null);
   const [meshStatus, setMeshStatus] = useState<string | null>(null);
   const [glbUrl, setGlbUrl] = useState("");
@@ -125,25 +125,7 @@ export default function GeneratorPlayground({ initialPrompt }: { initialPrompt?:
         </section>
 
         <section className="space-y-2 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 text-xs">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-[#6a6560]">Реалистичная модель</p>
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                const { generateRealisticConcept } = await import("@/frontend/realistic-3d");
-                const next = await generateRealisticConcept(prompt, result.concept, {
-                  onStatus: (status) => setMeshStatus(status.message),
-                });
-                setOverride(next);
-                setMeshStatus("Готово");
-              } catch (error) {
-                setMeshStatus(`${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
-              }
-            }}
-            className="rounded-full border border-white/10 px-3 py-1 text-violet-300"
-          >
-            Реалистично (TRELLIS)
-          </button>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-[#6a6560]">Импорт GLB</p>
           <div className="flex gap-2">
             <input
               value={glbUrl}
@@ -157,7 +139,7 @@ export default function GeneratorPlayground({ initialPrompt }: { initialPrompt?:
               onClick={async () => {
                 try {
                   setMeshStatus("Загружаем GLB…");
-                  const { glbToParts } = await import("@/frontend/realistic-3d");
+                  const { glbToParts } = await import("@/frontend/glb-import");
                   const buffer = await (await fetch(glbUrl)).arrayBuffer();
                   const parts = await glbToParts(buffer, 1.7);
                   setOverride({

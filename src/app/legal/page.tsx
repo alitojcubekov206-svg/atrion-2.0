@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { PLANS, PRO_DURATION_DAYS } from "@/backend/plans";
 
 export const metadata: Metadata = { title: "Правовая информация" };
 
@@ -16,11 +15,11 @@ export default function LegalPage() {
 
       <h1 className="display mt-8 text-3xl font-semibold text-fg">Правовая информация</h1>
       <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-muted/70">
-        Обновлено: 15 сентября 2026
+        Обновлено: 9 октября 2026
       </p>
       <p className="mt-3">
         Atrion сейчас — независимый проект, а не зарегистрированная компания. Здесь честно
-        описано, какие данные мы собираем, как обрабатываются платежи и как с нами связаться.
+        описано, какие данные мы собираем, как предоставляется бесплатный доступ и как с нами связаться.
         Эта страница будет расширена по мере роста проекта.
       </p>
 
@@ -31,9 +30,7 @@ export default function LegalPage() {
           при регистрации. Пароли хранятся в виде хэша (bcrypt) и никогда — в открытом виде.
         </p>
         <p className="mt-3">
-          Оплата Pro сейчас проходит вручную - переводом через Mbank / O!Деньги / Элсом по
-          договорённости в WhatsApp. Мы не подключаем сторонние платёжные сервисы и не
-          обрабатываем и не храним данные карт.
+          Все функции Atrion доступны бесплатно. Платёжные данные для использования сервиса не нужны.
         </p>
         <p className="mt-3">
           Мы не передаём ваши данные третьим лицам. Мы не используем рекламные или
@@ -59,7 +56,7 @@ export default function LegalPage() {
       <section id="terms" className="mt-12 scroll-mt-24">
         <h2 className="display text-xl font-semibold text-fg">Условия использования</h2>
         <p className="mt-3">
-          Atrion — сервис в активной разработке. Функциональность, лимиты бесплатного плана и
+          Atrion — сервис в активной разработке. Функциональность и
           доступность отдельных функций (включая AI-генерацию) могут меняться без предварительного
           уведомления. Мы не гарантируем бесперебойную работу или сохранность сгенерированного
           контента и рекомендуем экспортировать важные проекты (Markdown / JSON / PDF).
@@ -70,29 +67,7 @@ export default function LegalPage() {
         </p>
       </section>
 
-      <section id="refund" className="mt-12 scroll-mt-24">
-        <h2 className="display text-xl font-semibold text-fg">Возврат средств</h2>
-        <p className="mt-3">
-          План {PLANS.pro.name} стоит {PLANS.pro.price} за {PRO_DURATION_DAYS} дней доступа.
-          Если оплата прошла, но доступ Pro не активировался в течение дня, или вы передумали в
-          течение 24 часов после оплаты и ещё не пользовались функциями Pro — мы вернём деньги
-          в полном объёме.
-        </p>
-        <p className="mt-3">
-          Для возврата напишите нам
-          {waLink ? (
-            <>
-              {" "}в{" "}
-              <a href={waLink} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
-                WhatsApp
-              </a>
-            </>
-          ) : (
-            " через контакты ниже"
-          )}{" "}
-          с датой и суммой платежа.
-        </p>
-      </section>
+      <section id="access" className="mt-12 scroll-mt-24"><h2 className="display text-xl font-semibold text-fg">Бесплатный доступ</h2><p className="mt-3">Подписка и оплата не требуются. Для работы с личными проектами нужен аккаунт.</p></section>
 
       <section id="cookies" className="mt-12 scroll-mt-24">
         <h2 className="display text-xl font-semibold text-fg">Файлы cookie</h2>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/backend/db";
 import { requireApiUser } from "@/backend/api-auth";
-import { consumeAiQuota, refundAiQuota } from "@/backend/ai-quota";
+import { consumeAiQuota } from "@/backend/ai-quota";
 import { generateInterview } from "@/backend/ai";
 
 export const maxDuration = 60;
@@ -28,7 +28,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     });
     return NextResponse.json({ questions });
   } catch (e) {
-    await refundAiQuota(userId);
+    await quota.refund();
     console.error("interview generation failed", e);
     return NextResponse.json({ error: "AI недоступен, попробуйте ещё раз" }, { status: 502 });
   }
