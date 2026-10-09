@@ -63,6 +63,13 @@ const CASES: Case[] = [
   { prompt: "Уютная спальня 4×5 м с кроватью и столом", kind: "room", plan: (b) => (b.furnishings.includes("кровать") && b.furnishings.includes("стол")) || `furnishings=${b.furnishings}`, dims: (d) => d.height > 2.2 || `room ${d.height} m tall` },
   { prompt: "Кухня 3 на 4 метра", kind: "room", plan: (b) => b.furnishings.includes("кухонный гарнитур") || `furnishings=${b.furnishings}` },
   { prompt: "Три деревянных стула", kind: "furniture", plan: (b) => b.copies === 3 || `copies=${b.copies}` },
+  { prompt: "3 красных стула", kind: "furniture", plan: (b) => b.copies === 3 || `copies=${b.copies}` },
+
+  // A number completing "этажный" counts floors, not houses.
+  { prompt: "3 этажный дом", kind: "building", plan: (b) => (b.copies === 1 && b.floors === 3) || `copies=${b.copies} floors=${b.floors}` },
+  { prompt: "5 этажный дом", kind: "building", plan: (b) => (b.copies === 1 && b.floors === 5) || `copies=${b.copies} floors=${b.floors}` },
+  { prompt: "три этажный дом", kind: "building", plan: (b) => b.copies === 1 || `copies=${b.copies}` },
+  { prompt: "4 местная машина", kind: "vehicle", plan: (b) => b.copies === 1 || `copies=${b.copies}` },
 
   // A house with furniture is hollow, so the section view has something to show.
   { prompt: "Двухэтажный дом с мебелью", kind: "building", plan: (b) => b.furnishings.length >= 3 || `furnishings=${b.furnishings}` },
