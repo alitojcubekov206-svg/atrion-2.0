@@ -279,7 +279,7 @@ const CASES: Case[] = [
   }
 
   // Nothing floats: upper-floor windows, spires, the tank's gun, the dragon's head.
-  for (const prompt of ["храм", "трехэтажка", "дом", "танк", "башня", "маяк", "rocket", "дракон", "дерево", "пальма", "ёлка", "куст", "роза", "юрта", "вертолёт", "автобус", "поезд", "замок", "пикап", "внедорожник", "спорткар"]) {
+  for (const prompt of ["храм", "трехэтажка", "дом", "танк", "башня", "маяк", "rocket", "дракон", "дерево", "пальма", "ёлка", "куст", "роза", "юрта", "вертолёт", "автобус", "поезд", "замок", "пикап", "внедорожник", "спорткар", "космический корабль", "нло", "пирамида", "пианино", "рояль", "гитара"]) {
     const groups = connectedGroups(built(prompt, "sweep01").parts, 0.05);
     check(`«${prompt}» is one connected object`, groups.length === 1, `${groups.length} pieces`);
   }
@@ -296,6 +296,12 @@ const CASES: Case[] = [
   const styles = new Set(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"].map((v) => planFor("машина", v).blueprint.carStyle));
   check("«машина» varies its body style between generations", styles.size >= 3, [...styles].join(","));
   check("«пикап» has an open bed", /Борт кузова/.test(names("пикап")));
+  check("a spaceship has a canopy, swept wings and glowing engines", ["Кабина", "Крыло", "Сопло"].every((n) => names("космический корабль").includes(n)) && !/Корма|Парус/.test(names("космический корабль")));
+  check("a UFO is a disc with a dome and landing legs", ["Диск", "Купол", "Опора 1"].every((n) => names("нло").includes(n)));
+  check("a pyramid is a stone pyramid with a capstone", built("пирамида").parts.some((p) => p.name === "Пирамида" && p.shape === "pyramid") && /Навершие/.test(names("пирамида")));
+  check("a piano has 52 white keys and black keys in octave groups", built("пианино").parts.some((p) => p.name === "Белые клавиши" && p.repeat?.count === 52) && /Чёрные клавиши 5/.test(names("пианино")));
+  check("«рояль» is a grand with a raised lid", /Хвост корпуса/.test(names("рояль")) && /Крышка/.test(names("рояль")));
+  check("a guitar has a sound hole, neck and six strings", built("гитара").parts.some((p) => p.name === "Струны" && p.repeat?.count === 6) && /Розетка/.test(names("гитара")));
   check("«спорткар» stays low", planFor("спорткар", "x").blueprint.height < 1.35);
 
   // Entrance steps climb towards the door.

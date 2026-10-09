@@ -171,6 +171,11 @@ function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
     addCastle(ctx);
     return ctx.parts;
   }
+  const special = { spaceship: addSpaceship, saucer: addSaucer, pyramid: addPyramid, piano: addPiano, guitar: addGuitar } as const;
+  if (bp.form && bp.form in special) {
+    special[bp.form as keyof typeof special](ctx);
+    return ctx.parts;
+  }
 
   // A sword on its own is the whole object, not a detail on a body.
   if (bp.kind === "weapon" && bp.arms === 0) {
@@ -5236,6 +5241,117 @@ function addYurt(ctx: Ctx) {
   add("Дверная рама", "Дверь", { shape: "box", role: "door", position: [0, base + doorH / 2 + 0.04, D / 2 - 0.02], size: [doorW + 0.16, doorH + 0.12, 0.12], ...wood });
   add("Дверь", "Дверь", { shape: "box", role: "door", position: [0, base + doorH / 2 + 0.04, D / 2 + 0.04], size: [doorW, doorH, 0.06], color: rng.pick(["#c0612b", "#a8322d", "#2f5d8a"]), material: "Крашеное дерево", roughness: 0.6 });
   add("Узор двери", "Дверь", { shape: "box", role: "detail", position: [0, base + doorH * 0.6, D / 2 + 0.075], size: [doorW * 0.5, doorW * 0.5, 0.02], rotation: [0, 0, Math.PI / 4], color: "#f2c230", material: "Орнамент" });
+}
+
+const glow = (color: string) => ({ color, material: "Свечение", emissive: 1, roughness: 0.3 });
+
+/** A starfighter: fuselage, nose, canopy, swept wings with tip fins, twin glowing engines. */
+function addSpaceship(ctx: Ctx) {
+  const { bp, rng } = ctx;
+  const L = bp.length, W = bp.width, H = bp.height;
+  const hull = { color: bp.params.color ?? rng.pick(["#d9dde2", "#9aa3ad", "#3a3f47", "#e9e6df"]), material: "Обшивка", metalness: 0.7, roughness: 0.35 };
+  const stripe = rng.pick(["#c8332b", "#2f5d8a", "#e0b23a", "#4fd1c5"]);
+  const add = (name: string, group: string, opts: Piece) => push(ctx, part(ctx.id(), name, { ...opts, group }));
+  const y = H * 0.45, bodyL = L * 0.72;
+  add("Фюзеляж", "Корпус", { shape: "capsule", role: "volume", position: [0, y, -L * 0.04], size: [W * 0.2, bodyL, H * 0.48], rotation: [Math.PI / 2, 0, 0], ...hull });
+  add("Нос", "Корпус", { shape: "cone", role: "volume", position: [0, y, -L * 0.04 + bodyL / 2 + L * 0.08], size: [W * 0.17, L * 0.24, H * 0.4], rotation: [Math.PI / 2, 0, 0], ...hull });
+  add("Кабина", "Корпус", { shape: "sphere", role: "detail", position: [0, y + H * 0.2, L * 0.2], size: [W * 0.13, H * 0.3, L * 0.2], color: "#4aa3d8", material: "Стекло", metalness: 0.2, roughness: 0.1, opacity: 0.8 });
+  add("Полоса", "Корпус", { shape: "box", role: "detail", position: [0, y + H * 0.24, -L * 0.12], size: [W * 0.05, 0.04, bodyL * 0.5], color: stripe, material: "Краска" });
+  const sweep = 0.42, wingL = W * 0.42, root: Vec3 = [W * 0.08, y - H * 0.05, -L * 0.06];
+  const tip: Vec3 = [root[0] + Math.cos(sweep) * wingL, root[1], root[2] - Math.sin(sweep) * wingL];
+  add("Крыло", "Крылья", { shape: "box", role: "limb", position: [(root[0] + tip[0]) / 2, root[1], (root[2] + tip[2]) / 2], size: [wingL, H * 0.06, L * 0.24], rotation: [0, sweep, 0], mirror: "x", ...hull });
+  add("Законцовка крыла", "Крылья", { shape: "box", role: "detail", position: [tip[0], tip[1] + H * 0.14, tip[2]], size: [0.12, H * 0.34, L * 0.12], mirror: "x", color: stripe, material: "Краска" });
+  add("Двигатель", "Двигатели", { shape: "cylinder", role: "structure", position: [W * 0.12, y - H * 0.02, -L * 0.36], size: [W * 0.11, L * 0.24, W * 0.11], rotation: [Math.PI / 2, 0, 0], sides: 16, mirror: "x", ...hull, color: shade(hull.color, -0.15) });
+  add("Сопло", "Двигатели", { shape: "cylinder", role: "detail", position: [W * 0.12, y - H * 0.02, -L * 0.36 - L * 0.12], size: [W * 0.085, 0.2, W * 0.085], rotation: [Math.PI / 2, 0, 0], sides: 16, mirror: "x", ...glow("#5ec8ff") });
+  add("Киль", "Корпус", { shape: "box", role: "detail", position: [0, y + H * 0.32, -L * 0.3], size: [0.12, H * 0.5, L * 0.16], rotation: [-0.3, 0, 0], ...hull });
+}
+
+/** A flying saucer: lens-shaped disc, glass dome, rim ring with lights, three landing legs. */
+function addSaucer(ctx: Ctx) {
+  const { bp } = ctx;
+  const D = Math.max(bp.width, bp.length), H = bp.height;
+  const hull = { color: bp.params.color ?? "#b8c0c8", material: "Обшивка", metalness: 0.8, roughness: 0.25 };
+  const add = (name: string, group: string, opts: Piece) => push(ctx, part(ctx.id(), name, { ...opts, group }));
+  const discY = H * 0.42;
+  add("Диск", "Корпус", { shape: "sphere", role: "volume", position: [0, discY, 0], size: [D, H * 0.34, D], ...hull });
+  add("Купол", "Корпус", { shape: "sphere", role: "detail", position: [0, discY + H * 0.2, 0], size: [D * 0.38, H * 0.42, D * 0.38], color: "#7ad1c9", material: "Стекло", opacity: 0.75, roughness: 0.1 });
+  add("Обод", "Корпус", { shape: "torus", role: "detail", position: [0, discY, 0], size: [D * 1.02, H * 0.08, D * 1.02], ...hull, color: shade(hull.color, -0.2) });
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    add(`Огонь ${i + 1}`, "Огни", { shape: "sphere", role: "detail", position: [Math.cos(a) * D * 0.47, discY - H * 0.04, Math.sin(a) * D * 0.47], size: [D * 0.04, D * 0.04, D * 0.04], ...glow(i % 2 ? "#ffd166" : "#5ec8ff") });
+  }
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + 0.5, r = D * 0.26;
+    add(`Опора ${i + 1}`, "Шасси", { shape: "cylinder", role: "structure", position: [Math.cos(a) * r, discY / 2, Math.sin(a) * r], size: [D * 0.025, discY, D * 0.025], color: "#4a4f57", material: "Металл" });
+    add(`Пята опоры ${i + 1}`, "Шасси", { shape: "cylinder", role: "detail", position: [Math.cos(a) * r, 0.04, Math.sin(a) * r], size: [D * 0.07, 0.08, D * 0.07], color: "#4a4f57", material: "Металл" });
+  }
+}
+
+/** A stone pyramid on a platform, with a gilded capstone and an entrance on its face. */
+function addPyramid(ctx: Ctx) {
+  const { bp } = ctx;
+  const W = Math.max(bp.width, bp.length), H = bp.height, base = W * 0.012;
+  const stone = { color: bp.params.color ?? "#d6b77a", material: "Песчаник", roughness: 0.95 };
+  const add = (name: string, group: string, opts: Piece) => push(ctx, part(ctx.id(), name, { ...opts, group }));
+  add("Платформа", "Основание", { shape: "box", role: "foundation", position: [0, base / 2, 0], size: [W * 1.12, base, W * 1.12], ...stone, color: shade(stone.color, -0.1) });
+  add("Пирамида", "Пирамида", { shape: "pyramid", role: "volume", position: [0, base + H / 2, 0], size: [W, H, W], ...stone });
+  add("Навершие", "Пирамида", { shape: "pyramid", role: "detail", position: [0, base + H * 0.955, 0], size: [W * 0.1, H * 0.1, W * 0.1], color: "#e0b23a", material: "Золото", metalness: 0.85, roughness: 0.25 });
+  const doorY = H * 0.14, faceZ = (W / 2) * (1 - doorY / H);
+  add("Вход", "Пирамида", { shape: "box", role: "door", position: [0, base + doorY, faceZ], size: [W * 0.035, H * 0.06, W * 0.04], color: "#3a2a1c", material: "Проём" });
+}
+
+/** An upright piano, or a grand for "рояль": body, keyboard with a true black-key pattern, pedals. */
+function addPiano(ctx: Ctx) {
+  const { bp, rng } = ctx;
+  const grand = /рояль|grand/i.test(bp.params.raw);
+  const W = bp.width, L = bp.length, H = bp.height;
+  const lacquer = { color: bp.params.color ?? rng.pick(["#141414", "#141414", "#5a3d2b", "#f1ece4"]), material: "Лак", metalness: 0.2, roughness: 0.2 };
+  const add = (name: string, group: string, opts: Piece) => push(ctx, part(ctx.id(), name, { ...opts, group }));
+  const keyY = grand ? 0.72 : 0.72, keysW = W * 0.92, whites = 52, octaves = 7, whiteW = keysW / whites;
+  const keysZ = grand ? L / 2 + 0.12 : L / 2 - 0.02;
+  add("Клавишная полка", "Клавиатура", { shape: "box", role: "structure", position: [0, keyY - 0.04, keysZ - 0.02], size: [W, 0.08, 0.34], ...lacquer });
+  add("Белые клавиши", "Клавиатура", { shape: "box", role: "detail", position: [-keysW / 2 + whiteW / 2, keyY + 0.012, keysZ], size: [whiteW * 0.92, 0.025, 0.15], repeat: { count: whites, step: [whiteW, 0, 0] }, color: "#f4f1ea", material: "Клавиши" });
+  // Black keys sit after white keys 1, 2, 4, 5 and 6 of every octave.
+  [1, 2, 4, 5, 6].forEach((n, i) => add(`Чёрные клавиши ${i + 1}`, "Клавиатура", { shape: "box", role: "detail", position: [-keysW / 2 + n * whiteW + whiteW * 2, keyY + 0.035, keysZ - 0.03], size: [whiteW * 0.55, 0.03, 0.09], repeat: { count: octaves, step: [whiteW * 7, 0, 0] }, color: "#111111", material: "Клавиши" }));
+  if (grand) {
+    const bodyY = keyY + 0.02, bodyH = H * 0.3, bodyL = L * 0.72;
+    add("Корпус", "Корпус", { shape: "box", role: "volume", position: [0, bodyY, keysZ - 0.2 - bodyL / 2], size: [W, bodyH, bodyL], ...lacquer });
+    add("Хвост корпуса", "Корпус", { shape: "cylinder", role: "volume", position: [W * 0.08, bodyY, keysZ - 0.2 - bodyL], size: [W * 0.84, bodyH, W * 0.84], sides: 28, ...lacquer });
+    add("Крышка", "Корпус", { shape: "box", role: "detail", position: [-W * 0.08, bodyY + bodyH / 2 + W * 0.22, keysZ - 0.2 - bodyL * 0.6], size: [W * 0.9, 0.03, bodyL * 1.1], rotation: [0, 0, -0.55], ...lacquer });
+    for (const [x, z] of [[-W * 0.42, keysZ - 0.25], [W * 0.42, keysZ - 0.25], [W * 0.08, keysZ - 0.2 - bodyL * 1.25]]) {
+      add("Ножка", "Ножки", { shape: "cylinder", role: "structure", position: [x, (bodyY - bodyH / 2) / 2, z], size: [0.1, bodyY - bodyH / 2 + 0.02, 0.1], ...lacquer });
+    }
+    add("Лира педалей", "Педали", { shape: "box", role: "structure", position: [0, 0.3, keysZ - 0.3], size: [0.2, 0.6, 0.06], ...lacquer });
+    add("Педаль", "Педали", { shape: "box", role: "detail", position: [-0.07, 0.04, keysZ - 0.24], size: [0.04, 0.03, 0.14], repeat: { count: 3, step: [0.07, 0, 0] }, color: "#c9973f", material: "Латунь", metalness: 0.8 });
+    return;
+  }
+  add("Корпус", "Корпус", { shape: "box", role: "volume", position: [0, H / 2, -L * 0.18], size: [W, H, L * 0.62], ...lacquer });
+  add("Крышка", "Корпус", { shape: "box", role: "detail", position: [0, H + 0.015, -L * 0.15], size: [W * 1.02, 0.03, L * 0.68], ...lacquer });
+  add("Пюпитр", "Корпус", { shape: "box", role: "detail", position: [0, keyY + 0.28, L * 0.15], size: [W * 0.6, 0.3, 0.03], rotation: [-0.15, 0, 0], ...lacquer });
+  add("Ножка", "Ножки", { shape: "box", role: "structure", position: [W * 0.46, (keyY - 0.08) / 2, keysZ - 0.05], size: [0.07, keyY - 0.08, 0.07], mirror: "x", ...lacquer });
+  add("Педаль", "Педали", { shape: "box", role: "detail", position: [-0.07, 0.06, L * 0.15], size: [0.04, 0.03, 0.12], repeat: { count: 3, step: [0.07, 0, 0] }, color: "#c9973f", material: "Латунь", metalness: 0.8 });
+}
+
+/** An acoustic guitar standing upright: two-bout body, sound hole, neck, headstock, six strings. */
+function addGuitar(ctx: Ctx) {
+  const { bp, rng } = ctx;
+  const H = bp.height, W = bp.width, T = bp.length;
+  const wood = { color: bp.params.color ?? rng.pick(["#c58a4a", "#a8652f", "#d9a96a", "#7a2e2a"]), material: "Дерево", roughness: 0.5 };
+  const dark = { color: "#4a3123", material: "Палисандр", roughness: 0.6 };
+  const add = (name: string, group: string, opts: Piece) => push(ctx, part(ctx.id(), name, { ...opts, group }));
+  const lowerY = W * 0.5, upperD = W * 0.78, upperY = lowerY + W * 0.62;
+  add("Нижняя дека", "Корпус", { shape: "cylinder", role: "volume", position: [0, lowerY, 0], size: [W, T, W], rotation: [Math.PI / 2, 0, 0], sides: 32, ...wood });
+  add("Верхняя дека", "Корпус", { shape: "cylinder", role: "volume", position: [0, upperY, 0], size: [upperD, T, upperD], rotation: [Math.PI / 2, 0, 0], sides: 32, ...wood });
+  add("Розетка", "Корпус", { shape: "cylinder", role: "detail", position: [0, upperY - W * 0.08, T / 2 + 0.002], size: [W * 0.3, 0.006, W * 0.3], rotation: [Math.PI / 2, 0, 0], sides: 24, color: "#1a1410", material: "Резонатор" });
+  add("Подставка", "Корпус", { shape: "box", role: "detail", position: [0, lowerY - W * 0.12, T / 2 + 0.006], size: [W * 0.32, W * 0.05, 0.012], ...dark });
+  const neckY0 = upperY + upperD * 0.45, neckTop = H - H * 0.12;
+  add("Гриф", "Гриф", { shape: "box", role: "structure", position: [0, (neckY0 + neckTop) / 2, T * 0.15], size: [W * 0.13, neckTop - neckY0 + 0.02, T * 0.45], ...wood, color: shade(wood.color, -0.2) });
+  add("Накладка грифа", "Гриф", { shape: "box", role: "detail", position: [0, (neckY0 + neckTop) / 2 - W * 0.1, T * 0.38], size: [W * 0.13, neckTop - neckY0 + W * 0.2, 0.01], ...dark });
+  add("Лады", "Гриф", { shape: "box", role: "detail", position: [0, neckY0 + 0.02, T * 0.39], size: [W * 0.13, 0.004, 0.006], repeat: { count: 12, step: [0, (neckTop - neckY0) / 13, 0] }, color: "#d8d8d8", material: "Металл", metalness: 0.9 });
+  add("Голова грифа", "Гриф", { shape: "box", role: "detail", position: [0, neckTop + H * 0.055, T * 0.1], size: [W * 0.19, H * 0.12, T * 0.35], rotation: [-0.2, 0, 0], ...dark });
+  add("Колки", "Гриф", { shape: "cylinder", role: "detail", position: [W * 0.12, neckTop + H * 0.03, T * 0.05], size: [0.012, W * 0.08, 0.012], rotation: [0, 0, Math.PI / 2], repeat: { count: 3, step: [0, H * 0.035, 0] }, mirror: "x", color: "#c9c9c9", material: "Металл", metalness: 0.9 });
+  const stringsY0 = lowerY - W * 0.12, stringsY1 = neckTop;
+  add("Струны", "Струны", { shape: "box", role: "detail", position: [-W * 0.045, (stringsY0 + stringsY1) / 2, T * 0.4], size: [0.002, stringsY1 - stringsY0, 0.002], repeat: { count: 6, step: [W * 0.018, 0, 0] }, color: "#e6e2d8", material: "Металл", metalness: 0.9 });
 }
 
 /**
