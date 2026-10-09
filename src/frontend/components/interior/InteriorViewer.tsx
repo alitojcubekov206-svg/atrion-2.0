@@ -2,10 +2,11 @@
 import {Canvas, useFrame, useThree} from "@react-three/fiber";
 import {OrbitControls, ContactShadows, Environment, Lightformer} from "@react-three/drei";
 import {ACESFilmicToneMapping, Mesh, MeshStandardMaterial, type Group, type Object3D} from "three";
-import {useEffect, useMemo, useRef, type MutableRefObject} from "react";
+import {useEffect, useLayoutEffect, useMemo, useRef, type MutableRefObject} from "react";
 import type {InteriorScene} from "@/shared/interior/scene";
 import {detailedScene, disposeDetailed} from "@/shared/interior/detailed";
 import ObjectGizmo, {type PlacementMode, type ObjectPose} from "./ObjectGizmo";
+import {syncInteriorObjects} from "@/frontend/interior-render-sync";
 
 function Capture({capture}: {capture: MutableRefObject<(() => Promise<Blob>) | null>}) {
   const {gl, scene, camera} = useThree();
@@ -17,10 +18,16 @@ function Capture({capture}: {capture: MutableRefObject<(() => Promise<Blob>) | n
 }
 function Cutaway({model, enabled}: {model: Group; enabled: boolean}) {
   const {camera} = useThree();
-  useFrame(() => model.traverse(node => {
+  const walls=useMemo(()=>{const nodes:Object3D[]=[];model.traverse(n=>{if(n.userData.wallSide)nodes.push(n);});return nodes;},[model]);
+  useFrame(() => walls.forEach(node => {
     const wall = node.userData.wallSide;
     if (wall) node.visible = node.userData.keepInCutaway || !enabled || !(wall === "south" && camera.position.z > 0 || wall === "north" && camera.position.z < 0 || wall === "east" && camera.position.x > 0 || wall === "west" && camera.position.x < 0);
   }));
+  return null;
+}
+function Refresh({revision}:{revision:unknown}) {
+  const invalidate=useThree(s=>s.invalidate);
+  useEffect(()=>invalidate(),[invalidate,revision]);
   return null;
 }
 export default function InteriorViewer({scene, selected, onSelect, ghostWalls, capture, resetKey = 0, mode = "select", disabled, onCommit}: {
@@ -28,7 +35,9 @@ export default function InteriorViewer({scene, selected, onSelect, ghostWalls, c
   mode?: PlacementMode; disabled?: boolean; onCommit?: (id:string,pose:ObjectPose)=>Promise<boolean>;
 }) {
   const dragging=useRef(false);
-  const model = useMemo(() => detailedScene(scene), [scene]);
+  const openingKey=JSON.stringify(scene.openings);
+  const model = useMemo(() => detailedScene({...scene,objects:[]}), [scene.width,scene.length,scene.height,scene.wallColor,scene.floorColor,openingKey]);
+  useLayoutEffect(()=>syncInteriorObjects(model,scene.objects.map(object=>({object,offset:[-scene.width/2,0,-scene.length/2]}))),[model,scene.objects,scene.width,scene.length]);
   useEffect(() => () => disposeDetailed(model), [model]);
   useEffect(() => {model.traverse(node => {
     if (!(node instanceof Mesh)) return;
@@ -36,9 +45,10 @@ export default function InteriorViewer({scene, selected, onSelect, ghostWalls, c
     let owner: Object3D | null = node;
     while (owner && !owner.userData.objectId) owner = owner.parent;
     m.emissive.set(owner?.userData.objectId === selected ? "#8165c4" : "#000000");m.emissiveIntensity = .14;
-  });}, [model, selected]);
+  });}, [model, selected, scene.objects]);
   const extent = Math.max(scene.width, scene.length);
-  return <Canvas key={`${scene.width}/${scene.length}/${resetKey}`} shadows dpr={[1, 1.75]} gl={{antialias:true,preserveDrawingBuffer:true,toneMapping:ACESFilmicToneMapping,toneMappingExposure:1}} camera={{position:[extent*.95,extent*.85,extent*1.15],fov:38}} onPointerMissed={() => {if(!dragging.current)onSelect(null);}} aria-label="3D-модель интерьера: вращайте мышью, приближайте колёсиком">
+  return <Canvas key={`${scene.width}/${scene.length}/${resetKey}`} frameloop="demand" shadows dpr={[1, 1.5]} gl={{antialias:true,preserveDrawingBuffer:true,toneMapping:ACESFilmicToneMapping,toneMappingExposure:1}} camera={{position:[extent*.95,extent*.85,extent*1.15],fov:38}} onPointerMissed={() => {if(!dragging.current)onSelect(null);}} aria-label="3D-модель интерьера: вращайте мышью, приближайте колёсиком">
+    <Refresh revision={scene}/>
     <color attach="background" args={["#17151d"]}/>
     <ambientLight intensity={.35}/>
     <directionalLight position={[4,8,5]} color="#fff2df" intensity={2.4} castShadow shadow-mapSize={[2048,2048]} shadow-bias={-.00015} shadow-normalBias={.02} shadow-camera-left={-extent} shadow-camera-right={extent} shadow-camera-top={extent} shadow-camera-bottom={-extent}/>

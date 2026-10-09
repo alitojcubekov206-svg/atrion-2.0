@@ -4,15 +4,16 @@ import dynamic from "next/dynamic";
 import type {LocalModelResult} from "@/shared/design/result";
 import type {ModelPart} from "@/shared/types";
 import {interiorCutHeight} from "@/shared/geometry";
-import {findAsset} from "@/shared/interior/catalog";
+import {findAsset,ASSETS} from "@/shared/interior/catalog";
 import {editHouseRoom,transferHouseObject} from "@/shared/house/edit";
-import {editModelPart} from "@/shared/design/edit-model";
+import {editModelPart,removeModelPart} from "@/shared/design/edit-model";
 import {isLivingConcept} from "@/shared/living/request";
 import type {CadTool} from "../CadToolbar";
 import type {ObjectPose} from "./ObjectGizmo";
 import PlacementToolbar from "./PlacementToolbar";
 import ProcurementList from "../ProcurementList";
 import {modelProcurement} from "@/shared/procurement";
+import HousePlan from "./HousePlan";
 
 const Viewer=dynamic(()=>import("../three/ConceptViewer"),{ssr:false});
 const CompositionViewer=dynamic(()=>import("./CompositionViewer"),{ssr:false});
@@ -27,6 +28,7 @@ export default function ModelResult({result,onChange,onReturn}:{result:LocalMode
   const [floor,setFloor]=useState<number|null>(null),[plan,setPlan]=useState(false),[roomId,setRoomId]=useState<string|null>(null);
   const [mode,setMode]=useState<CadTool>("select"),[playing,setPlaying]=useState(true);
   const [undo,setUndo]=useState<LocalModelResult[]>([]),[redo,setRedo]=useState<LocalModelResult[]>([]);
+  const [asset,setAsset]=useState("chair_simple");
   const {concept}=result,living=isLivingConcept(concept),placement=mode==="scale"?"select":mode;
   const procurement=useMemo(()=>modelProcurement(result),[result]);
   const room=result.interiors?.find(r=>r.floorId===result.document?.floors[floor??0]?.id&&r.roomId===roomId);
@@ -43,6 +45,7 @@ export default function ModelResult({result,onChange,onReturn}:{result:LocalMode
     if(forward){setRedo(stack.slice(0,-1));setUndo(h=>[...h,result]);}else{setUndo(stack.slice(0,-1));setRedo(h=>[...h,result]);}
     onChange(next);setError("");
     const restored=next.interiors?.find(r=>r.scene.objects.some(o=>o.id===selected));
+    if(!next.document)setSelected(null);
     if(restored){setFloor(next.document!.floors.findIndex(f=>f.id===restored.floorId));setRoomId(restored.roomId);}
   }
   function furniture(actions:Record<string,unknown>[]) {
@@ -80,6 +83,7 @@ export default function ModelResult({result,onChange,onReturn}:{result:LocalMode
     </div>
     <div className="flex flex-wrap items-center gap-3 border-t border-white/10 p-4 text-sm">
       <label>{result.document?"Предмет":"Деталь"} <select className={input} aria-label={result.document?"Выбрать предмет":"Выбрать деталь"} value={selected??""} onChange={e=>setSelected(e.target.value||null)}><option value="">Выберите в сцене или списке</option>{options.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+      {!result.document&&part&&<button className={button} disabled={busy} onClick={()=>{if(commit(()=>removeModelPart(result,part.id)))setSelected(null);}}>Удалить деталь</button>}
       {item&&(["x","z"] as const).map(axis=><label key={`${item.id}/${axis}/${item.position[axis]}`}>{axis.toUpperCase()}, м <input aria-label={`Положение ${axis.toUpperCase()}`} className={`${input} w-24`} type="number" step=".1" defaultValue={item.position[axis]} disabled={item.locked} onBlur={e=>{if(e.target.value!==""&&Number(e.target.value)!==item.position[axis]&&!furniture([{type:"MOVE_OBJECT",objectId:item.id,position:{...item.position,[axis]:Number(e.target.value)}}]))e.target.value=String(item.position[axis]);}}/></label>)}
       {item&&<><button className={button} disabled={item.locked} onClick={()=>furniture([{type:"ROTATE_OBJECT",objectId:item.id,angle:(item.rotation.y+Math.PI/2)%(Math.PI*2)}])}>Повернуть 90°</button><button className={button} aria-pressed={item.locked} onClick={()=>furniture([{type:"LOCK_OBJECT",objectId:item.id,locked:!item.locked}])}>{item.locked?"Разблокировать":"Закрепить"}</button><button className={button} disabled={item.locked} onClick={()=>{if(furniture([{type:"REMOVE_OBJECT",objectId:item.id}]))setSelected(null);}}>Удалить предмет</button></>}
       {item&&<label>Перенести в комнату <select aria-label="Перенести в комнату" className={input} value="" disabled={item.locked} onChange={e=>{const target=result.interiors?.find(r=>`${r.floorId}/${r.roomId}`===e.target.value);if(target&&commit(()=>transferHouseObject(result,item.id,target.floorId,target.roomId))){setFloor(result.document!.floors.findIndex(f=>f.id===target.floorId));setRoomId(target.roomId);}}}><option value="">Выберите помещение</option>{result.interiors?.filter(r=>r!==owner).map(r=><option key={`${r.floorId}/${r.roomId}`} value={`${r.floorId}/${r.roomId}`}>{result.document!.floors.findIndex(f=>f.id===r.floorId)+1} этаж · {r.name}</option>)}</select></label>}
@@ -87,6 +91,11 @@ export default function ModelResult({result,onChange,onReturn}:{result:LocalMode
     </div>
     {room&&<div className="px-4 pb-3 text-sm text-slate-200"><b>{room.name}</b><p className="mt-1 text-xs text-muted">{room.scene.objects.map(o=>findAsset(o.assetId).name).join(" · ")||"Без мебели"}</p></div>}
     <div className="flex flex-wrap items-center justify-between gap-3 p-4 text-xs text-muted"><span>{concept.dimensions.width} × {concept.dimensions.depth} × {concept.dimensions.height} м</span><div className="flex gap-2">{!result.document&&!result.composition&&!living&&<button className={button} aria-pressed={section} onClick={()=>setSection(v=>!v)}>Разрез</button>}{(["glb","json"] as const).map(f=><button className={button} disabled={busy} key={f} onClick={()=>void save(f)}>{f.toUpperCase()} ↓</button>)}</div></div>
+    {result.document&&<><div className="flex flex-wrap items-center gap-2 border-t border-white/10 p-4 text-xs">
+      <label>Комната для нового предмета <select className={input} aria-label="Комната для нового предмета" value={room?`${room.floorId}/${room.roomId}`:""} onChange={e=>{const target=result.interiors?.find(r=>`${r.floorId}/${r.roomId}`===e.target.value);if(target){setFloor(result.document!.floors.findIndex(f=>f.id===target.floorId));setRoomId(target.roomId);setSelected(null);}}}><option value="">Выберите комнату</option>{result.interiors?.map(r=><option key={`${r.floorId}/${r.roomId}`} value={`${r.floorId}/${r.roomId}`}>{result.document!.floors.findIndex(f=>f.id===r.floorId)+1} этаж · {r.name}</option>)}</select></label>
+      <select className={input} aria-label="Добавить мебель в дом" value={asset} onChange={e=>setAsset(e.target.value)}>{ASSETS.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
+      <button className={button} disabled={!room||busy} onClick={()=>{if(!room)return;const id=`item_${crypto.randomUUID()}`;if(commit(()=>editHouseRoom(result,room.floorId,room.roomId,[{type:"ADD_OBJECT",id,assetId:asset}]))){setSelected(id);}}}>Добавить предмет</button>
+    </div><HousePlan document={result.document} floor={floor??0} interiors={result.interiors}/></>}
     <div className="px-4 pb-4"><ProcurementList value={procurement}/></div>
     <div className="space-y-2 border-t border-white/10 p-4 text-xs text-muted"><p>{result.composition?"Состав сцены":"Учтено"}: {result.recognized.join(" · ")}. Проверьте детали по своему описанию.</p>{living&&<p>Покой и ходьба на месте входят в GLB. Анимация выполнена шарнирами деталей; Humanoid-скелет не создаётся.</p>}{result.notes?.map((note,i)=><p key={i}>{note}</p>)}<p>Модель хранится на этой странице. Скачайте GLB или JSON перед закрытием.</p>{result.missing.length>0&&<p className="text-amber-300">Не удалось подтвердить: {result.missing.join(", ")}</p>}{error&&<p role="alert" className="text-rose-300">{error}</p>}</div>
   </div>;

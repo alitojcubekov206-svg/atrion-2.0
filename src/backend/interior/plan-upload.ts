@@ -4,11 +4,11 @@ import {DesignError, check} from "@/shared/design/validation";
 import {assertPlanStorage, putPlanFile, deletePlanFile} from "./cloudflare";
 const MB = 1024 * 1024;
 /** Stream limit applies even without Content-Length; caller authorizes before reading. */
-export async function readPlanBytes(req: Request): Promise<{bytes: Buffer; mime: string; extension: string}> {
+export async function readPlanBytes(req: Request, maxBytes = Infinity): Promise<{bytes: Buffer; mime: string; extension: string}> {
   const mime = req.headers.get("content-type")?.split(";")[0] ?? "";
   const extension = ({"image/png": "png", "image/jpeg": "jpg", "application/pdf": "pdf", "image/svg+xml": "svg"} as Record<string,string>)[mime];
   if (!extension) throw new DesignError("Нужен PNG, JPEG, PDF или SVG", 415, "DESIGN_FILE_TYPE");
-  const limit = mime === "application/pdf" ? 25 * MB : 15 * MB;
+  const limit = Math.min(maxBytes, mime === "application/pdf" ? 25 * MB : 15 * MB);
   if (Number(req.headers.get("content-length")) > limit) throw new DesignError("План превышает лимит размера", 413, "DESIGN_FILE_TOO_LARGE");
   if (!req.body) throw new DesignError("Файл отсутствует");
   const reader = req.body.getReader(), chunks: Uint8Array[] = []; let total = 0;

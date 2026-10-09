@@ -18,6 +18,7 @@ import {
   colorIn,
   materialIn,
   parsePromptParams,
+  normalizeBuildingWords,
   scaleOf,
   type PromptParams,
 } from "@/backend/gen/prompt-params";
@@ -1249,7 +1250,7 @@ const ROOM_DEFAULTS: [RegExp, string[]][] = [
  */
 export function planFromPrompt(prompt: string, variant = "", overrides: Partial<PromptParams> = {}): Blueprint {
   const blueprint = baseBlueprint(prompt, variant, overrides);
-  const text = normalizeCounts(prompt.toLowerCase());
+  const text = normalizeCounts(normalizeBuildingWords(prompt).toLowerCase());
   const { subject, segments } = splitPrompt(text);
   const { rng, params } = blueprint;
   const negated = new Set<string>();

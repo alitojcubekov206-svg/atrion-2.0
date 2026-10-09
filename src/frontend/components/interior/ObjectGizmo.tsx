@@ -23,6 +23,7 @@ export default function ObjectGizmo({model, selected, mode, locked, disabled, of
     onMouseUp={() => {
       const snapshot = before.current; before.current = null; if (!snapshot) return;
       requestAnimationFrame(()=>onDragState?.(false));
+      if(object.position.distanceToSquared(snapshot.position)<1e-10&&Math.abs(object.rotation.y-snapshot.rotation.y)<1e-7)return;
       const pose = {position:{x:object.position.x-offset[0],y:object.position.y-offset[1],z:object.position.z-offset[2]},angle:object.rotation.y};
       void onCommit(selected, pose).then(ok => {if (!ok) {object.position.copy(snapshot.position);object.rotation.copy(snapshot.rotation);invalidate();}})
         .catch(() => {object.position.copy(snapshot.position);object.rotation.copy(snapshot.rotation);invalidate();});
