@@ -6,6 +6,8 @@ import { buildFromPlan, planFor } from "@/backend/procedural-3d";
 import { matchParts } from "@/backend/gen/match";
 import { dimensionsOf, interiorCutHeight, primitiveCount, structureFromGroups } from "@/shared/geometry";
 import type { ThreeDConcept } from "@/shared/types";
+import OpenDesignButton from "./OpenDesignButton";
+import {isLivingConcept,requestedMotion} from "@/shared/living/request";
 
 const ConceptViewer = dynamic(() => import("@/frontend/components/three/ConceptViewer"), {
   ssr: false,
@@ -44,6 +46,7 @@ export default function GeneratorPlayground({ initialPrompt }: { initialPrompt?:
   const result = useMemo(() => {
     const { blueprint, summary } = planFor(prompt);
     const concept = buildFromPlan(planFor(prompt).blueprint);
+    if(isLivingConcept(concept))concept.motion=requestedMotion(prompt);
     return { blueprint, summary, concept, verdict: matchParts(blueprint, concept.parts) };
   }, [prompt]);
 
@@ -65,6 +68,7 @@ export default function GeneratorPlayground({ initialPrompt }: { initialPrompt?:
   return (
     <main className="flex min-h-screen flex-col gap-4 bg-[#050507] p-4 text-sm text-[#d8d3cb] md:h-screen md:flex-row">
       <aside className="flex w-full flex-col gap-3 md:w-80 md:shrink-0 md:overflow-y-auto">
+        <OpenDesignButton preview prompt={prompt} result={{kind:"model",concept,source:concept.source??"procedural",recognized:[concept.name],missing:[]}}/>
         <form
           onSubmit={(event) => {
             event.preventDefault();

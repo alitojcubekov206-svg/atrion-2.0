@@ -16,6 +16,21 @@ import {disposeDetailed} from "../src/shared/interior/detailed";
 import {modelProcurement} from "../src/shared/procurement";
 import {compositionResult} from "../src/backend/design/local-ai";
 import {buildComposition} from "../src/frontend/composition-model";
+import {readDesignDraft,storeDesignDraft} from "../src/frontend/design-draft";
+
+test("design handoff retains current geometry and source without sharing mutable references or reviving expired drafts",t=>{
+  let now=1000;t.mock.method(Date,"now",()=>now);
+  const result=generateLocalModel("Создай человека, который идёт"),copy=structuredClone(result);
+  result.concept.parts[0].position=[2,3,4];result.concept.source="ai";result.source="ai";
+  const expected=structuredClone(result),id=storeDesignDraft(result,"Создай человека, который идёт");
+  result.concept.parts[0].position[0]=99;
+  assert.deepEqual(readDesignDraft(id),{prompt:"Создай человека, который идёт",result:expected});
+  const opened=readDesignDraft(id)!;opened.result.concept.parts[0].position[0]=-99;
+  assert.deepEqual(readDesignDraft(id)!.result,expected);assert.equal(readDesignDraft("unknown"),null);
+  const second=storeDesignDraft(copy,"Другая модель");assert.equal(readDesignDraft(id),null);
+  assert.deepEqual(readDesignDraft(second)!.result,copy);
+  now+=30*60*1000;assert.equal(readDesignDraft(second),null);
+});
 
 test("office prompts create a furnished interior and explicit building prompts remain models",async()=>{
   for(const prompt of ["Создай офис","Office","Интерьер офиса"]) {

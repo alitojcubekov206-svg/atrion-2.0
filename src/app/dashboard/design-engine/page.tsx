@@ -21,6 +21,7 @@ import {partsProcurement} from "@/shared/procurement";
 import ParticleField from "@/frontend/components/three/ParticleField";
 import {designPromptTarget} from "@/shared/interior/request";
 import {isLivingConcept,requestedMotion} from "@/shared/living/request";
+import OpenDesignButton from "@/frontend/components/OpenDesignButton";
 
 const LivingViewer=dynamic(()=>import("@/frontend/components/interior/LivingViewer"),{ssr:false});
 
@@ -875,6 +876,7 @@ export default function DesignEnginePage() {
               className="h-full"
             />}
             {isLivingConcept(concept)&&<button className="absolute right-4 top-28 z-20 rounded-xl border border-white/15 bg-black/80 px-3 py-2 text-sm" aria-pressed={livingPlaying} onClick={()=>setLivingPlaying(v=>!v)}>{livingPlaying?"Пауза анимации":"Движение"}</button>}
+            {!assembling&&!loading&&<OpenDesignButton className="absolute bottom-32 left-4 z-20 md:bottom-auto md:top-28" prompt={prompt.trim()||concept.description||concept.name} result={{kind:"model",concept,source:concept.source??"procedural",recognized:diagnostics?.matched?.length?diagnostics.matched:[concept.name],missing:diagnostics?.missing??[],notes:diagnostics?.notes}}/>}
             <CadToolbar
               tool={cadTool}
               onTool={(t) => {
@@ -1005,7 +1007,6 @@ export default function DesignEnginePage() {
             >
               Панель
             </button>
-            <Link href={`/dashboard/design?prompt=${encodeURIComponent(prompt.trim() || concept.description || concept.name)}`} className="shrink-0 rounded-full px-3 py-1.5 text-xs text-[#a78bfa] hover:text-white" title="Открыть дизайн по этому описанию">Дизайн</Link>
             {(
               [
                 ["perspective", "Обзор"],

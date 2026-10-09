@@ -5,7 +5,7 @@ import type {Clarification} from "./brief";
 import type {HouseRoomInterior} from "../house/furnishing";
 
 export type LocalModelResult = {
-  kind: "model"; concept: ThreeDConcept; source: "procedural" | "local-ai";
+  kind: "model"; concept: ThreeDConcept; source: "procedural" | "local-ai" | "ai";
   composition?: import("./composition").Composition;
   recognized: string[]; missing: string[];
   document?: HouseDocument; brief?: string[]; notes?: string[];
