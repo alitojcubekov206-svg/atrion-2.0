@@ -28,16 +28,16 @@ async function inspectDatabase(db) {
   return db.$transaction(async tx => {
     await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
     await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '15s'");
-    const columns = await tx.$queryRawUnsafe(`SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name IN ('User', 'auth_identities')`);
-    const constraints = await tx.$queryRawUnsafe(`SELECT t.relname AS table_name, c.contype::text AS contype,
+    const columns = await tx.$queryRawUnsafe(`SELECT table_name::text AS table_name, column_name::text AS column_name, data_type::text AS data_type, is_nullable::text AS is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name IN ('User', 'auth_identities')`);
+    const constraints = await tx.$queryRawUnsafe(`SELECT t.relname::text AS table_name, c.contype::text AS contype,
       ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY AS k(num, ord) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.num ORDER BY k.ord) AS columns,
-      fn.nspname AS foreign_schema, ft.relname AS foreign_table,
+      fn.nspname::text AS foreign_schema, ft.relname::text AS foreign_table,
       ARRAY(SELECT a.attname::text FROM unnest(c.confkey) WITH ORDINALITY AS k(num, ord) JOIN pg_attribute a ON a.attrelid=c.confrelid AND a.attnum=k.num ORDER BY k.ord) AS foreign_columns,
       c.confdeltype::text AS delete_action
       FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace
       LEFT JOIN pg_class ft ON ft.oid=c.confrelid LEFT JOIN pg_namespace fn ON fn.oid=ft.relnamespace
       WHERE n.nspname='public' AND t.relname IN ('User','auth_identities')`);
-    const indexes = await tx.$queryRawUnsafe(`SELECT t.relname AS table_name, i.indisunique AS is_unique, i.indisvalid AS is_valid, (i.indpred IS NOT NULL) AS is_partial,
+    const indexes = await tx.$queryRawUnsafe(`SELECT t.relname::text AS table_name, i.indisunique AS is_unique, i.indisvalid AS is_valid, (i.indpred IS NOT NULL) AS is_partial,
       ARRAY(SELECT a.attname::text FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS k(num, ord) JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.num WHERE k.ord<=i.indnkeyatts ORDER BY k.ord) AS columns
       FROM pg_index i JOIN pg_class t ON t.oid=i.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace
       WHERE n.nspname='public' AND t.relname='auth_identities'`);
