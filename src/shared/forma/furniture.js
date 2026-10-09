@@ -1,4 +1,4 @@
-// Furniture from the user-supplied FORMA project. See docs/FORMA_INTEGRATION.md.
+// Furniture from the user-supplied FORMA project. See src/shared/forma/README.md.
 import {MeshStandardMaterial,Group,Shape,ExtrudeGeometry,BoxGeometry,Mesh,CylinderGeometry,SphereGeometry,Vector2,LatheGeometry,TorusGeometry} from "three";
 // public/forma/furniture-data.js
 var furnitureCatalog = [

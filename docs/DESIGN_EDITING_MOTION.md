@@ -1,37 +1,31 @@
-# Редактирование и движение — 2026-10-09
+# Editing and Character Motion
 
-Пользователь уточнил, что «живые модели» означают людей и животных с движением, и запросил свободное размещение объектов и создание офиса с интерьером по тексту.
+## Transfer from the generator
 
-## Интерьер по запросу
+After generation, Design Engine exposes an entry into the design workspace. The current result can be transferred without regenerating it, including accepted geometry and edits.
 
-После сборки 3D-модели в Design Engine появляется кнопка «Дизайн и интерьер». Она открывает фактический текущий результат в Design Studio, включая перемещения, цвета, mesh и выбранное движение, без повторной генерации и запроса к внешнему AI. Передача ограничена одной копией в памяти текущей вкладки на 30 минут. После обновления вкладки нужно повторить переход из генератора; для сохранения на диск доступны GLB и JSON. Передача модели здания не добавляет ему новую планировку автоматически.
+The transfer is a temporary in-tab draft with a 30-minute lifetime. Refreshing the tab can discard it. Export GLB or JSON to retain the result. Transferring a building mesh does not automatically create a new room layout.
 
-«Создай офис» в Design Engine открывает Design Studio и запускает создание интерьера: рабочий стол, стул, стеллаж и растение. Явное «офисное здание» остаётся запросом здания. Пустой офис и явно перечисленная мебель имеют приоритет над предложенным набором. Этот путь использует прямой API и процедурные правила, не вызывает внешний AI или worker.
+## Object editing
 
-## Правки в сцене
+Furniture can be selected in the scene or list, moved on the floor plane and rotated around the vertical axis. A drag commits on release. Invalid placements restore the previous position.
 
-Предмет можно выбрать мышью или в списке, переместить по X/Z и повернуть вокруг Y стрелками/кольцом. Правка подтверждается при отпускании мыши. Камера не переключает выбранный предмет после перетаскивания. При коллизии, выходе за стены или перекрытии прохода правка отклоняется и позиция восстанавливается.
+House furniture can be transferred between rooms or floors while preserving its identifier, scale and material. A locked object or an invalid destination leaves the source intact.
 
-Локальная комната и модель поддерживают до 50 шагов отмены. Для сохранённой комнаты остаётся серверная история с проверкой сессии, владельца и revision. DOM дома содержит редактируемую мебель каждого этажа. Комната определяется парой floorId/roomId: roomId может повторяться на разных этажах.
+Local history supports undo and redo. Persistent history is a separate project feature that requires its schema and checks session, ownership and revision.
 
-Мебель дома можно перенести в другую комнату или на другой этаж. В новом помещении выбирается допустимое место; ID, масштаб и материал сохраняются. Если места нет или предмет закреплён, операция не меняет исходный результат. После переноса отмена возвращает предмет и просмотр исходной комнаты.
+## People and animals
 
-Правки перестраивают общую геометрию мебели. Просмотр, GLB, JSON и список закупки используют текущий результат. Закрепление, удаление и изменение координат также доступны без мыши. Для отдельных процедурных моделей доступны перемещение, поворот и масштаб деталей; для композиций — перемещение и поворот объектов с проверкой каталоговой мебели.
+Procedural characters use articulated groups of parts for legs, arms, heads, tails and wings. Repeated characters receive separate motion groups.
 
-## Люди и животные
+The viewer supports idle, walking and pause. Part editing uses the base pose. The GLB exporter can include looping `Idle` and `Walk` clips; walking is in place.
 
-Базовый бесплатный построитель поддерживает процедурных людей и животных. Исправлено распознавание «кот»: «который» и «коттедж» больше не становятся животными; «люди/людей» распознаются как персонажи.
+The motion builder is `src/shared/living/motion.ts`. It is shared by preview and export.
 
-`shared/living/request.ts` определяет режим по тексту. `shared/living/motion.ts` создаёт шарниры из групп деталей: ноги, руки, голова, хвост и крылья. Повторённые персонажи анимируются отдельно. В просмотрщике можно выбрать покой или ходьбу и приостановить движение. При редактировании деталей показана исходная поза.
+## Boundaries
 
-GLB процедурных персонажей содержит два циклических клипа: `Idle` (3 с) и `Walk` (1,2 с). Ходьба выполняется на месте. Просмотр и экспорт используют одну функцию построения шарниров. Сами модели состоят из базовых объёмов; это не фотореалистичные mesh-модели. Skinning, Humanoid Avatar, физика, управление персонажем и произвольные движения по тексту не добавляются. Для произвольной AI-геометрии суставная анимация зависит от структуры и названий деталей.
+This is basic joint animation, without skinning, Humanoid Avatar construction, inverse kinematics, facial animation or game-ready locomotion.
 
-## Проверка
+A realistic mesh does not automatically acquire this rig. Model readability, visible motion, GLB validity and actual engine import must be checked separately.
 
-`scripts/interior-edit-motion.test.ts` входит в `npm run test:backend`: маршрутизация офиса, комплект мебели/пустой офис, комнаты с одинаковым ID, атомарное отклонение координат/закрепления, перенос между этажами и количества, синхронизация композиции с геометрией, анатомия человека/животного, движение конечностей, замыкание цикла и независимые пары персонажей. Существующие проверки авторизации не изменены.
-
-В браузере проверены офис по query-параметру, перетаскивание растения мышью, отмена/повтор, человек/кот, переключение клипов, отклонение X=100 с восстановлением поля, перенос растения из спальни второго этажа в кухню первого этажа и обратная отмена. GLB и JSON экспортированы из реального интерфейса. JSON содержит единственный перенесённый предмет в новой комнате.
-
-Официальный Khronos glTF Validator: офис, человек, кот и отредактированный дом — 0 ошибок и 0 предупреждений. В GLB человека/кота подтверждены анимационные каналы rotation/translation. Это проверка формата и анимаций. На компьютере установлен Unity Hub, но Unity Editor отсутствует; фактический импорт в Editor не проверен. Инструкция импорта — [Unity glTFast](https://github.com/Unity-Technologies/com.unity.cloud.gltfast/blob/main/Packages/com.unity.cloud.gltfast/Documentation~/ImportEditor.md).
-
-Автономная генерация и редактирование не добавляют платных вызовов. Техническая защита частоты остаётся. Схема рабочей БД не менялась. Локальные модели нужно скачать до закрытия страницы.
+[Living-model quality](LIVING_MODEL_QUALITY.md) · [Unity export](UNITY_EXPORT.md)

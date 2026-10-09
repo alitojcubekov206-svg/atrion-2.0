@@ -1,91 +1,36 @@
-ИНСТРУКЦИЯ: КТО ГДЕ РАБОТАЕТ
-============================
+# Team Workflow
 
-В проекте два человека: фронтендер и бэкендер. Чтобы не мешать друг другу
-и не ловить конфликты в git, код разложен по трём папкам.
+## Ownership
 
+| Area | Responsibility |
+| --- | --- |
+| `src/frontend/` and application pages | Interaction, rendering and product interface |
+| `src/backend/` and API routes | Authentication, generation, providers and persistence |
+| `src/shared/` | Contracts and geometry used by both layers |
+| `infra/` | Optional inference services |
+| `docs/`, README and passport | Product behaviour, setup and evaluation |
 
-КОРОТКО
--------
+Keep `.github/CODEOWNERS` intact. Client modules must not import server credentials or database code.
 
-  src/frontend/   — фронтендер. Всё, что видит пользователь.
-  src/backend/    — бэкендер. Всё, что работает на сервере.
-  src/shared/     — общее. Меняем только договорившись.
+## Contribution sequence
 
-Главное правило:
-  frontend НИКОГДА не импортирует из backend,
-  backend НИКОГДА не импортирует из frontend.
-  Общаются только через адреса в src/app/api.
+1. Read the relevant specification and feature guide.
+2. Inspect the working tree and current remote changes.
+3. Update the implementation and the documents that describe its behaviour.
+4. Run checks appropriate to the change.
+5. Review the diff for unrelated edits, secrets and unsupported claims.
+6. Commit a focused change and publish it to the authorised branch.
 
+Coordinate shared contracts before changing dimensions, rotations, object identifiers or export structures. Preserve other contributors' work when integrating branches.
 
-ФРОНТЕНДЕР — что твоё
----------------------
+## Quality checks
 
-  src/frontend/components/        кнопки, панели, формы
-  src/frontend/components/three/  3D: сцена, вьюпорт, вход
-  src/frontend/voice-commands.ts  разбор голосовых команд
-  src/frontend/csg.ts             булевы операции (объединение/вычитание)
-  src/frontend/export-3d.ts       сохранение в GLB / STL / OBJ
-  src/app/**/page.tsx             сами экраны
-  src/app/globals.css             цвета, шрифты, общий стиль
+Code changes require backend regression tests, TypeScript checks and a production build. Generation changes also need representative scenes and downloaded-model checks.
 
-Типичные задачи: поменять вид кнопок, поправить вёрстку на телефоне,
-добавить экран, изменить 3D-сцену на входе.
+Documentation changes require valid file links, accurate feature descriptions and `git diff --check`. Use English for product documentation. Keep test-account credentials and personal data outside the repository.
 
+## Deployment
 
-БЭКЕНДЕР — что твоё
--------------------
+The public application is [www.atrion.online](https://www.atrion.online/). Verify the deployed commit and readiness after publication. Optional workers, inference hosts, database schemas and OAuth origins have separate activation requirements.
 
-  src/backend/gen/          генератор моделей: текст → чертёж → геометрия
-  src/backend/ai.ts         обращения к ИИ-провайдерам
-  src/backend/auth.ts       вход, сессии, тарифы
-  src/backend/db.ts         база данных
-  src/backend/finik.ts      оплата
-  src/app/api/**/route.ts   адреса, которые дёргает фронтенд
-  prisma/                   схема базы
-
-Типичные задачи: улучшить качество генерации, добавить слово в словарь
-генератора, поправить лимиты, добавить новый адрес API.
-
-
-ОБЩЕЕ — src/shared
-------------------
-
-  types.ts      описание данных: как выглядит деталь и модель целиком
-  geometry.ts   размножение примитивов, габариты, палитры
-
-Если меняешь тут — скажи второму. Ломается сразу у обоих.
-
-
-КАК РАБОТАТЬ ВМЕСТЕ
--------------------
-
-1. Перед работой забери свежий код:      git pull
-2. Заведи свою ветку:                    git checkout -b моя-задача
-3. Поработал — сохрани:                  git add -A
-                                          git commit -m "что сделал"
-4. Отправь:                              git push -u origin моя-задача
-5. На GitHub нажми "Compare & pull request", второй человек смотрит и
-   нажимает Merge.
-
-После слияния в ветку main Vercel сам пересобирает сайт —
-руками ничего делать не надо. Сайт: https://www.atrion.online (адрес https://atrion-2-0.vercel.app тоже работает).
-
-
-ПРОВЕРИТЬ СЕБЯ ПЕРЕД ОТПРАВКОЙ
-------------------------------
-
-  npx tsc --noEmit               ошибок типов быть не должно
-  npm run build                  сборка должна пройти
-  npx tsx scripts/gen-report.ts  что выдаёт генератор на 26 запросах
-
-
-ЧЕГО НЕ ДЕЛАТЬ
---------------
-
-- Не переименовывать .github/CODEOWNERS — это служебный файл GitHub,
-  он сам назначает проверяющего на pull request. После переименования
-  правило молча перестаёт работать.
-- Не коммитить файл .env и ключи. Они уже в .gitignore.
-- Не пушить напрямую в main, если работаете вдвоём — только через
-  pull request, иначе будете затирать друг друга.
+[Specification](../SPEC.md) · [Development](DEVELOPMENT.md)

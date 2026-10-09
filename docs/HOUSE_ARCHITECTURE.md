@@ -1,21 +1,47 @@
-# Дом по тексту: фасад и форма
+# House Architecture
 
-Обновление 2026-10-09 исправляет упрощённый путь `/api/design/preview` и `/api/design/model`. Раньше он игнорировал вариант генерации, использовал один прямоугольный корпус, ставил по одному небольшому окну на помещение и повторял пустую наружную дверь на каждом этаже.
+The direct design workflow compiles a house description into a structured document containing a footprint, floors, rooms, openings and furnishing.
 
-Теперь описания влияют на геометрию: современный, скандинавский, классический, деревянный/шале и кирпичный фасады; обычные, небольшие и панорамные окна; плоская, двускатная, вальмовая, односкатная и мансардная крыши. Цвет стены, крыши, рам и двери разбирается отдельно. «Белый дом с красной крышей» не превращает стены в красные. Размеры окна `1.8×1.6` не заменяют габарит дома.
+## Supported variations
 
-Контур может быть прямоугольным или Г-образным. Г-образный состоит из двух крыльев: перекрытия, комнаты, стены, проёмы и крыши следуют этому контуру, вырезанный угол остаётся пустым. На каждом этаже нужны минимум два помещения; иначе задаётся уточнение. Названные помещения сохраняются по одному экземпляру, этажи — 1–3. Площадь и распределение комнат предлагаются автоматически.
+| Element | Supported choices |
+| --- | --- |
+| Footprint | Rectangular or L-shaped |
+| Floors in the direct house planner | One to three |
+| Facade | Modern, Scandinavian, classic, timber/chalet and brick |
+| Windows | Regular, small or panoramic |
+| Roof | Flat, gable, hip, shed or mansard |
+| Colours | Separate wall, roof, frame and door choices |
+| Interior | Named rooms with suitable catalog furniture |
 
-Окна распределяются по наружным стенам с отступами и не пересекают дверь. Санузлы получают небольшие высокие окна. Проёмы действительно вырезаны в стенах; в них находятся рамы, стекло, дверные полотна и ручки. Единственный наружный вход расположен на первом этаже. Верхние помещения связаны внутренними дверями, без висящих выходов на улицу.
+An L-shaped house uses two wings. Floors, walls, rooms and roof follow the footprint, leaving the removed corner empty. At least two rooms are needed per floor in this workflow.
 
-Вход получает площадку, ступень и навес; «без крыльца» убирает их. У деревянного/кирпичного фасадов отделка следует только сплошным наружным участкам стены, не закрывая стекло. Плоская крыша получает парапет по контуру. Если стиль не задан, новые генерации могут выбирать разные фасады и соответствующие крыши; явные требования сохраняются. Выбранный вариант указан в результате.
+The general building generator has a different contract and supports taller buildings. The direct furnished-house planner's floor limit does not apply to every building route.
 
-`backend/design/house-architecture.ts` читает пожелания; `house-layout.ts` компилирует помещения и проёмы. Общие `shared/house/footprint.ts`, `architecture.ts`, `roof.ts`, `facade.ts`, `fittings.ts` задают контур и детали без БД/браузера. Дополнительные поля документа опциональны; старые документы остаются читаемыми. `frontend/house-model.ts` используется в просмотре и GLB. Список закупки считает оконные/дверные блоки целиком, мебель — каталоговыми предметами; декоративные линии кладки не считаются отдельными покупками.
+## Openings and furnishing
 
-Новая модель сначала показывает дом целиком со стороны входа. Доступны прежние виды этажей и комнат, редактирование мебели и отмена. Кадрирование учитывает крышу и общий габарит. Старый результат в уже открытой вкладке не пересоздаётся при деплое: сначала скачайте нужные правки, затем обновите сайт и выполните запрос заново.
+Windows lie on exterior walls with margins and door clearance. Bathrooms use smaller high windows. Wall openings contain frames, glass or door leaves and handles.
 
-## Проверка и пределы
+The exterior entrance is on the ground floor. Internal doors connect rooms. Upper floors do not receive repeated exterior entrances.
 
-`scripts/interior-house-architecture.test.ts` проверяет один вход на первом этаже, оконные отверстия, двери, пять разных крыш, цвета отдельных элементов, сохранение требований в вариантах, Г-образный контур, границы комнат, проходы и закупку. Он входит в `npm run test:backend`. Обязательны также `npx tsc --noEmit`, `npm run build`, `gen-check` и `gen-report`; эти проверки не заменяют визуальный просмотр нескольких описаний и проверку экспортированных GLB.
+Furniture placement reserves room boundaries and passages. Items that do not fit produce warnings. Room purpose, recognised furniture requests and explicit empty-room instructions influence furnishing.
 
-Это бесплатный процедурный построитель, а не универсальная нейросеть text-to-mesh. Поддерживаются два вида контура и перечисленные архитектурные параметры. Произвольные кривые контуры, лестницы, открывание дверей, конструкции кровли и инженерные сети не моделируются. Крылья Г-образной крыши соединяются концептуально, без расчёта стропил/ендовы. Слишком тесные помещения не обставляются молча: пропуски перечислены в результате. Численные проверки и glTF Validator не доказывают фотореализм или импорт в Unity Editor.
+## Implementation
+
+`backend/design/house-architecture.ts` parses architectural preferences. The house layout compiles rooms and openings. Shared footprint, roof, facade and fittings modules supply geometry without database or browser dependencies.
+
+`frontend/house-model.ts` builds both display and GLB geometry. Procurement counts windows, doors and furniture as whole items; decorative facade lines are not separate purchases.
+
+## Views and export
+
+New results show the complete house from the entrance side. Users can inspect floors, zoom into rooms and edit furniture. Framing includes the roof and full bounds.
+
+JSON retains the house document and interiors. GLB always contains the complete house with all furnished floors.
+
+## Boundaries and checks
+
+Curved footprints, engineered stairs, opening-door simulation, roof framing and building services are outside this implementation. Roof joins are conceptual rather than structural designs.
+
+Regression tests cover footprints, openings, colours, roofs, furniture boundaries and quantities. Visual review and exported-file checks are still required.
+
+[Design requests](DESIGN_REQUESTS.md) · [Plan editor](PLAN_EDITOR_RU.md)

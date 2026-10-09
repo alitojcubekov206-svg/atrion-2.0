@@ -1,33 +1,43 @@
-# Вход через Google
+# Google Sign-In
 
-На `/register` и `/login` добавлена кнопка Google Identity Services. При отсутствии настроек она отключена и показывает «Вход через Google ещё не подключён». Обычная регистрация и вход по email остаются доступны.
+The registration and login pages use Google Identity Services alongside normal email/password access. The supported SDK button theme is `filled_black`, matching Atrion's dark interface.
 
-По запросу пользователя кнопка использует тёмную тему SDK `filled_black`, общую для входа и регистрации. Это [поддерживаемое оформление Google](https://developers.google.com/identity/gsi/web/reference/js-reference#theme); проверки аккаунта и сессии не меняются.
+## Setup
 
-## Активация владельцем проекта
+1. Create a Google OAuth client of type **Web application** and configure the consent screen.
+2. Add the actual application origin, including `https://www.atrion.online`, to authorised JavaScript origins. Configure any additional local or deployment origins separately.
+3. Inspect the target database and prepare `prisma/add-google-auth.sql` as an additive schema change.
+4. Set `GOOGLE_CLIENT_ID` and enable `GOOGLE_AUTH_ENABLED=true` only when the origin and identity table are ready.
+5. Deploy, then test a real sign-in, logout and repeat sign-in.
 
-1. Создать OAuth-клиент типа **Web application** в [Google Cloud](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid). Настроить название приложения, email поддержки и согласие OAuth. Atrion использует только Sign in with Google (имя/email/идентификатор): [исключение Google для базового входа](https://support.google.com/cloud/answer/15549945) позволяет входить без списка тестовых пользователей даже в режиме Testing. Дополнительные права Gmail/Drive не запрашиваются.
-2. В **Authorized JavaScript origins** добавить рабочий домен `https://www.atrion.online` (основной; `https://atrion.online` перенаправляет на него) и прежний `https://atrion-2-0.vercel.app`, который продолжает работать. Для локальной проверки добавить `http://localhost:3109`. GIS использует popup и callback JavaScript, серверный redirect URI и client secret здесь не нужны.
-3. Перед применением проверить целевую базу скриптом ниже и согласовать только добавочную схему `prisma/add-google-auth.sql`. При наличии доступа к отдельной ветке PostgreSQL предварительно проверить SQL на ней. Схема явно использует `public`, ограничивает ожидание блокировки пятью секундами и время SQL-команды тридцатью секундами; существующие таблицы/пароли не меняются. Не использовать `prisma db push` для рабочей базы.
-4. На Vercel задать `GOOGLE_CLIENT_ID` полученным публичным ID вида `….apps.googleusercontent.com`. После проверки таблицы задать `GOOGLE_AUTH_ENABLED=true` и сделать новый deploy. Не включать флаг для preview, пока его БД/домен не настроены.
-5. Проверить реальным Google-аккаунтом: новая регистрация, повторный вход, выход, вход в существующий email-аккаунт, доступ только к своим проектам. Client ID не секрет; OAuth secret и ID-токены не публиковать.
+This popup/callback integration uses a public client ID and does not require an OAuth client secret or server redirect URI.
 
-OAuth-клиент **Atrion Web Login** создан в проекте Google `atrion-511113` для рабочего домена. Предыдущий клиент удалён. Добавочная таблица применена к проверенной базе Neon после отдельного разрешения владельца; проверка обязательных полей, ключей и связи с пользователем прошла. В production настроены публичный `GOOGLE_CLIENT_ID` и `GOOGLE_AUTH_ENABLED=true`.
+Official guidance: [Create a client ID](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) and [Button theme](https://developers.google.com/identity/gsi/web/reference/js-reference#theme).
 
-Состояние каждой опубликованной версии проверять по `GET /api/auth/google`: `configured:true` означает, что этот deploy получил настройки клиента. Реальную авторизацию дополнительно проверять в браузере, включая выход и повторный вход. `configured:true` само по себе не подтверждает успешный вход пользователя.
+## Availability
 
-## Проверка базы перед активацией
+`GET /api/auth/google` reports configuration. A configured response does not prove that the domain is authorised or that a real user can sign in. Changing the website URL in documentation does not update the Google console.
 
-`node scripts/google-auth-db.cjs <NEON_PROJECT_ID>` выполняет только запросы метаданных внутри транзакции `READ ONLY`. Проверяет поля пользователя, а при наличии `auth_identities` — обязательные поля, primary key, уникальность `provider + subject`, внешний ключ на `public.User` с каскадным удалением и индекс `userId`. Выводит только статус и SHA-256 отпечаток целевой базы; строки пользователей и адрес подключения не выводятся. Нормальная сборка и приложение этот скрипт не запускают.
+The identity-table metadata checker is:
 
-Повторная проверка с аргументами `<NEON_PROJECT_ID> <fingerprint> --require-ready` отклоняет другую базу и отсутствие готовой таблицы. Скрипт не применяет SQL. Добавочная схема требует отдельного разрешения владельца после проверки цели. На Vercel одноразовый build override позволяет выполнить проверку с уже настроенным секретом подключения, не извлекая его на компьютер.
+```bash
+node scripts/google-auth-db.cjs <NEON_PROJECT_ID>
+```
 
-На `/legal#privacy` описаны получение имени/email/Google ID, хранение привязки, технические cookies и удаление аккаунта через разрешённую почту поддержки. Пароли Google, почта и файлы Google Drive приложению не нужны.
+It uses read-only metadata queries and reports readiness and a database fingerprint, without printing account rows or connection credentials. The optional fingerprint and `--require-ready` arguments enforce the same target and a prepared table. It does not apply SQL.
 
-## Серверная проверка
+## Server validation
 
-`GET /api/auth/google` выдаёт уникальный nonce и CSRF-токен, записывает подписанный challenge в HttpOnly/SameSite cookie на 10 минут. `POST` проверяет Origin, ограничивает потоковое тело до 16 KiB и частоту обращений, проверяет challenge и ID-токен: подпись по Google JWKS, RS256, issuer, audience, exp/iat, nonce, sub и подтверждённый email. Cookie очищается при проверке callback. ID-токены не сохраняются.
+The server issues a short-lived signed challenge with nonce and CSRF protection. The callback checks Origin, request size, frequency, challenge, Google signature, issuer, audience, expiry, nonce, stable subject and verified email.
 
-Привязка хранится в `auth_identities` по паре `google` + стабильный `sub`. Возвращающийся пользователь определяется по sub, смена Google email не перепривязывает его к чужому аккаунту. Первичная привязка существующего аккаунта допускается только для авторитетного адреса Gmail/Google Workspace; ID, пароль и проекты сохраняются. Для стороннего email Google рекомендует дополнительное подтверждение владения: этот первый вариант предлагает вход по email и не объединяет такие аккаунты. Основание: [проверка Google ID-токена](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).
+Identity links use provider plus stable Google subject. A changed Google email does not attach the returning subject to another user's account. Existing-account linking is limited to authoritative email cases; unsupported cases use ordinary account sign-in.
 
-Сессия использует прежнюю cookie Atrion и fingerprint пароля, поэтому выход/смена пароля и ограничения владельца работают как прежде. Создание пользователя и привязки выполняется транзакцией; конфликт при параллельном первом входе повторно ищет только тот же Google sub. Автотесты используют локальные RSA-ключи, фиктивные JWKS, cookies и границу Prisma; не обращаются к реальным Google-аккаунтам/БД.
+Reference: [Verify Google ID tokens](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).
+
+## Privacy and sessions
+
+Atrion receives basic profile identity information needed for sign-in. It does not request Gmail or Drive access and does not store Google passwords or ID tokens.
+
+Sessions use the existing Atrion cookie and password fingerprint. Account creation and identity linking use a transaction. Regression tests use local test keys and mocked database boundaries rather than real Google accounts.
+
+[Configuration](CONFIGURATION.md) · [Architecture](../ARCHITECTURE.md)

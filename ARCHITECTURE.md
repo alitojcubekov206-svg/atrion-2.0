@@ -1,53 +1,69 @@
-# Устройство серверного этапа
+# Architecture
 
-Маршруты создания 3D/дома/дизайна используют `backend/generation-http.ts`: сессия и технический rate-limit проверяются внутри общей границы ошибок, ответ получает безопасный ID запроса без текста пользователя/данных подключения. `generation-request.ts` проверяет диалог и передаёт уточнённые параметры в построитель; бюджет не участвует в геометрии. Ракеты собираются `gen/rocket.ts`, дверные полотна комнат — чистым `shared/interior/doors.ts` и включаются в общий `sceneParts`/подробный GLB.
+Atrion is a Next.js application with server-side generation, shared scene contracts and browser-based 3D editing. Optional GPU inference runs as a separate service.
 
-Вход через Google Identity Services добавлен как `/api/auth/google` → проверка JWT/JWKS и nonce в `backend/google-auth.ts` → транзакция `auth_identities` → существующая сессия Atrion. Пока нет OAuth Client ID и добавочной таблицы, путь отключён флагом; настройка: [docs/GOOGLE_SIGN_IN.md](docs/GOOGLE_SIGN_IN.md).
+## Application layers
 
-Люди и четвероногие используют пропорциональные сетки `backend/gen/living-anatomy.ts` перед общими проходами дополнений. Группы деталей сохраняют редактирование, анимации и экспорт. Ограничения: [docs/LIVING_MODEL_QUALITY.md](docs/LIVING_MODEL_QUALITY.md).
+| Layer | Responsibility |
+| --- | --- |
+| `src/app/` | Pages, HTTP routes and request boundaries |
+| `src/backend/` | Authentication, database access, AI adapters and generation |
+| `src/shared/` | Pure contracts, geometry, house documents and quantities |
+| `src/frontend/` | Rendering, selection, transforms, history and export |
+| `infra/modal_realistic.py` | Optional image and mesh inference on a GPU |
 
-В доме `brief-model.ts` соединяет `buildHouse` с `shared/house/furnishing.ts`, `fittings.ts` и `facade.ts`. `house-architecture.ts` разбирает стиль, окна и отдельные цвета; `footprint.ts` задаёт прямоугольный/Г-образный контур, `roof.ts` — пять форм кровли. Результат содержит `HouseDocument`, интерьерные сцены комнат с глобальными origin и геометрию концепта. Внутренние дверные проёмы передаются обеим соседним комнатам; существующий планировщик проверяет мебель и проходы. `frontend/house-model.ts` собирает подробную мебель из того же каталога для `HouseViewer` и полного GLB. Просмотр этажа скрывает другие этажи и укорачивает стены/двери только в представлении; исходный документ и экспорт не обрезаются. Данные и секреты БД для локального пути не нужны. Подробности: [docs/HOUSE_ARCHITECTURE.md](docs/HOUSE_ARCHITECTURE.md).
+Frontend code does not import backend modules. Shared modules contain no credentials or Prisma clients.
 
-Геометрия мебели из FORMA встроена в интерфейс Atrion; отдельная студия и её публичные ресурсы удалены. Просмотрщик и GLB используют общий построитель детальной сцены. Старые приватные документы `/api/forma` сохранены для совместимости, новый UI их не открывает. Подробности: [docs/FORMA_INTEGRATION.md](docs/FORMA_INTEGRATION.md).
+## Editable generation
 
-## Интерьерный редактор
+`/api/3d/generate` calls the generation service in `backend/ai.ts`. Configured text inference can propose part dimensions, positions, shapes and materials. `gen/ai-geometry.ts` validates the response and bounds repair work.
 
-`src/shared/interior/` хранит проверяемую сцену, каталог, коллизии, геометрию и чистую обработку разрешённых действий; `src/backend/interior/` — PostgreSQL-очередь, транзакционные версии/квоты и адаптеры R2/Workers AI. Клиент `/dashboard/design` использует shared-контракты и приватные API. Локальная dev-песочница вызывает те же чистые проверки без БД. Основной UI вызывает защищённый `POST /api/design/preview`: CPU-построение комнаты/дома возвращает результат сразу, без новых таблиц и worker. Очередь `design:worker` сохранена для прежних API и анализа плана. Подробнее: [docs/INTERIOR_DESIGN.md](docs/INTERIOR_DESIGN.md).
+`gen/blueprint.ts`, `prompt-params.ts` and `gen/build.ts` implement supported procedural categories and prompt parameters. Explicit user values override random variants. The response identifies procedural fallback when used.
 
-## Существующие генераторы
+Refinement applies supported local transforms or calls configured text inference. Rejected changes preserve the existing scene.
 
-`src/backend/text-ai.ts` выбирает провайдера и вызывает OpenAI-compatible JSON endpoint через существующую зависимость `openai`. Для Cloudflare адрес привязан к проверенному Account ID; ключ не отправляется на старый пользовательский endpoint. SDK-повторы отключены, проверяются finish_reason, пустой и некорректный JSON. JSON Schema использует соответствующий провайдеру формат.
+## Houses and rooms
 
-`src/backend/ai.ts` сохраняет публичные контракты текущих сценариев. Генерация 3D делит 50-секундный бюджет между геометрией и метаданными. Compatible fallback использует оставшееся время; Cloudflare не переключается на него. `gen/ai-geometry.ts` формирует запрос из задания и явных размеров, проверяет ответ и при необходимости запрашивает исправление. Не более двух геометрических запросов: второй возможен также после некорректного JSON или схемы, с конкретным ошибочным полем и исходным заданием. Ошибки провайдера не считаются дефектами геометрии. Проверка размеров учитывает оси и явно заданную наибольшую сторону; `prompt-params.ts` распознаёт сокращённые и полные названия единиц. `gen/validate.ts` в режиме `preserveLayout` не сближает независимые детали и не отбрасывает малые; прежние вызовы сохраняют прежний режим.
+`DesignWorkspace` calls `/api/design/preview`. The brief identifies missing parameters; house and interior builders construct a validated result without external text inference.
 
-`session-token.ts` выдаёт JWT с назначением `session` и HMAC от id пользователя и текущего хеша пароля. `auth.ts` сверяет его с БД при каждом чтении сессии. Смена пароля автоматически делает прежние токены недействительными; условное обновление пароля и кода восстановления предотвращает повторное использование кода при конкурентных запросах. `email-development.ts` централизует запрет возврата OTP вне development.
+`shared/house/` represents footprints, floors, rooms, openings and finishes. `frontend/house-model.ts` builds detailed geometry for both display and GLB export. A selected-floor view does not truncate export.
 
-Гостевой вход: `src/app/api/auth/demo/route.ts` → флаг и случайная учётная запись из `backend/demo-login.ts` → `db.user.create` → `createSession`. Маршрут не меняет интерфейс: ссылка на него размещается в README и материалах для жюри.
+Interior objects have stable identifiers. Render synchronisation updates object transforms without rebuilding unrelated furniture. History stores scene snapshots. Procurement derives from the accepted model; floor-plan SVG derives from its house document.
 
-`ai-quota.ts` возвращает объект резервирования с методом `refund`, привязанным к UTC-дню списания. `quota-reservation.ts` запоминает Promise возврата, предотвращая повторное списание счётчика. `generation-quota.ts` объединяет учёт генерации и AI-операции без тарифных ограничений. Ошибка освобождает оба счётчика. Это компенсация в рамках живого процесса, без постоянного журнала и транзакции с внешним провайдером.
+Furniture geometry is shared by viewers and exports. Source attribution is maintained [alongside the adapted component](src/shared/forma/README.md).
 
-`refinement.ts` проверяет геометрию редактируемой модели, выполняет точные локальные преобразования и восстанавливает mesh по id после AI-правки. Приём результата не использует эвристический score; отсутствие изменений приводит к 422 и возврату квоты. Успешная генерация логирует идентификатор запроса, длину текста и технические показатели без исходного пользовательского текста.
+## Plan images
 
-`src/app/api/house/generate/route.ts` выполняет вход через `designAuth` → `requireApiUser`, ограничивает частоту и размер тела, передаёт отмену и резервирование квоты в `src/backend/design/house-generation.ts`. Общий бюджет AI — 50 секунд, maxDuration маршрута — 60. Ошибки провайдера не раскрываются клиенту.
+`PhotoPlan` loads a PNG/JPG in the browser. Users enter dimensions and trace rooms and openings. `shared/house/from-plan.ts` validates the reviewed plan and constructs geometry.
 
-`house-generation.ts` извлекает программу помещений, вызывает планировщик, проверяет соответствие и возвращает документ. `house-layout.ts` распределяет площади, создаёт проёмы и связи. Чистый контракт и построитель геометрии находятся в `src/shared/house/document.ts`; общие валидаторы — в `src/shared/design/validation.ts`. Эти модули не используют браузер, Prisma или секреты.
+Configured Vision analysis passes an optimised image to the provider through `/api/design/plan`. The direct workflow does not write the image to R2 or PostgreSQL. Its supported geometry is one rectangular floor.
 
-`gen/blueprint.ts` разбирает запрос для процедурной модели: тип объекта определяется главным словом, всё после предлогов «с/на/в/для/из/без» — дополнения, явные размеры сохраняются точно. `gen/build.ts` строит модель, комнаты и дома «с мебелью» обставляются отдельными предметами (дом с мебелью строится полым: перекрытия и стены). Если у модели есть мебель под крышей, студия включает режим «Разрез» (`interiorCutHeight` в `src/shared/geometry.ts`): всё выше заданной высоты отсекается плоскостью, и интерьер виден сверху. `gen/match.ts` — диагностика: найдены ли по названиям деталей элементы, явно названные в запросе, и сходится ли размер. Недостающие явно названные элементы передаются в исправляющий запрос AI как дефекты и выводятся в заметках; на выбор геометрии отчёт не влияет. Метаданные запрашиваются параллельно с геометрией и после её готовности ждут не дольше 6 секунд.
+## Optional inference and persistence
 
-`src/frontend/glb-import.ts` содержит только импорт готового GLB в mesh-детали редактора. Реалистичный режим: кнопка студии → `src/frontend/realistic-3d.ts` → `POST /api/3d/realistic` (описание для картинки через `describeForImage`, режим figure/object) → задание Modal из `infra/modal_realistic.py`; браузер опрашивает задание и превращает GLB в mesh-деталь.
+| Component | Dependency |
+| --- | --- |
+| Text geometry | OpenAI-compatible inference or Cloudflare Workers AI |
+| Local composition | llama.cpp on server loopback |
+| Realistic mesh | Separately deployed Modal service |
+| Saved interior projects and history | Design tables in PostgreSQL |
+| Queued interior tasks | A separately running `design:worker` process |
+| Stored plan files | Private R2 storage and the project schema |
 
-`src/frontend/` и страницы `src/app/` меняются только по прямому запросу пользователя (исключения перечислены в AGENTS.md). `/playground/generator` — dev-песочница процедурного генератора без входа и AI, в production отвечает 404. Новых редакторов, риггинга и таблиц БД этот этап не добавляет. Новый API дома пока вызывается отдельно от существующего интерфейса.
-# Единый ввод дизайна — обновление 2026-10-08
+The direct preview workflow does not require the design queue. Transfers between Design Engine and the design editor use a temporary in-tab draft; refreshing the page can discard it.
 
-`shared/interior/request.ts` выбирает интерьер или модель по основному объекту. `backend/design/brief.ts` повторно вычисляет известные параметры из описания и истории ответов и возвращает `clarification | ready`. Квота ещё не резервируется. `brief-model.ts` передаёт комнатную программу дома в существующие `compileHouseLayout`/`buildHouse`, остальные объекты — в `local-model.ts`. Внешних API нет. `backend/interior/request.ts` готовит размеры одинаково для worker и preview. UI хранит диалог, комнату и отдельную модель раздельно, новая формулировка сбрасывает прежние ответы. API и ограничения: [docs/DESIGN_REQUESTS.md](docs/DESIGN_REQUESTS.md).
-# Локальный AI-путь композиции
+## Authentication and validation
 
-`DesignWorkspace` → `/api/playground/design` (`engine: local-ai`, dev) или приватный `/api/design/compose` → `backend/design/local-ai.ts` → loopback llama.cpp. Модель получает запрос, диалог и предыдущий JSON; возвращает вопрос или композицию. `shared/design/composition.ts` проверяет данные; `frontend/composition-model.ts` строит одинаковую геометрию для просмотра/GLB. Каталог используется как детали, классификатор ключевых слов не вызывается. Конфигурация, запуск и границы: [docs/LOCAL_AI.md](docs/LOCAL_AI.md).
+- Private routes require a session; project and file operations verify ownership.
+- Session tokens include a password fingerprint so password changes revoke old sessions.
+- Google sign-in validates the challenge, Origin, JWKS signature and token claims.
+- Generation requests enforce input limits and return safe request identifiers.
+- Usage counters track operations without paid application quotas.
+- The in-memory rate limiter is per process, rather than a distributed global limiter.
+- Generated structured data is validated; generated code is not executed.
+- Guest-account creation has been removed.
 
-## Редактирование и движение — 2026-10-09
+## Export
 
-frontend/design-draft.ts передаёт результат из Design Engine в Design Studio через память текущей вкладки: одна клонированная модель на 30 минут, в URL только случайный ID. OpenDesignButton запускает переход после завершения сборки. Получатель не генерирует повторно и не отправляет модель на сервер; API сессий и проверка владельца сохраняются. Обновление вкладки сбрасывает эту временную копию.
+Browser and server exporters use the same shared scene geometry. Articulated character clips use `shared/living/motion.ts`. GLB validation does not establish compatibility inside an untested Unity Editor installation.
 
-shared/house/edit.ts обновляет конкретную пару floorId/roomId и перестраивает мебельные части, сохраняет другие комнаты и количества. Перенос между помещениями сохраняет ID/масштаб/материал и проходит проверку размещения. shared/design/edit-model.ts синхронизирует правки деталей и композиции. ObjectGizmo подтверждает трансформацию при отпускании мыши и восстанавливает её при отказе; существующие API сохранения проверяют владельца и revision. Локальные модели живут в состоянии страницы.
-
-shared/living/request.ts — чистые метаданные движения; shared/living/motion.ts — геометрические шарниры и AnimationClip без browser/backend. LivingViewer и GLB используют одну функцию анимации. Скелет Humanoid и skinning не создаются. Полное описание: [docs/DESIGN_EDITING_MOTION.md](docs/DESIGN_EDITING_MOTION.md).
+[Specification](SPEC.md) · [Configuration](docs/CONFIGURATION.md) · [Unity export](docs/UNITY_EXPORT.md)

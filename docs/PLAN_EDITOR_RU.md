@@ -1,26 +1,41 @@
-# Редактор и фото плана
+# Editing and Plan Images
 
-Вместо изображений примеров показаны компактные текстовые кнопки. Перемещение мебели в комнате и доме обновляет матрицы существующих объектов; геометрия меняется только при смене модели/цвета. Удаление освобождает ресурсы именно удалённого предмета. Статичные комнаты и дома используют отрисовку по требованию. Камера дома сохраняет ракурс после правки мебели.
+## Interactive edits
 
-В доме можно выбрать помещение, добавить мебель, перемещать, поворачивать, закреплять и удалять её. У обычных моделей добавлена кнопка «Удалить деталь». Отмена/повтор восстанавливают снимки, а список закупки пересчитывается из текущей модели. Число позиций списка — количество разных строк, не сумма предметов. CSV доступен в «Что закупать».
+Select an object in the scene or list. Move and rotate furniture with the gizmo, or use numerical controls. Supported objects can be locked, removed and restored through undo/redo.
 
-«План и размеры» показывает текущий этаж, размеры комнат, двери, окна и мебель. SVG сохраняет эту схему. Это эскиз, без инженерного расчёта и строительных узлов.
+Furniture transforms update existing objects instead of rebuilding unrelated geometry. Static house and room views render on demand. Removing an object releases its own resources.
 
-## PNG/JPG → проверка → 3D
+In a house, select a room to add furniture or transfer an item to another room or floor. Placement checks preserve the previous state when the destination is invalid.
 
-1. Открыть «Создать дом по фото плана», загрузить PNG/JPG до 15 МБ. Сохранение в базе не требуется.
-2. Если Cloudflare Vision настроен, нажать «Распознать план». Изображение уменьшается до 1600 px, сервер ограничивает тело 3 MiB и декодирование 24 мегапикселями. Фото передаётся только в настроенный Cloudflare и не записывается в R2/БД.
-3. Без vision можно разметить фото вручную: обрезать его по контуру здания, указать общие габариты, выделить прямоугольные комнаты или ввести координаты. Добавить и проверить двери/окна. Косую фотографию нужно заранее выровнять.
-4. Проверить размеры и отметить подтверждение. Построение использует точные координаты разметки, не выбирает шаблон. Неподдерживаемый или пересекающийся план выдаёт ошибку и сохраняет предыдущую модель.
+## Procurement and floor plans
 
-Поддержка фото: один этаж, прямоугольный наружный контур и прямоугольные помещения. Автораспознавание не гарантирует правильного чтения мелких надписей и проёмов. Отсутствующие размеры не угадываются. Высота 2,8 м, толщина стен 0,2 м и плоская крыша — предложенные исходные параметры, не измерения по фотографии. Мебель в дом по плану добавляется пользователем.
+The procurement list derives from the current model after edits. Its row count is the number of distinct entries, rather than the total number of objects. CSV counts furniture as complete items.
 
-`GET /api/design/plan` сообщает доступность; `POST` принимает бинарный PNG/JPG. Оба маршрута требуют сессию и технический rate limit. Dev-аналоги `/api/playground/design/plan` возвращают 404 в production. Ошибки рабочего API имеют безопасный request ID.
+The floor-plan view includes rooms, dimensions, doors, windows and furniture. SVG exports the selected floor. It is a concept layout without construction details or engineering calculations.
 
-Для автораспознавания нужны `DESIGN_VISION_ENABLED=true`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` и доступ к [Cloudflare Llama Vision](https://developers.cloudflare.com/workers-ai/models/llama-3.2-11b-vision-instruct/). Реальное распознавание внешним сервисом не подтверждено в этой проверке: локально credentials отсутствуют. Ручная разметка от них не зависит. Секреты не добавлять в репозиторий.
+## PNG/JPG to a reviewed model
 
-## Проверка
+1. Upload a PNG/JPG plan up to 15 MB.
+2. Crop to the building outline and set overall dimensions. Rectify angled photos before tracing.
+3. Trace rectangular rooms or enter their coordinates. Add and inspect doors and windows.
+4. If Vision is configured, request analysis and review its suggestions.
+5. Confirm dimensions and build the model from the accepted coordinates.
 
-`scripts/interior-editor.test.ts` проверяет сохранение геометрии при переносе, независимое освобождение ресурсов, удаление частей, точность комнат/проёмов, закупку после правок, отказ от неизвестных размеров и лимит входного потока. `scripts/gen-check.ts` включает исходный запрос «создай 8 эажный дом»: одна модель, восемь этажей. Design Engine открывает новые модели целиком; «Разрез» включается пользователем.
+The workflow supports one rectangular floor with rectangular rooms. Missing dimensions are not inferred as reliable measurements. Suggested height, wall thickness and flat roof are editable defaults.
 
-Импорт GLB в Unity Editor по-прежнему не проверен: Editor на компьютере отсутствует.
+Invalid or overlapping plans return an error and preserve the previous model. Furniture can be added after reconstruction.
+
+## Vision boundary
+
+`GET /api/design/plan` reports availability. `POST` accepts a binary PNG/JPG. Both require an authenticated session. Development equivalents return 404 in production.
+
+The client reduces the image to 1600 pixels; the server limits request size to 3 MiB and decoded images to 24 megapixels. The direct route sends an optimised image only to the configured provider and does not write it to R2 or the database.
+
+Automatic analysis requires `DESIGN_VISION_ENABLED=true` and Cloudflare credentials. Reading small text and openings remains fallible; user confirmation is required.
+
+## Verification
+
+Editor tests cover transform preservation, resource disposal, part deletion, coordinate reconstruction, procurement and rejected inputs. GLB validation and Unity Editor import are separate checks.
+
+[Configuration](CONFIGURATION.md) · [Unity export](UNITY_EXPORT.md)

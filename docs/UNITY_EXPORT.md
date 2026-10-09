@@ -1,21 +1,33 @@
-# Экспорт в Unity
+# Unity Export
 
-В Design Engine скачайте GLB (цвета и геометрия) либо OBJ (геометрия). В «Дизайне» GLB включает комнаты и мебель; экспорт дома всегда содержит дом целиком, даже когда просмотр открыт на отдельном этаже. Все координаты — метры.
+## Download
 
-Для GLB в Unity: откройте Package Manager → Install package by name, установите com.unity.cloud.gltfast, перенесите скачанный файл в Assets и перетащите импортированный объект в сцену. Проверьте масштаб, материалы и при необходимости добавьте коллайдеры. Статические дома и интерьеры не получают риг/анимацию. У процедурных людей и животных GLB может содержать клипы Idle/Walk с движением шарниров деталей; Humanoid Avatar и skinning не создаются. Коллайдеры нужно настроить в Unity.
+Design Engine exports GLB and additional mesh formats. The design workspace exports GLB and JSON; a house GLB includes all floors and furniture regardless of the current view.
 
-[Официальная установка glTFast](https://github.com/Unity-Technologies/com.unity.cloud.gltfast/blob/main/Packages/com.unity.cloud.gltfast/Documentation~/index.md), [импорт GLB в Editor](https://github.com/Unity-Technologies/com.unity.cloud.gltfast/blob/main/Packages/com.unity.cloud.gltfast/Documentation~/ImportEditor.md), [поддерживаемые форматы Unity](https://docs.unity.com/en-us/engine/6000.6/manual/assets-and-media/asset-types/models/creating-dccassets/3d-formats).
+Scene coordinates use metres. Materials and geometry are derived from the accepted result.
 
-Файлы GLB проверяются локальным загрузчиком геометрии; Unity Editor на этой машине отсутствует, поэтому импорт внутри Unity не проверен.
+## Import workflow
 
-## Примеры из галереи
+1. Install a glTF/GLB importer appropriate for the Unity project, such as Unity glTFast.
+2. Add the downloaded GLB to the project's Assets directory.
+3. Inspect the imported meshes and materials, then place the prefab in a scene.
+4. Compare scale, doors, windows, furniture and colours with the Atrion preview.
+5. Add colliders and application-specific behaviour as needed.
 
-В Design Engine и Design Studio доступны четыре текстовые кнопки примеров Atrion: современный Г-образный дом, деревянное шале, скандинавская гостиная и спальня джапанди. Старые текстовые подсказки и дублирующие кнопки комнат удалены. Кнопки домов запускают полный указанный запрос; кнопки комнат открывают подготовленную расстановку. После открытия доступны обычное редактирование и GLB/JSON. Параметры процедурного дома могут немного отличаться при повторной генерации.
+Official guidance: [glTFast documentation](https://github.com/Unity-Technologies/com.unity.cloud.gltfast/blob/main/Packages/com.unity.cloud.gltfast/Documentation~/index.md) and [Editor import](https://github.com/Unity-Technologies/com.unity.cloud.gltfast/blob/main/Packages/com.unity.cloud.gltfast/Documentation~/ImportEditor.md).
 
-Для проверки каждого примера: нажать кнопку примера, выбрать предмет, изменить положение/цвет, отменить действие, скачать GLB. В Unity проверить результат в Inspector, раскрыть импортированные Meshes/Materials, добавить prefab в сцену и сравнить двери, окна и мебель с превью. Импортёр glTFast добавляет glTF/GLB в базу ассетов как Unity prefab: [официальная документация Editor Import](https://docs.unity3d.com/Packages/com.unity.cloud.gltfast@6.19/manual/ImportEditor.html).
+## Animation
 
-Эти примеры статические. В GLB дома экспортируется весь дом вместе с мебелью, даже если в просмотрщике выбран только этаж. Изменение направления осей при импорте выполняет glTFast; не нужно вручную зеркалить исходную модель.
+Procedural people and animals can export articulated `Idle` and `Walk` clips. These are joint transforms on separate parts, not a skinned Humanoid rig. Static houses and rooms do not receive character animation.
 
-## Закупка
+Check actual playback in the target Unity version before relying on the clips.
 
-Разверните «Что закупать» и скачайте CSV. Количество повторённых и зеркальных деталей соответствует текущей геометрии. Мебель дома/комнаты считается целыми предметами, а не ножками и треугольниками. Список модели — предварительная ведомость: она не рассчитывает несущие конструкции, крепёж, марки материалов, запас, труд и рыночные цены.
+## Procurement
+
+CSV counts repeated geometry and complete furniture items from the edited result. It is a preliminary list, without structural design, fastener specifications, labour or verified market pricing.
+
+## Validation status
+
+GLB files have been inspected with geometry loaders and validators. Unity Editor is unavailable on this machine, so actual Editor import and playback have not been verified.
+
+[Editor](PLAN_EDITOR_RU.md) · [Motion](DESIGN_EDITING_MOTION.md)

@@ -1,27 +1,36 @@
-# Данные для расширения генератора
+# Datasets and Future Experiments
 
-Запрос пользователя: принимать новые описания других пользователей, а не ограничиваться демонстрационными шаблонами. Сбор данных выполнен отдельно от исправлений генератора. Нейросеть на этих данных не обучалась; собранный индекс пока не подключён к production. Файлы и индексы сами по себе не меняют способность модели генерировать новые формы.
+Atrion uses real user descriptions and reviewed plan inputs together with synthetic procedural geometry and catalog objects. It has not trained or fine-tuned its own model.
 
-## Собранный стартовый набор
+The collected datasets below are for future experiments. They are not connected to production generation.
 
-- [Amazon Berkeley Objects](https://amazon-berkeley-objects.s3.amazonaws.com/index.html): индекс всех 7 953 доступных геометрий в 98 категориях. Подписи на доступных языках, материалы, цвета, габариты, количество полигонов и URL GLB. Загружены оригинальные метаданные и три небольших GLB для проверки конвейера. Полный архив геометрии размером 154 GB не загружен. Лицензия CC BY 4.0; атрибуция сохранена в каждом элементе и отчёте.
-- [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit): загружен полный пакет мебели. В нём 140 отдельных моделей, представленных в нескольких форматах. Лицензия CC0; файл лицензии сохранён рядом с архивом.
-- [Kenney Animated Characters](https://kenney.nl/assets/animated-characters-protagonists) и [Quaternius Animated Animals](https://opengameart.org/content/animated-animales-low-poly): отдельные пакеты людей и животных с анимациями под CC0. Сохранены оригинальные архивы и перечень файлов. Импорт FBX/Blend, корректность анимаций в Unity и подключение к генератору ещё не проверены.
+## Collected starter data
 
-Индекс ABO дедуплицирован по ID геометрии. Train/validation/test получены стабильным хешем этого ID: 7 197 / 365 / 391. Одна и та же геометрия с подписью на другом языке не попадает в другой split. Это разделение данных для будущего обучения/оценки, а не результаты обучения. SHA-256 фиксирует фактически скачанные файлы; это не подпись издателя.
+| Source | Collected content | License / attribution |
+| --- | --- | --- |
+| [Amazon Berkeley Objects](https://amazon-berkeley-objects.s3.amazonaws.com/index.html) | Metadata index for 7,953 geometry IDs and three GLB samples | CC BY 4.0; source attribution retained |
+| [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit) | Furniture package with 140 models | CC0; license file retained |
+| [Kenney Animated Characters](https://kenney.nl/assets/animated-characters-protagonists) | Character archive and file listing | CC0; license retained |
+| [Quaternius Animated Animals](https://opengameart.org/content/animated-animales-low-poly) | Animal archive and file listing | CC0; license retained |
 
-В этой рабочей сессии результаты сохранены в `outputs/atrion-datasets` каталога задачи Codex. Большие данные не коммитятся и не входят в сборку Vercel. В репозитории сохранён повторяемый сборщик:
+The full ABO geometry archive was not downloaded. Its index is deduplicated by geometry ID. A stable hash assigns 7,197 / 365 / 391 entries to proposed train/validation/test splits, without separating alternate captions of the same geometry.
+
+These are dataset partitions, not training results. Download checksums identify collected files and are not publisher signatures.
+
+## Reproduce collection
 
 ```powershell
 python -X utf8 scripts/collect-3d-data.py --output .datasets --samples 3
 ```
 
-Он скачивает только фиксированные официальные источники, ограничивает размеры, читает архив метаданных без извлечения путей и сохраняет лицензии, источники и контрольные суммы. При недоступности источника завершается ошибкой; не выдаёт пустой набор за успех. Использует стандартную библиотеку Python.
+The Python utility records source URLs, licenses and SHA-256 checksums, bounds downloads and reads metadata archives without extracting untrusted paths. Unavailable sources produce an error.
 
-## Следующий необходимый этап
+Large datasets and model archives do not belong in Git or the Vercel bundle.
 
-Для произвольной новой формы нужен предварительно обученный генератор mesh и отдельный inference-процесс. Нынешняя [локальная Qwen](LOCAL_AI.md) составляет сцену из примитивов и каталога на CPU, но не является нейросетью text-to-mesh. Vercel не получает доступ к loopback компьютера автоматически. Платный fallback не включён.
+## Next steps
 
-[Hunyuan3D 2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) предоставляет image-to-shape и текстурирование: официальный README указывает 10 GB VRAM для формы и 29 GB для формы с текстурами. Для запроса по тексту дополнительно нужен этап text-to-image. [Shap-E](https://github.com/openai/shap-e) поддерживает генерацию по тексту, но качество результатов надо проверить на новых запросах. Эти генераторы в текущей сборке не установлены и не подключены. У пользователя подходящий GPU/сервер не подтверждён.
+Future use requires explicit integration, license review, preprocessing and evaluation on unseen prompts. Animated assets additionally need rig and target-engine checks.
 
-После появления inference-хоста: интегрировать длительные задания с сохранением состояния, проверять соответствие запросу и размеры, экспортировать GLB, затем тестировать импорт в Unity. Для интерьеров нужен отдельный планировщик пространства и проверка проходов; произвольный mesh одной сцены не гарантирует доступных дверей и редактируемых предметов. Ни один выбранный датасет или генератор не гарантирует выполнение всех возможных запросов.
+An asset index alone does not teach the current generator arbitrary forms. A generated mesh also does not automatically provide editable rooms, useful doors or a character rig.
+
+[Project passport](../PROJECT_PASSPORT.md) · [Generation quality](GENERATION_QUALITY.md)

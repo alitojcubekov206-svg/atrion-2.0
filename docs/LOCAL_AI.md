@@ -1,21 +1,21 @@
-# Локальная композиция сцены по тексту
+# Local AI Composition
 
-## Что изменилось
+This experimental workflow sends the description, clarification history and current composition to a local text model. It can choose catalog objects or propose geometry made from primitives.
 
-Раньше редактор выбирал готовый процедурный сценарий по словам. Новый режим «Локальная нейросеть · CPU» передаёт весь текст, вопросы/ответы и предыдущую сцену текстовой модели. Она выбирает объекты, размеры, цвета, положение и поворот. Каталог — отдельные предметы, а неизвестные объекты модель собирает из примитивов. Интерфейс сохраняет вращение/масштабирование без прогулки.
+A valid composition is editable and exportable. Correct execution of every prompt is not guaranteed.
 
-Модель может задать свой вопрос с вариантами ответа. Ответы включают текст вопроса и накапливаются в диалоге. При команде редактирования модель получает полную текущую композицию; новый результат заменяет её только после успешной проверки. Это не гарантия правильного исполнения команды: модель может ошибаться.
+## Runtime
 
-## Установка на Windows
+The prepared Windows setup uses llama.cpp and **Qwen3-4B-Instruct-2507 Q4_K_M**. Runtime files and weights stay in the ignored `.local-ai` directory.
 
-В этой локальной рабочей копии установлены CPU-сборка llama.cpp b11429 и Qwen3-4B-Instruct-2507 Q4_K_M (GGUF от Unsloth). Загрузки проверены SHA-256. Папка `.local-ai` исключена из Git, исходный FORMA не менялся. Модель занимает 2 497 281 120 байт, архив runtime — 19 398 918 байт (метаданные официальных репозиториев).
+| File | Location | SHA-256 of the prepared download |
+| --- | --- | --- |
+| llama.cpp b11429 CPU archive | [Official release](https://github.com/ggml-org/llama.cpp/releases/download/b11429/llama-b11429-bin-win-cpu-x64.zip) | `1283323272b04cd07905816a597a0da810918102de958f4ff6f7bbaa70ed2efe` |
+| Qwen GGUF | [Prepared model](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf) | `3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597` |
 
-На другой машине загрузите:
+Extract the runtime into `.local-ai/runtime` and save the model as `.local-ai/Qwen3-4B-Instruct-2507-Q4_K_M.gguf`. Verify downloaded files against the expected checksums.
 
-- [Официальный CPU runtime](https://github.com/ggml-org/llama.cpp/releases/download/b11429/llama-b11429-bin-win-cpu-x64.zip), распакуйте в `.local-ai/runtime`. SHA-256: `1283323272b04cd07905816a597a0da810918102de958f4ff6f7bbaa70ed2efe`.
-- [Qwen3-4B-Instruct-2507-Q4_K_M.gguf](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf), сохраните как `.local-ai/Qwen3-4B-Instruct-2507-Q4_K_M.gguf`. SHA-256: `3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597`.
-
-В `.env.local` добавьте `LOCAL_DESIGN_AI_URL=http://127.0.0.1:8081`, сохраняя остальные параметры. Запустите в двух терминалах:
+Set `LOCAL_DESIGN_AI_URL=http://127.0.0.1:8081` in `.env.local`. Start these in separate terminals:
 
 ```powershell
 npm run design:ai
@@ -25,28 +25,20 @@ npm run design:ai
 npm run dev
 ```
 
-Откройте `/playground/interior`. Выбран режим «Локальная нейросеть · CPU», когда подключение настроено. Состояние процесса проверяется при запросе: настроенный URL сам по себе не означает, что модель запущена. Для остановки — Ctrl+C в соответствующем терминале. GPU-слоёв 0, 6 CPU-потоков, один слот, контекст 12 288 токенов. Первые загрузки требуют интернета, генерация работает через loopback без ключей и внешних API. Хост должен иметь достаточно RAM; скорость зависит от CPU и текущей нагрузки.
+The launcher uses zero GPU layers, six CPU threads, one slot and a 12,288-token context. Runtime availability is checked; a configured URL alone does not prove the process is running.
 
-## Контракты и границы
+## Contract
 
-- `shared/design/composition.ts`: Модель сначала выбирает action=clarify/create, затем формирует JSON из примитивов и предметов каталога; `p` — центр, `s` — полные размеры в метрах, `r` — градусы XYZ. До 96 узлов. Цвета, формы, числа и размеры проверяются. Ни код модели, ни URL/команды не исполняются.
-- `backend/design/local-ai.ts`: отдельный провайдер с разрешёнными только loopback-адресами; общий таймаут 10 минут, один запрос одновременно, ограниченный размер ответа и обязательный завершённый JSON. Нет автоматического вызова прежних платных провайдеров или подмены результата процедурным шаблоном.
-- `POST /api/playground/design` с `engine: "local-ai"` доступен только в development. Старые вызовы без engine сохраняют процедурное поведение. `GET` возвращает только наличие настройки, не ключи/адрес.
-- `POST /api/design/compose` требует сессию и резервирует квоту до обращения к модели; уточняющий вопрос или ошибка возвращают её. `GET` также требует сессию. Продакшен требует локального постоянного inference-процесса рядом с Node; loopback рабочего компьютера не доступен автоматически из Vercel.
-- Preview и GLB используют одни и те же подробные модели каталога. JSON содержит полный `composition`, необходимый для повторного построения и последующей правки. Сохранения композиции в БД пока нет.
+`shared/design/composition.ts` accepts structured clarification or creation responses. Composition nodes use centre position `p`, full sizes `s` in metres and XYZ rotation `r` in degrees, with up to 96 nodes.
 
-Список объектов результата — ответ модели, не доказательство соответствия всем словам запроса. JSON-валидация проверяет структуру и численные границы, а не смысл, эргономику или строительные нормы. Проверяются пересечение габаритов мебели и положение относительно пола/опоры; мебель опускается на пол/поддерживающий подиум, пересекающиеся предметы раздвигаются с сохранением порядка слева направо или спереди назад. Изменения указаны в допущениях. Если замечания остались, выполняется один корректирующий запрос. Оставшиеся замечания показываются в результате. Полноценного BIM, автоматической инженерной проверки, гарантированного соблюдения количества/отношений и фотореалистичного text-to-mesh нет. Неизвестные сложные формы остаются приближениями из примитивов. Сложные сцены могут не уложиться в лимиты CPU/контекста; показывается ошибка с предложением разделить задачу.
+The adapter permits loopback HTTP addresses only, one concurrent request, a bounded response and a ten-minute timeout. It does not execute generated code or automatically use an external paid fallback.
 
-Официальные источники: [карточка модели и лицензия Apache-2.0](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507), [llama.cpp server API и JSON schema](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).
+The private production route is `/api/design/compose`; development uses the playground route. A Vercel deployment cannot access a runtime on the developer's computer through loopback.
 
-## Результаты локальной проверки 2026-10-08
+## Evaluation
 
-Проверки в браузере с установленной Qwen3-4B-Instruct-2507 Q4_K_M показали:
+Local trials produced editable scenes and clarification questions, but also incorrect dimensions, simplified shapes and misplaced furniture. Structure validation is not complete semantic or ergonomic validation.
 
-- Запрос «дом» вызвал вопрос о планировке. Ответы и команды правки передаются модели с контекстом.
-- Сцена чтения содержала два кресла, столик и торшер; правка поменяла цвета. Круглый столик при этом остался прямоугольным. Совпадение названия не означает совпадения формы.
-- Запрос «Спальня 4×5 м с кроватью и шкафом» сначала создал только мебель. После уточнения системных инструкций модель добавила пол и стены, но заменила мебель простыми блоками и ошиблась в размещении; общий габарит сцены составил 5,5 × 6,05 м вместо требуемого помещения 4 × 5 м. Этот сценарий не прошёл проверку качества.
-- Экспорт реальной сцены чтения в GLB выполнен; проверена структура файла (29 meshes, 12 materials). Импорт в сторонний редактор не проверялся.
-- Backend-тесты, TypeScript и production-сборка проверяют работоспособность кода. Они не подтверждают качество ответов нейросети и не заменяют визуальную проверку.
+The workflow remains experimental. Preview and GLB share catalog geometry; composition JSON supports reconstruction. Database persistence of direct compositions is not provided.
 
-Следующий необходимый этап качества — структурированный план помещений/объектов, проверка его соответствия тексту и границ размещения до рендера. Нынешний режим остаётся экспериментальным: произвольный запрос принимается, но правильное исполнение всех требований не достигнуто. При отключении веб-сервера интерфейс показывает понятную ошибку соединения и сохраняет предыдущий результат на странице.
+Model information: [Qwen model card](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507). Runtime reference: [llama.cpp server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).

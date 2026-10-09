@@ -1,11 +1,38 @@
-# Требования к качеству генерации
+# Generation Quality
 
-Дополнение 2026-10-09: исправлены варианты домов, дверь в отдельном интерьере, силуэт ракеты, учёт количества «рабочих столов» и ответы о размерах. Это улучшения ограниченного генератора, не достигнутая универсальность. Собран открытый набор данных с источниками и лицензиями: [DATASETS_RU.md](DATASETS_RU.md). Обучение и подключение нового text-to-mesh inference пока не выполнены.
+Atrion aims to preserve the subject, dimensions, quantities and required elements of a prompt. These are evaluation criteria, rather than a claim of universal generation accuracy.
 
-Цель пользователя: качественно выполнять произвольные текстовые запросы на 3D-модели и дома. Не ограничивать продукт набором демонстрационных шаблонов. Сохранять смысл, число элементов, размеры, материалы и требования задания. Выдавать пригодный для проверки в Unity результат. Риггинг отложен; фронтенд меняется только по прямому запросу пользователя (см. AGENTS.md).
+## Acceptance checklist
 
-Это целевые требования, а не описание достигнутой универсальности. Нельзя выдавать успешную сборку, много примитивов, эвристический score или читаемый GLB за подтверждение визуального качества. Неподдерживаемый запрос либо fallback должны быть явно обозначены. Нельзя молча заменять модель другим объектом.
+| Area | Check |
+| --- | --- |
+| Prompt match | Main subject, required parts and explicit exclusions |
+| Dimensions | Units, full sizes, proportions and overall bounds |
+| Geometry | Finite vertices, supported shapes, coherent placement |
+| Structure | Openings, connections and intended separation |
+| Materials | Distinct requested colours and usable export materials |
+| Editing | Stable identifiers and accepted transforms |
+| Export | Readable file with the current geometry |
+| Target application | Actual import and visual comparison in the intended editor |
 
-Фактически добавлены текстовый провайдер Cloudflare, сохранение валидной AI-геометрии и серверная генерация параметрической планировки. Реальная проверка предыдущей рабочей ветки дала дом 12×9 м с пятью нужными помещениями; ракета и стол не прошли полную приёмку деталей/размеров. Перенесённый серверный код требует собственной сборки и тестов. Unity Editor, авторизованный путь через рабочую базу и production-настройки не подтверждены.
+For houses, check footprint coverage, door access, window openings, room boundaries and furnishing passages. For characters, check anatomy and motion pivots.
 
-Перед признанием сценария готовым проверяйте соответствие тексту, целостность геометрии, габариты и материалы, сохранение/экспорт, повторное открытие файла и целевой импорт. Для дома отдельно проверяйте покрытие, пересечения, вход и доступ в комнаты. Архитектурный концепт не является инженерным проектом.
+## AI response handling
+
+Schema validity is only the first check. The generator validates numeric limits, bounds and repeated parts, and can request a bounded repair. Missing-part detection uses recognised names and is not a complete semantic assessment.
+
+Supported procedural fallback is labelled. Unknown prompts must not be treated as successfully understood merely because a primitive was returned.
+
+Heuristic scores, part counts and a successful build do not prove visual quality.
+
+## Verification tools
+
+Use `npm run test:backend`, `npx tsc --noEmit` and `npm run build`. Generator reports and representative browser scenes add scenario-specific evidence.
+
+Dataset collection does not improve the running generator until data is integrated and evaluated. See [Datasets](DATASETS_RU.md).
+
+## Boundaries
+
+Concept models are not structural designs or certified construction drawings. Arbitrary complex forms and photorealism are not guaranteed. GLB validation does not replace a Unity Editor import test.
+
+[Specification](../SPEC.md) · [Development](DEVELOPMENT.md)

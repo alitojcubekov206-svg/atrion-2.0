@@ -249,24 +249,22 @@ test("interior routes hide foreign projects, scenes, histories and jobs", async 
   } finally {(db.designProject as any).findFirst = projectFind; (db.designJob as any).findFirst = jobFind;}
 });
 
-test("demo login is off by default, keeps an existing session and gives each guest a fresh verified account", async () => {
+test("removed demo login cannot create accounts or replace sessions, even with the legacy flag enabled", async () => {
   const created: Row[] = [];
   stubUser("create", async ({ data }: { data: Row }) => { const row = { id: randomUUID(), ...data }; created.push(row); return row; });
   const visit = () => new Request("http://localhost/api/auth/demo", { headers: { "x-forwarded-for": user.id } });
-  assert.equal((await inRequest(() => demoLogin(visit()), "invalid")).result.status, 404);
-  env.DEMO_LOGIN_ENABLED = "true";
-  const signedIn = (await inRequest(() => demoLogin(visit()))).result;
-  assert.equal(signedIn.status, 303); assert.equal(new URL(signedIn.headers.get("location")!).pathname, "/dashboard/design-engine");
-  assert.equal(created.length, 0);
-  const first = await inRequest(() => demoLogin(visit()), "invalid");
-  const second = await inRequest(() => demoLogin(visit()), "invalid");
-  assert.equal(first.result.status, 303); assert.equal(created.length, 2);
-  assert.notEqual(created[0].email, created[1].email);
-  for (const row of created) {
-    assert.equal(row.emailVerified, true); assert.match(row.email, /@demo\.atrion\.invalid$/);
+  for (const enabled of ["false", "true"]) {
+    env.DEMO_LOGIN_ENABLED = enabled;
+    for (const token of ["invalid", await issueSessionToken(user.id, user.password, secret)]) {
+      const { result, token: issued } = await inRequest(() => demoLogin(visit()), token);
+      assert.equal(result.status, 404);
+      assert.deepEqual(await result.json(), { error: "Not found" });
+      assert.equal(result.headers.get("location"), null);
+      assert.equal(result.headers.get("set-cookie"), null);
+      assert.equal(issued, token);
+    }
   }
-  assert.equal(await verifySessionToken(first.token!, secret, async () => created[0].password), created[0].id);
-  assert.equal(await verifySessionToken(second.token!, secret, async () => created[1].password), created[1].id);
+  assert.equal(created.length, 0);
 });
 test("production never returns recovery or verification OTPs on mail delivery failure", async () => {
   env.NODE_ENV = "production";

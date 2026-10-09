@@ -1,11 +1,29 @@
-# Люди и животные: геометрия и движение
+# Living-Model Quality
 
-Процедурная генерация людей теперь использует замкнутую сетку туловища с формой груди, талии и таза, сужающиеся конечности и отдельные суставы. Голова занимает около 1/7,5 роста; уши расположены сбоку, глаза/нос/губы перед лицом, причёска заканчивается над глазами. Отдельные кисти, пальцы и обувь можно выбирать в редакторе. Цвет кожи, одежды и волос разделён.
+Procedural people and animals are stylised concepts assembled from individual geometric parts. Their quality is assessed through recognisable proportions, appropriate anatomy and useful motion.
 
-Для кошки, собаки, лошади, кролика, медведя и слона различаются размеры, высота тела/ног, морда, уши и хвост. Есть кошачьи усы, копыта лошади, длинные уши/короткий хвост кролика и хобот слона. Явные размеры и отрицания вроде «без хвоста» имеют приоритет. Остальные животные сохраняют общую процедуру построения; птицы/рыбы/драконы используют существующий путь. Все виды/позы и породные особенности не реализованы.
+## Acceptance criteria
 
-Idle/Walk добавляют поворот в тазобедренных и плечевых суставах, сгибание коленей/локтей и движение головы/хвоста. Результат остаётся набором редактируемых деталей. Это стилизованная процедурная модель с суставными анимациями, без единой skinning-сетки, Humanoid-скелета и физики контакта стоп с землёй. Это ограничение относится и к Unity-экспорту.
+- The requested subject remains recognisable.
+- Required limbs and features are present in plausible positions.
+- Named dimensions and counts are respected where supported.
+- Parts remain finite and within coherent bounds.
+- Motion pivots attach to the correct limb groups.
+- Idle and walking clips avoid obvious separation of parts.
+- Exports preserve the geometry and intended animation channels.
 
-Внешний текстовый AI получает отдельные требования к анатомии людей и видов животных; его геометрия проверяется прежним валидатором. Улучшение инструкций не доказывает качество каждого ответа AI. Источник результата остаётся указан в интерфейсе; нового платного генератора или image-to-mesh сервиса не добавлено.
+The anatomical regression suite is `scripts/living-anatomy.test.ts`. Generation tests also check category routing so incidental words do not accidentally change a building into an animal.
 
-`scripts/living-anatomy.test.ts` проверяет долю головы, рост, парные конечности, отличия видов, отрицания, замкнутые сетки без нулевых треугольников с правильным направлением поверхности, положение на полу и петлю суставов. UI и экспорт проверяются отдельно от этих численных тестов.
+## Visual review
+
+Inspect front, side and three-quarter views. Check hands, feet, paws, muzzle, tail and joint placement. Review idle and walking before export and verify the downloaded file independently.
+
+Numerical tests do not establish anatomical realism. A readable GLB does not establish a game-ready character.
+
+## Current boundaries
+
+There is no skinned skeleton, Humanoid retargeting, facial rig, cloth or muscle simulation. Walking is a repeated joint animation in place. Unsupported species and complex poses can remain approximations.
+
+Unity Editor import and animation playback have not been verified on this machine.
+
+[Editing and motion](DESIGN_EDITING_MOTION.md) · [Generation quality](GENERATION_QUALITY.md)
