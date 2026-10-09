@@ -27,3 +27,20 @@ test("house procurement uses whole furniture and CSV protects spreadsheet formul
   const csv=procurementCsv({items:[{name:'=SUM(1;2) "окно"',material:"",color:"",size:null,quantity:1,unit:"шт"}],note:""});
   assert(csv.startsWith("\uFEFF")); assert(csv.includes('"\'=SUM(1;2) ""окно"""'));
 });
+
+test("FORMA's budget: priced furniture plus finishing per m² and a 10% reserve, also in the CSV", () => {
+  const scene = newScene(4, 5);
+  scene.objects = [{id: "bed", assetId: "bed_double", position: {x: 2, y: 0, z: 2.5}, rotation: {x: 0, y: 0, z: 0}, scale: {x: 1, y: 1, z: 1}, color: "#ffffff", locked: false}] as typeof scene.objects;
+  const list = roomProcurement(scene);
+  assert.equal(list.items.find(i => i.name === "Двуспальная кровать")?.price, 38000);
+  const budget = list.budget!;
+  assert.equal(budget.furniture, 38000);
+  assert(budget.finishing > 0 && budget.reserve === Math.round((budget.furniture + budget.finishing) * 0.1));
+  assert.equal(budget.total, budget.furniture + budget.finishing + budget.reserve);
+  assert.match(list.note, /Ориентировочный бюджет/);
+  const csv = procurementCsv(list);
+  assert.match(csv, /"Цена, сом";"Сумма, сом"/);
+  assert.match(csv, new RegExp(`"Итого"(?:;"")+;"${budget.total}"`));
+  // A model without catalog prices keeps the plain note and no budget.
+  assert.equal(partsProcurement([]).budget, undefined);
+});

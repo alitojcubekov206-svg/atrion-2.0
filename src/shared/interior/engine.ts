@@ -1,9 +1,20 @@
-import {ASSETS, STYLES, findAsset, type InteriorStyle} from "@/shared/interior/catalog";
+import {ASSETS, STYLES, findAsset, isFlatAsset, type InteriorStyle} from "@/shared/interior/catalog";
 import {color, footprint, layoutIssues, parseScene, validateLayout, vec, type InteriorScene, type SceneObject} from "@/shared/interior/scene";
 import {check, choice, id, list, number, record, text, DesignError} from "@/shared/design/validation";
 
+/**
+ * A TV goes on the wall across from the sofa and turns to face it; in a row beside
+ * the sofa nobody could watch it. Assets face +z at rotation 0.
+ */
+function facingRank(x: number, z: number, angle: number, sofa: SceneObject, wallDistance: number) {
+  const dx = sofa.position.x - x, dz = sofa.position.z - z, length = Math.hypot(dx, dz) || 1;
+  const facing = (Math.sin(angle) * dx + Math.cos(angle) * dz) / length;
+  return (facing < .7 ? 100 : 0) - length * 2 + wallDistance * 20;
+}
+
 export function placeObject(scene: InteriorScene, object: SceneObject, variant = 0, nearWindow = false, skip = 0): SceneObject {
   const positions: {x: number; z: number; y: number; angle: number; rank: number}[] = [];
+  const tv = object.assetId === "tv_stand", sofa = scene.objects.find(o => o.assetId === "sofa_compact");
   for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
     const bounds = footprint({...object, rotation: {x: 0, y: angle, z: 0}});
     for (let x = bounds.width / 2 + .06; x <= scene.width - bounds.width / 2 - .05; x += .25) {
@@ -11,7 +22,9 @@ export function placeObject(scene: InteriorScene, object: SceneObject, variant =
         const wallDistance = Math.min(x - bounds.width / 2, scene.width - x - bounds.width / 2, z - bounds.depth / 2, scene.length - z - bounds.depth / 2);
         const windowDistance = Math.min(...scene.openings.filter(o => o.kind === "window").map(o => Math.hypot(x - (o.wall === "west" ? 0 : o.wall === "east" ? scene.width : o.offset + o.width / 2), z - (o.wall === "north" ? 0 : o.wall === "south" ? scene.length : o.offset + o.width / 2))));
         const corner = variant % 3 === 0 ? x + z : variant % 3 === 1 ? scene.width - x + z : x + scene.length - z;
-        positions.push({x, z, y: 0, angle, rank: nearWindow ? windowDistance : wallDistance * 20 + corner});
+        // A rug belongs in the open middle of the room, under the seating — not against a wall.
+        const centre = Math.hypot(x - scene.width / 2, z - scene.length / 2);
+        positions.push({x, z, y: 0, angle, rank: isFlatAsset(findAsset(object.assetId)) ? centre : tv && sofa ? facingRank(x, z, angle, sofa, wallDistance) : nearWindow ? windowDistance : wallDistance * 20 + corner});
       }
     }
   }
@@ -50,7 +63,7 @@ export function applyActions(input: InteriorScene, raw: unknown, variant = 0, ch
     else if (type === "CHANGE_MATERIAL") {editable().color = color(a.color);}
     else if (type === "CHANGE_WALL_MATERIAL") scene.wallColor = color(a.color);
     else if (type === "CHANGE_FLOOR_MATERIAL") scene.floorColor = color(a.color);
-    else if (type === "SET_ROOM_TYPE") scene.roomType = choice(a.roomType, ["bedroom", "living", "office", "other"] as const, "Тип комнаты");
+    else if (type === "SET_ROOM_TYPE") scene.roomType = choice(a.roomType, ["bedroom", "living", "office", "kids", "kitchen", "bathroom", "dining", "hall", "other"] as const, "Тип комнаты");
     else if (type === "APPLY_STYLE") {
       scene.style = choice(a.style, Object.keys(STYLES) as InteriorStyle[], "Стиль");
       scene.wallColor = STYLES[scene.style].wall; scene.floorColor = STYLES[scene.style].floor;
@@ -66,14 +79,28 @@ export function applyActions(input: InteriorScene, raw: unknown, variant = 0, ch
   return validateLayout(scene);
 }
 
-const TERMS: [RegExp, string][] = [[/журнальн\S*\s+стол\S*|coffee\s+table/i, "table_coffee"], [/кресл|\barmchair\b/i, "armchair_soft"], [/пуф|ottoman/i, "ottoman_round"], [/банкетк|скамь|\bbench\b/i, "bench_soft"], [/комод|sideboard/i, "cabinet_low"], [/стеллаж|bookcase/i, "bookcase_open"], [/консол|console/i, "console_slim"], [/кроват|\bbed\b/i, "bed_double"], [/диван|\bsofa\b/i, "sofa_compact"], [/шкаф|wardrobe/i, "wardrobe_double"], [/стол|\bdesk\b|\btable\b/i, "desk_work"], [/стул|\bchair\b/i, "chair_simple"], [/светильник|торшер|ламп|\blamp/i, "lamp_floor"], [/растени|цветок|\bplant/i, "plant_pot"], [/тумб/i, "decor_cube"]];
+const TERMS: [RegExp, string][] = [[/журнальн\S*\s+стол\S*|coffee\s+table/i, "table_coffee"], [/кресл|\barmchair\b/i, "armchair_soft"], [/пуф|ottoman/i, "ottoman_round"], [/банкетк|скамь|\bbench\b/i, "bench_soft"], [/комод|sideboard/i, "cabinet_low"], [/стеллаж|книжн\S*\s+(?:шкаф|полк)\S*|bookcase|bookshelf/i, "bookcase_open"],
+  [/ков(?:ёр|ер|р)\S*|\brug\b|carpet/i, "rug_floor"], [/телевизор\S*|(?<![а-яё])тв(?![а-яё])|\btv\b/i, "tv_stand"], [/кухонн\S*\s+гарнитур\S*|гарнитур\S*|плит[аыу](?![а-яё])|мойк\S*/i, "kitchen_run"], [/холодильник\S*|\bfridge\b/i, "fridge_tall"],
+  [/унитаз\S*|\btoilet\b/i, "toilet_compact"], [/раковин\S*|умывальник\S*|\bsink\b/i, "vanity_sink"], [/душ(?:ев\S*|[ае])?(?![а-яё])|\bshower\b/i, "shower_square"], [/консол|console/i, "console_slim"], [/кроват|\bbed\b/i, "bed_double"], [/диван|\bsofa\b/i, "sofa_compact"], [/шкаф|wardrobe/i, "wardrobe_double"], [/стол(?!ов(?:ая|ую|ой|ые))|\bdesk\b|\btable\b/i, "desk_work"], [/стул|\bchair\b/i, "chair_simple"], [/светильник|торшер|ламп|\blamp/i, "lamp_floor"], [/растени|цветок|\bplant/i, "plant_pot"], [/тумб(?!\S*\s+(?:с|под)\s+раковин)|прикроватн/i, "decor_cube"]];
 const STYLE_TERMS: [RegExp, InteriorStyle][] = [[/неокласс|neoclassic/i, "neoclassic"], [/классичес|\bclassic\b/i, "classic"], [/современн|\bmodern\b/i, "modern"], [/минимал|minimal/i, "minimalism"], [/лофт|\bloft\b/i, "loft"], [/скандинав|scandinavian/i, "scandinavian"], [/индустриал|industrial/i, "industrial"], [/джапанди|japandi/i, "japandi"], [/хай[ -]?тек|high[ -]?tech/i, "high-tech"]];
 const COLORS: [RegExp, string][] = [[/#[\da-f]{6}\b/i, ""], [/бел|\bwhite/i, "#ffffff"], [/черн|чёрн|\bblack/i, "#252529"], [/красн|\bred/i, "#b94339"], [/син|\bblue/i, "#3d6599"], [/зел[её]н|\bgreen/i, "#5b7d58"], [/беж|\bbeige/i, "#d5c5a7"], [/сер(?:ый|ая|ое|ые|ым|ой|ыми)|\bgr[ae]y/i, "#929496"], [/коричнев|\bbrown/i, "#795c43"], [/ж[её]лт|\byellow/i, "#d6b94b"], [/розов|\bpink/i, "#c9899e"], [/фиолет|\bpurple/i, "#8b6eaa"]];
 function requestedColor(clause: string) {
   const entry = COLORS.find(([pattern]) => pattern.test(clause));
   return entry ? entry[1] || entry[0].exec(clause)![0] : undefined;
 }
-const ROOM_DEFAULTS: [RegExp, string, string[]][] = [[/спальн|bedroom/i, "bedroom", ["bed_double", "wardrobe_double"]], [/гостин|living\s*room/i, "living", ["sofa_compact", "table_coffee"]], [/офис|кабинет|\boffice\b/i, "office", ["desk_work", "chair_simple", "bookcase_open", "plant_pot"]]];
+// Kids' rooms come before bedrooms: "детская спальня" is a child's room with a single bed.
+const ROOM_DEFAULTS: [RegExp, string, string[]][] = [
+  [/детск|nursery|kids?\s*room|children/i, "kids", ["bed_single", "desk_work", "chair_simple", "bookcase_open", "rug_floor"]],
+  [/спальн|bedroom/i, "bedroom", ["bed_double", "wardrobe_double"]],
+  [/гостин|living\s*room/i, "living", ["sofa_compact", "table_coffee", "rug_floor", "tv_stand", "lamp_floor"]],
+  [/кухн|kitchen/i, "kitchen", ["kitchen_run", "fridge_tall", "table_dining", "chair_simple", "chair_simple"]],
+  [/ванн|санузел|туалет|bath|\bwc\b/i, "bathroom", ["toilet_compact", "vanity_sink", "shower_square"]],
+  [/столов|dining/i, "dining", ["table_dining", "chair_simple", "chair_simple", "chair_simple", "chair_simple"]],
+  [/прихож|коридор|hallway|entrance/i, "hall", ["wardrobe_double", "bench_soft"]],
+  [/офис|кабинет|\boffice\b/i, "office", ["desk_work", "chair_simple", "bookcase_open", "plant_pot"]],
+];
+/** What a room is not without, even when the request lists only extras ("спальня с двумя тумбами"). */
+const ROOM_ESSENTIALS: Record<string, string[]> = {kids: ["bed_single"], bedroom: ["bed_double"], living: ["sofa_compact"], kitchen: ["kitchen_run"], bathroom: ["toilet_compact", "vanity_sink"], dining: ["table_dining"], office: ["desk_work"]};
 const DEFAULT_DECISION = /^(?:на\s+(?:твой|ваш|свой)\s+вкус|(?:выбери|реши|подбери|придумай|решай)\s+сам(?:а|остоятельно)?|на\s+усмотрение|не\s+знаю|you\s+decide)$/i;
 /** Explicit, limited offline commands; unsupported language must not look successful. */
 export function localPlan(prompt: string, scene: InteriorScene, editing: boolean) {
@@ -103,7 +130,7 @@ export function localPlan(prompt: string, scene: InteriorScene, editing: boolean
       if (matched.some(m => start < m.end && end > m.start)) continue;
       matched.push({start, end});
       namedFurniture = true;
-      const assetId = genericId === "desk_work" && /обеденн|dining/i.test(clause) ? "table_dining" : genericId === "bed_double" && /односпальн|single/i.test(clause) ? "bed_single" : genericId;
+      const assetId = genericId === "desk_work" && /обеденн|dining/i.test(clause) ? "table_dining" : genericId === "bed_double" && (/односпальн|single|детск/i.test(clause) || room?.[1] === "kids") ? "bed_single" : genericId;
       const existing = scene.objects.filter(o => o.assetId === assetId);
       if (editing && (intent !== "add" || excluding)) {
         const all = /все|всю|\ball\b/i.test(clause);
@@ -117,10 +144,11 @@ export function localPlan(prompt: string, scene: InteriorScene, editing: boolean
           else throw new DesignError("Для этой правки задайте цвет, угол или перемещение к окну. Координаты можно изменить в свойствах предмета.", 422, "DESIGN_ACTION_UNSUPPORTED");
         }
       } else if (!editing || intent === "add") {
-        if (excluding) continue;
+        // "спальня без кровати с двумя креслами": the "с" later in the clause must not undo this "без".
+        if (excluding || /(?:без|without|не добавляй|не ставь)\s+(?:\S+\s+)?$/i.test(clause.slice(Math.max(0, start - 30), start))) continue;
         const prefix = clause.slice(Math.max(0, match.index - 80), match.index);
-        const countText = /(?:^|\s)(\d+|один|одна|одно|одним|одной|два|две|двумя|двух|три|тремя|четыре|пять|шесть|one|two|three|four)\s+(?:(?:красн|син|бел|ч[её]рн|зел[её]н|сер|деревянн|мягк|обеденн|журнальн|рабоч|письменн|офисн|кухонн|книжн|напольн|односпальн|двуспальн)[а-яё]*\s+){0,2}$/i.exec(prefix)?.[1];
-        const count = countText ? ({один: 1, одна: 1, одно: 1, одним: 1, одной: 1, два: 2, две: 2, двумя: 2, двух: 2, три: 3, тремя: 3, четыре: 4, пять: 5, шесть: 6, one: 1, two: 2, three: 3, four: 4}[countText.toLowerCase()] ?? Number(countText)) : 1;
+        const countText = /(?:^|\s)(\d+|один|одна|одно|одним|одной|два|две|двумя|двух|три|тремя|трёх|трех|четыре|четырьмя|четырёх|четырех|пять|пятью|пяти|шесть|шестью|шести|семь|семью|восемь|восемью|восьмью|one|two|three|four|five|six)\s+(?:(?:красн|син|бел|ч[её]рн|зел[её]н|сер|деревянн|мягк|обеденн|журнальн|рабоч|письменн|офисн|кухонн|книжн|напольн|односпальн|двуспальн)[а-яё]*\s+){0,2}$/i.exec(prefix)?.[1];
+        const count = countText ? ({один: 1, одна: 1, одно: 1, одним: 1, одной: 1, два: 2, две: 2, двумя: 2, двух: 2, три: 3, тремя: 3, трёх: 3, трех: 3, четыре: 4, четырьмя: 4, четырёх: 4, четырех: 4, пять: 5, пятью: 5, пяти: 5, шесть: 6, шестью: 6, шести: 6, семь: 7, семью: 7, восемь: 8, восемью: 8, восьмью: 8, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6}[countText.toLowerCase()] ?? Number(countText)) : 1;
         check(Number.isInteger(count) && count >= 1 && count <= 10, "За один запрос можно добавить до 10 одинаковых предметов");
         const needed = editing ? count : Math.max(0, count - existing.filter(o => o.locked).length);
         for (let i = 0; i < needed; i++) actions.push({type: "ADD_OBJECT", id: nextId(), assetId, ...(tint ? {color: tint} : {}), nearWindow: /окн|window/i.test(clause)});
@@ -128,12 +156,20 @@ export function localPlan(prompt: string, scene: InteriorScene, editing: boolean
     }
     if (/стен|\bwalls?\b/i.test(clause) && tint) actions.push({type: "CHANGE_WALL_MATERIAL", color: tint});
     if (/пол(?:а|ом|ы)?(?:\s|$)|\bfloor\b/i.test(clause) && tint) actions.push({type: "CHANGE_FLOOR_MATERIAL", color: tint});
-    if (!matched.length && !tint && !STYLE_TERMS.some(([p]) => p.test(clause)) && !/спальн|гостин|кабинет|офис|комнат|интерьер|bedroom|living|office|room|interior|свет|освещ|light|\d\s*(?:м|метр|[x×*]|на)|ширин|длин|высот/i.test(clause)) {
+    if (!matched.length && !tint && !STYLE_TERMS.some(([p]) => p.test(clause)) && !/спальн|гостин|кабинет|офис|комнат|интерьер|кухн|ванн|санузел|туалет|детск|столов|прихож|коридор|bedroom|living|office|room|interior|kitchen|bath|dining|hallway|nursery|свет|освещ|light|\d\s*(?:м|метр|[x×*]|на)|ширин|длин|высот/i.test(clause)) {
       throw new DesignError(`Не распознана часть запроса: «${clause.trim()}». Уточните предмет или действие.`, 422, "DESIGN_ACTION_UNSUPPORTED");
     }
   }
-  if (!editing && room && !namedFurniture && !/пуст|без мебел|empty|unfurnished/i.test(prompt)) for (const assetId of room[2]) {
+  const emptyRoom = /пуст|без мебел|empty|unfurnished/i.test(prompt);
+  if (!editing && room && !namedFurniture && !emptyRoom) for (const assetId of room[2]) {
     if (!scene.objects.some(o => o.locked && o.assetId === assetId)) actions.push({type: "ADD_OBJECT", id: nextId(), assetId});
+  }
+  // A bedroom with "two nightstands" still needs its bed, unless the request rules it out.
+  if (!editing && room && namedFurniture && !emptyRoom) for (const assetId of ROOM_ESSENTIALS[room[1]] ?? []) {
+    const asset = findAsset(assetId), excluded = new RegExp(`(?:без|without)\\s+(?:\\S+\\s+)?(?:${asset.tags.map(t => t.slice(0, 5)).join("|")})`, "i").test(prompt);
+    const sameKind = (id: unknown) => typeof id === "string" && findAsset(id).category === asset.category;
+    if (!excluded && !actions.some(a => a.type === "ADD_OBJECT" && sameKind(a.assetId)) && !scene.objects.some(o => findAsset(o.assetId).category === asset.category))
+      actions.unshift({type: "ADD_OBJECT", id: nextId(), assetId});
   }
   if (!editing && !actions.length && /комнат|интерьер|\broom\b|interior/i.test(prompt)) actions.push({type: "SET_ROOM_TYPE", roomType: "other"});
   const warm = /т[её]пл\S*\s+(?:свет|освещ)|warm\s+light/i.test(prompt);

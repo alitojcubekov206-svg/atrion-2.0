@@ -2,7 +2,7 @@ import type {ModelPart} from "../types";
 
 /** Original parametric kitchen and sanitary fittings, shared by preview and export. */
 export function fixtureParts(id: string, color: string): ModelPart[] | null {
-  if (!["kitchen_run", "fridge_tall", "toilet_compact", "vanity_sink", "shower_square"].includes(id)) return null;
+  if (!["kitchen_run", "fridge_tall", "toilet_compact", "vanity_sink", "shower_square", "tv_stand"].includes(id)) return null;
   const parts: ModelPart[] = [];
   const add = (name: string, position: [number,number,number], size: [number,number,number], tint = color, shape: ModelPart["shape"] = "box", opacity = 1) => {
     parts.push({id: `${id}_${parts.length}`, name, position, size, shape, color: tint, rotation: [0,0,0], quantity: 1,
@@ -43,6 +43,14 @@ export function fixtureParts(id: string, color: string): ModelPart[] | null {
     add("Смеситель раковины", [0,.9,-.19], [.025,.1,.025], "#adb5b8", "cylinder");
     add("Излив раковины", [0,.939,-.13], [.025,.022,.14], "#adb5b8");
     for (const x of [-.175,.175]) add("Дверца тумбы", [x,.43,.249], [.33,.65,.002]);
+  } else if (id === "tv_stand") {
+    // A low media cabinet with a thin screen on a stand, facing +z like every asset.
+    add("ТВ-тумба", [0,.25,0], [1.6,.5,.45]);
+    for (const x of [-.4,.4]) add("Фасад тумбы", [x,.25,.222], [.78,.44,.004], "#3a3f45");
+    add("Подставка телевизора", [0,.56,-.05], [.4,.04,.22], "#20272b");
+    add("Стойка телевизора", [0,.62,-.08], [.08,.12,.05], "#20272b");
+    add("Корпус телевизора", [0,.89,-.08], [1.25,.7,.05], "#16181b");
+    add("Экран", [0,.89,-.053], [1.19,.64,.004], "#0d1a26");
   } else {
     add("Поддон душа", [0,.055,0], [.9,.11,.9], "#f1efeb");
     add("Слив", [0,.111,0], [.11,.003,.11], "#adb5b8", "cylinder");

@@ -12,9 +12,19 @@ export const STYLES = {
 export type InteriorStyle = keyof typeof STYLES;
 export const CATEGORIES = ["bed", "sofa", "table", "chair", "wardrobe", "lamp", "plant", "decor", "kitchen", "bathroom"] as const;
 export type AssetCategory = typeof CATEGORIES[number];
-export type Asset = {id: string; name: string; category: AssetCategory; width: number; height: number; depth: number; tags: string[]; styles: InteriorStyle[]; modelUrl: string; template?: string};
+/** `price` is an editable demonstration price in KGS, as in FORMA's catalog — not a supplier quote. */
+export type Asset = {id: string; name: string; category: AssetCategory; width: number; height: number; depth: number; tags: string[]; styles: InteriorStyle[]; modelUrl: string; template?: string; price: number};
+/** FORMA's seed prices (furniture-data.js) where FORMA had the item; the rest are in the same range. */
+const PRICES_KGS: Record<string, number> = {
+  bed_double: 38000, bed_single: 24000, sofa_compact: 45000, desk_work: 16000, table_dining: 21000, chair_simple: 5200,
+  wardrobe_double: 42000, lamp_floor: 7500, plant_pot: 3800, decor_cube: 6500, armchair_soft: 18000, ottoman_round: 6500,
+  bench_soft: 11000, table_coffee: 9500, cabinet_low: 14000, bookcase_open: 17000, console_slim: 12500, rug_floor: 8500,
+  tv_stand: 52000, kitchen_run: 120000, fridge_tall: 55000, toilet_compact: 14000, vanity_sink: 18000, shower_square: 38000,
+};
 const asset = (id: string, name: string, category: AssetCategory, width: number, height: number, depth: number, tags: string[]): Asset =>
-  ({id, name, category, width, height, depth, tags, styles: Object.keys(STYLES) as InteriorStyle[], modelUrl: `/api/design/assets/${id}/model`});
+  ({id, name, category, width, height, depth, tags, styles: Object.keys(STYLES) as InteriorStyle[], modelUrl: `/api/design/assets/${id}/model`, price: PRICES_KGS[id] ?? 0});
+/** Lies on the floor: furniture may stand on it, and it never blocks a walkway. */
+export const isFlatAsset = (asset: Asset) => asset.height < 0.05;
 /** Parametric library; detailed templates are adapted from the supplied FORMA source. */
 export const ASSETS: Asset[] = [
   asset("bed_double", "Двуспальная кровать", "bed", 1.6, 1, 2.1, ["двуспальная", "кровать", "double"]),
@@ -39,6 +49,9 @@ export const ASSETS: Asset[] = [
   asset("toilet_compact", "Унитаз", "bathroom", .4, .78, .68, ["унитаз", "toilet"]),
   asset("vanity_sink", "Тумба с раковиной", "bathroom", .7, .95, .5, ["раковина", "умывальник", "vanity"]),
   asset("shower_square", "Душевая кабина", "bathroom", .9, 2.05, .9, ["душ", "shower"]),
+  // From FORMA's catalog: the rug geometry was ported but never offered.
+  {...asset("rug_floor", "Ковёр", "decor", 2, .018, 1.5, ["ковёр", "ковер", "rug", "carpet"]), template: "rug"},
+  asset("tv_stand", "Телевизор с тумбой", "decor", 1.6, 1.25, .45, ["телевизор", "тв", "tv"]),
 ];
 export function findAsset(id: string): Asset {
   const found = ASSETS.find(a => a.id === id);

@@ -61,10 +61,12 @@ export function resolveDesignBrief(rawPrompt: unknown, rawAnswers?: unknown): De
   const understood: string[] = [], assumptions: string[] = [];
   const ask = (question: BriefQuestion): DesignBrief => ({kind: "clarification", question, answers, understood});
   // A direct answer to the subject question replaces the unrecognised noun.
-  const subject = latest("subject") ?? prompt;
+  // "Подбери сам" to "what should I model?" keeps the original request instead of becoming its name.
+  const named = latest("subject");
+  const subject = named && !SELF.test(named) ? named : prompt;
   const category = planFor(subject).blueprint.kind;
   const house = designPromptTarget(subject) === "model" && /(?:^|\s)(?:дом[а-яё]*|коттедж[а-яё]*|house|cottage)(?=\s|[,.;:]|$)/i.test(subject);
-  if (!house && category === "product") return ask({id: "subject", text: "Что именно нужно смоделировать?", hint: "Назовите основной объект и пару его особенностей.", options: ["Дом", "Комната", "Машина", "Стул"]});
+  if (!house && category === "product" && designPromptTarget(subject) !== "interior") return ask({id: "subject", text: "Что именно нужно смоделировать?", hint: "Назовите основной объект и пару его особенностей.", options: ["Дом", "Комната", "Машина", "Стул"]});
   const autoAll = SELF.test(prompt);
 
   if (house) {
@@ -112,8 +114,11 @@ export function resolveDesignBrief(rawPrompt: unknown, rawAnswers?: unknown): De
   const interior = designPromptTarget(subject) === "interior";
   if (interior) {
     const office = /офис|кабинет|\boffice\b/i.test(effective);
-    if (!/спальн|гостин|кабинет|офис|bedroom|living|office|кроват|диван|шкаф|стол|стул|кресл|пуф|пуст|без мебел|\bbed\b|sofa|desk|chair|empty/i.test(effective) && !latest("roomType") && !autoAll) return ask({id: "roomType", text: "Какое назначение комнаты?", hint: "От этого зависит набор и размещение мебели.", options: ["Спальня", "Гостиная", "Кабинет"]});
-    if (!office && !/кроват|диван|шкаф|стол|стул|кресл|пуф|пуст|без мебел|bed\b|sofa|desk|chair|empty/i.test(effective) && !latest("furniture") && !autoAll) return ask({id: "furniture", text: "Какую мебель нужно разместить?", hint: "Перечислите нужные предметы и количество. Размеры возьмём из полей комнаты, если вы не указали их в тексте.", options: /спальн|bedroom/i.test(effective) ? ["Кровать и шкаф", "Кровать, шкаф и рабочий стол", "Пустая комната", "Подбери сам"] : ["Диван, кресло и журнальный стол", "Пустая комната", "Подбери сам"]});
+    // Kitchens, bathrooms, kids' rooms, dining rooms and halls come with their own sensible set.
+    const furnishedRoom = office || /кухн|ванн|санузел|туалет|детск|столов|прихож|коридор|kitchen|bath|nursery|dining|hallway/i.test(effective);
+    const furnitureWords = /кроват|диван|шкаф|стол|стул|кресл|пуф|ков(?:ёр|ер|р)|телевизор|тумб|комод|стеллаж|холодильник|унитаз|раковин|душ|пуст|без мебел|\bbed\b|sofa|desk|chair|rug|\btv\b|empty/i;
+    if (!/спальн|гостин|кабинет|офис|bedroom|living|office/i.test(effective) && !furnishedRoom && !furnitureWords.test(effective) && !latest("roomType") && !autoAll) return ask({id: "roomType", text: "Какое назначение комнаты?", hint: "От этого зависит набор и размещение мебели.", options: ["Спальня", "Гостиная", "Кабинет", "Кухня"]});
+    if (!furnishedRoom && !furnitureWords.test(effective) && !latest("furniture") && !autoAll) return ask({id: "furniture", text: "Какую мебель нужно разместить?", hint: "Перечислите нужные предметы и количество. Размеры возьмём из полей комнаты, если вы не указали их в тексте.", options: /спальн|bedroom/i.test(effective) ? ["Кровать и шкаф", "Кровать, шкаф и рабочий стол", "Пустая комната", "Подбери сам"] : ["Диван, кресло и журнальный стол", "Пустая комната", "Подбери сам"]});
     if (office && !/стол|стул|кресл|мебел|desk|chair|empty|пуст/i.test(effective)) assumptions.push("Предложены рабочий стол, стул, стеллаж и растение; размеры — из параметров комнаты");
     const prefix = latest("roomType") ?? "";
     return {kind: "ready", prompt: [prefix, effective].filter(Boolean).join(". "), answers, understood: ["Интерьер", ...answers.map(a => a.answer)], assumptions};

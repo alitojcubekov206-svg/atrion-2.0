@@ -8,8 +8,9 @@ import {designWithPlanner, localPlan, applyActions} from "../src/shared/interior
 import {POST as preview} from "../src/app/api/playground/design/route";
 
 test("one entry point routes the subject, including short prompts and furniture lists", () => {
-  for (const p of ["дом", "Дом с двумя спальнями", "Красный спорткар", "кот", "Стул", "Робот-паук", "Кухня с холодильником"]) assert.equal(designPromptTarget(p), "model", p);
-  for (const p of ["Спальня", "Спальня 4×5 м с кроватью и шкафом", "Гостиная в доме", "кровать, шкаф и два светильника", "Living room with sofa"]) assert.equal(designPromptTarget(p), "interior", p);
+  for (const p of ["дом", "Дом с двумя спальнями", "Красный спорткар", "кот", "Стул", "Робот-паук", "кухонный стол", "детская кроватка"]) assert.equal(designPromptTarget(p), "model", p);
+  // Kitchens, bathrooms, kids' rooms, dining rooms and halls are rooms; they used to become single objects.
+  for (const p of ["Спальня", "Спальня 4×5 м с кроватью и шкафом", "Гостиная в доме", "кровать, шкаф и два светильника", "Living room with sofa", "Кухня с холодильником", "ванная комната", "санузел с душем", "детская", "столовая", "прихожая"]) assert.equal(designPromptTarget(p), "interior", p);
 });
 
 test("short model prompts produce corresponding geometry; unknown subjects are not random models", () => {
@@ -87,4 +88,25 @@ test("wall/floor colors and explicit rotation do not create extra furniture", as
   const result = applyActions(scene, actions);
   assert.equal(result.objects.length, 1); assert.equal(result.objects[0].rotation.y, Math.PI / 2);
   assert.equal(result.wallColor, "#d5c5a7"); assert.equal(result.floorColor, "#795c43");
+});
+
+test("FORMA's room set: kitchens, bathrooms, kids' rooms, rugs, TVs, essentials and exclusions", () => {
+  const items = (prompt: string) => applyActions(newScene(5, 6), localPlan(prompt, newScene(5, 6), false)).objects.map(o => o.assetId).sort();
+  assert.deepEqual(items("кухня"), ["chair_simple", "chair_simple", "fridge_tall", "kitchen_run", "table_dining"]);
+  assert.deepEqual(items("ванная комната"), ["shower_square", "toilet_compact", "vanity_sink"]);
+  assert(items("детская комната с кроватью").includes("bed_single"), "a child's bed is a single bed");
+  assert.deepEqual(items("гостиная с телевизором, ковром и растением"), ["plant_pot", "rug_floor", "sofa_compact", "tv_stand"]);
+  assert.deepEqual(items("уютная спальня с двумя тумбами"), ["bed_double", "decor_cube", "decor_cube"], "a bedroom keeps its bed");
+  assert.deepEqual(items("спальня без кровати с двумя креслами"), ["armchair_soft", "armchair_soft"], "«без» is not undone by a later «с»");
+  assert(items("кабинет с книжным шкафом").includes("bookcase_open") && !items("кабинет с книжным шкафом").includes("wardrobe_double"));
+  assert.equal(items("столовая с обеденным столом и шестью стульями").filter(id => id === "chair_simple").length, 6);
+  // A rug lies under the seating: it never collides and stays near the middle.
+  const living = applyActions(newScene(5, 6), localPlan("гостиная с диваном, ковром и двумя креслами", newScene(5, 6), false));
+  const rug = living.objects.find(o => o.assetId === "rug_floor")!;
+  assert(Math.hypot(rug.position.x - 2.5, rug.position.z - 3) < 1.2, "rug near the centre");
+  // The TV stands across from the sofa, facing it, not in a row beside it.
+  const room = applyActions(newScene(5, 6), localPlan("гостиная", newScene(5, 6), false));
+  const sofa = room.objects.find(o => o.assetId === "sofa_compact")!, tv = room.objects.find(o => o.assetId === "tv_stand")!;
+  const dx = sofa.position.x - tv.position.x, dz = sofa.position.z - tv.position.z;
+  assert((Math.sin(tv.rotation.y) * dx + Math.cos(tv.rotation.y) * dz) / Math.hypot(dx, dz) > .7, "TV faces the sofa");
 });

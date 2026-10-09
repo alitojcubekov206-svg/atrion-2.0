@@ -1,5 +1,5 @@
 import {check, choice, id, list, number, record, text, unique, DesignError} from "../design/validation";
-import {ASSETS, STYLES, findAsset, type InteriorStyle} from "./catalog";
+import {ASSETS, STYLES, findAsset, isFlatAsset, type InteriorStyle} from "./catalog";
 
 export type Vec3 = {x: number; y: number; z: number};
 export type Opening = {id: string; kind: "door" | "window"; wall: "north" | "south" | "west" | "east"; offset: number; width: number; bottom: number; height: number};
@@ -82,14 +82,17 @@ export function doorway(s: InteriorScene, o: Opening): Rect {
 }
 export function layoutIssues(s: InteriorScene, circulation = true): string[] {
   const issues: string[] = [], boxes = s.objects.map(footprint);
+  // A rug lies under the furniture: it stays inside the walls but never collides or blocks a walkway.
+  const flat = s.objects.map(o => isFlatAsset(findAsset(o.assetId)));
   boxes.forEach((b, i) => {
     const o = s.objects[i];
     if (b.x < -.001 || b.z < -.001 || b.x + b.width > s.width + .001 || b.z + b.depth > s.length + .001) issues.push(`${o.id}: предмет выходит за стены`);
+    if (flat[i]) return;
     if (findAsset(o.assetId).height * o.scale.y > s.height) issues.push(`${o.id}: предмет выше потолка`);
     if (s.openings.some(d => d.kind === "door" && overlaps(b, doorway(s, d), .05))) issues.push(`${o.id}: перекрыт проход у двери`);
-    for (let j = 0; j < i; j++) if (overlaps(b, boxes[j], .05)) issues.push(`${o.id}: пересечение с ${s.objects[j].id}`);
+    for (let j = 0; j < i; j++) if (!flat[j] && overlaps(b, boxes[j], .05)) issues.push(`${o.id}: пересечение с ${s.objects[j].id}`);
   });
-  if (circulation && !issues.length && !hasCirculation(s, boxes)) issues.push("Нет прохода шириной 0.6 м от двери к каждому предмету");
+  if (circulation && !issues.length && !hasCirculation(s, boxes.filter((_, i) => !flat[i]))) issues.push("Нет прохода шириной 0.6 м от двери к каждому предмету");
   return issues;
 }
 /** Flood-fill the free floor for a 0.6 m wide person; check access to each object. */
