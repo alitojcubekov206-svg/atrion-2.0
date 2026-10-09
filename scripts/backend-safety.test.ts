@@ -20,6 +20,7 @@ import { dimensionsOf } from "../src/shared/geometry";
 import { buildFromPrompt } from "../src/backend/procedural-3d";
 import type { ModelPart, ThreeDConcept } from "../src/shared/types";
 import { POST as forgotPassword } from "../src/app/api/auth/forgot-password/route";
+import { GET as demoLogin } from "../src/app/api/auth/demo/route";
 import { POST as resetPassword } from "../src/app/api/auth/reset-password/route";
 import { PATCH as changePassword } from "../src/app/api/auth/account/route";
 import { POST as generate } from "../src/app/api/3d/generate/route";
@@ -39,6 +40,7 @@ let savedEnv: NodeJS.ProcessEnv;
 let secret: string;
 const originalUserMethods = {
   findUnique: db.user.findUnique, updateMany: db.user.updateMany, update: db.user.update,
+  create: db.user.create,
 };
 function stubUser(method: keyof typeof originalUserMethods, implementation: (...args: any[]) => Promise<any>) {
   // Prisma delegates are proxies, so node:test's descriptor-based mock.method cannot replace them.
@@ -205,6 +207,25 @@ test("interior routes hide foreign projects, scenes, histories and jobs", async 
   } finally {(db.designProject as any).findFirst = projectFind; (db.designJob as any).findFirst = jobFind;}
 });
 
+test("demo login is off by default, keeps an existing session and gives each guest a fresh verified account", async () => {
+  const created: Row[] = [];
+  stubUser("create", async ({ data }: { data: Row }) => { const row = { id: randomUUID(), ...data }; created.push(row); return row; });
+  const visit = () => new Request("http://localhost/api/auth/demo", { headers: { "x-forwarded-for": user.id } });
+  assert.equal((await inRequest(() => demoLogin(visit()), "invalid")).result.status, 404);
+  env.DEMO_LOGIN_ENABLED = "true";
+  const signedIn = (await inRequest(() => demoLogin(visit()))).result;
+  assert.equal(signedIn.status, 303); assert.equal(new URL(signedIn.headers.get("location")!).pathname, "/dashboard/design-engine");
+  assert.equal(created.length, 0);
+  const first = await inRequest(() => demoLogin(visit()), "invalid");
+  const second = await inRequest(() => demoLogin(visit()), "invalid");
+  assert.equal(first.result.status, 303); assert.equal(created.length, 2);
+  assert.notEqual(created[0].email, created[1].email);
+  for (const row of created) {
+    assert.equal(row.emailVerified, true); assert.match(row.email, /@demo\.atrion\.invalid$/);
+  }
+  assert.equal(await verifySessionToken(first.token!, secret, async () => created[0].password), created[0].id);
+  assert.equal(await verifySessionToken(second.token!, secret, async () => created[1].password), created[1].id);
+});
 test("production never returns recovery or verification OTPs on mail delivery failure", async () => {
   env.NODE_ENV = "production";
   env.EMAIL_DEV_RETURN_CODE = "true";
