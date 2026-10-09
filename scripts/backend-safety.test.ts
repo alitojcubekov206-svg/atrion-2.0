@@ -329,6 +329,11 @@ test("short house commands generate new geometry despite historical usage", asyn
     assert.notDeepEqual(data.concept.parts, office.parts); assert(data.procurement.items.length > 0);
   }
   assert.equal(user.threeDGenerations, 5002);
+  assert(isModelRebuild("Школа 4 этажа ширина 60 длина 120"));
+  assert(!isModelRebuild("Сделай окна шире"));
+  const school = (await inRequest(() => refine(post("/api/3d/refine", {concept: office, instruction: "Школа 4 этажа ширина 60 длина 120"})))).result;
+  assert.equal(school.status, 200); const schoolData = await school.json();
+  assert.match(schoolData.concept.name, /школа/i); assert.notDeepEqual(schoolData.concept.parts, office.parts);
 });
 
 test("successful local generation spends both allowances and does not log prompt text", async () => {

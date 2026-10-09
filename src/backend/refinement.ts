@@ -5,12 +5,14 @@ import { isSupportedPrimitive, normalizeShape, MAX_PARTS } from "./gen/validate"
 export class EditNotApplied extends Error {
   readonly code = "EDIT_NOT_APPLIED";
   constructor() {
-    super("Правка не применена. Уточните команду или измените деталь вручную. Квота возвращена.");
+    super("Правка не применена. Уточните команду или измените деталь вручную.");
   }
 }
 
 export function isModelRebuild(instruction: string): boolean {
   if (/^(?:создай|создать|сгенерируй|построй|create|generate|build)\s+\S.{1,}/i.test(instruction.trim())) return true;
+  // A new building description in chat is a new subject, even without a verb.
+  if (/^(?:(?:новый|новая|новое|современный|современная|двухэтажный|тр[её]хэтажный)\s+)?(?:дом|коттедж|школа|офис|больница|отель|гостиница|завод|склад|ангар|многоэтажка|здание|house|school|office|hospital|hotel|warehouse)(?=$|[\s,.;:]|\d)/i.test(instruction.trim())) return true;
   return /построй|замени на|вместо (этого|него)|новый объект|переделай в|сделай вместо/i.test(instruction)
     && instruction.trim().length > 12;
 }

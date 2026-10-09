@@ -745,6 +745,8 @@ export default function DesignEnginePage() {
         );
         if (refineResult.ok && refineResult.data.concept) {
           pushHistory(concept);
+          setDiagnostics(null);
+          if (refineResult.data.concept.name !== concept.name) setPrompt(chatResult.data.refineInstruction);
           await playAssemble(refineResult.data.concept);
         } else {
           return say(refineResult.data.error ?? "Правку применить не удалось.");
@@ -783,6 +785,8 @@ export default function DesignEnginePage() {
       );
       if (result.ok && result.data.concept) {
         pushHistory(concept);
+        setDiagnostics(null);
+        if (result.data.concept.name !== concept.name) setPrompt(instruction);
         await playAssemble(result.data.concept);
         setChat((prev) => [...prev, { role: "assistant", text: "Правка применена." }]);
       } else {
