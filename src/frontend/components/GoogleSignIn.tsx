@@ -52,7 +52,8 @@ export default function GoogleSignIn({onSuccess}:{onSuccess:()=>void}) {
     void setup();return()=>{active=false;controller.abort();};
   },[attempt]);
   return <div className="w-full text-center">
-    <div ref={host} className={`flex min-h-11 justify-center ${state!=="ready"?"hidden":""}`} aria-label="Вход через Google" />
+    {/* Match Google's transparent iframe canvas while the button uses filled_black. */}
+    <div ref={host} style={{colorScheme:"normal"}} className={`flex min-h-11 justify-center ${state!=="ready"?"hidden":""}`} aria-label="Вход через Google" />
     {state!=="ready"&&<button type="button" disabled={state!=="error"} onClick={()=>setAttempt(v=>v+1)} className="w-full rounded-full border border-white/15 bg-white/5 px-4 py-3 text-sm text-white disabled:opacity-50">{state==="signing"?"Входим через Google…":state==="loading"?"Подключаем Google…":"Войти через Google"}</button>}
     {state==="unconfigured"&&<p className="mt-2 text-xs text-muted">Вход через Google ещё не подключён</p>}
     {(state==="ready"||state==="signing")&&<p className="mt-2 text-xs leading-relaxed text-muted">Для входа Atrion использует имя, email и идентификатор Google-аккаунта. <Link href="/legal#privacy" className="text-accent hover:underline">Конфиденциальность</Link></p>}
