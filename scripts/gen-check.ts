@@ -279,10 +279,17 @@ const CASES: Case[] = [
   }
 
   // Nothing floats: upper-floor windows, spires, the tank's gun, the dragon's head.
-  for (const prompt of ["храм", "трехэтажка", "дом", "танк", "башня", "маяк", "rocket", "дракон", "дерево", "пальма", "ёлка", "куст", "роза"]) {
+  for (const prompt of ["храм", "трехэтажка", "дом", "танк", "башня", "маяк", "rocket", "дракон", "дерево", "пальма", "ёлка", "куст", "роза", "юрта", "вертолёт", "автобус", "поезд"]) {
     const groups = connectedGroups(built(prompt, "sweep01").parts, 0.05);
     check(`«${prompt}» is one connected object`, groups.length === 1, `${groups.length} pieces`);
   }
+
+  // Silhouettes the generic body could not make: they have their own builders.
+  const names = (prompt: string) => built(prompt).parts.map((p) => p.name).join(" | ");
+  check("a yurt is round felt with a tündük crown", /Түндүк/.test(names("юрта")) && built("юрта").parts.some((p) => p.name === "Стена" && p.shape === "cylinder"), names("юрта").slice(0, 200));
+  check("a helicopter has a tail boom, main rotor and skids", ["Хвостовая балка", "Лопасть несущего винта", "Полоз"].every((n) => names("вертолёт").includes(n)), names("вертолёт").slice(0, 200));
+  check("a bus is one glazed saloon, not a lorry", /Салон/.test(names("автобус")) && !/Грузовой отсек/.test(names("автобус")), names("автобус").slice(0, 200));
+  check("a lorry keeps its cab and cargo box", /Грузовой отсек/.test(names("грузовик")));
 
   // Entrance steps climb towards the door.
   const steps = built("дом", "sweep01").parts.find((p) => p.name === "Ступени — проступь");

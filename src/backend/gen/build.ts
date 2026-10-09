@@ -156,6 +156,15 @@ function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
     addPlant(ctx);
     return ctx.parts;
   }
+  // A yurt is round felt under a crown; a helicopter is a cabin, boom and rotors.
+  if (bp.form === "yurt") {
+    addYurt(ctx);
+    return ctx.parts;
+  }
+  if (bp.form === "helicopter") {
+    addHelicopter(ctx);
+    return ctx.parts;
+  }
 
   // A sword on its own is the whole object, not a detail on a body.
   if (bp.kind === "weapon" && bp.arms === 0) {
@@ -554,7 +563,27 @@ function massElongated(ctx: Ctx) {
   if (!cabin) return;
 
   const upper = body.y1 - lowerTop;
-  if (truck) {
+  // Buses, trams and trains are one long saloon glazed end to end; they came
+  // out as a lorry with a cab and a cargo box.
+  const passenger = truck && /автобус|\bbus\b|троллейбус|маршрутк|поезд|\btrain\b|электричк|трамва|\btram\b|вагон|локомотив|паровоз|тепловоз|электровоз/i.test(bp.params.raw);
+  if (passenger) {
+    const saloonL = bp.length * 0.98;
+    push(
+      ctx,
+      part(ctx.id(), "Салон", {
+        shape: "box",
+        role: "volume",
+        group: "Кузов",
+        position: [0, lowerTop + upper / 2 - upper * 0.02, 0],
+        size: [bp.width * 0.98, upper * 1.04, saloonL],
+        color: shade(bp.primary, 0.05),
+        material: "Салон",
+        metalness: bp.metalness,
+        roughness: bp.roughness,
+      })
+    );
+    ctx.cabin = { y0: lowerTop, y1: body.y1, z0: -saloonL / 2, z1: saloonL / 2, halfW: bp.width * 0.49 };
+  } else if (truck) {
     // Cab up front, cargo box behind it.
     const cabL = bp.length * 0.26;
     const cabZ = bp.length / 2 - cabL / 2;
@@ -5104,6 +5133,99 @@ function addHeldBlade(ctx: Ctx) {
 
 /** The weapon as the whole object, standing point up. */
 type PlantPart = Omit<Parameters<typeof part>[2], "group" | "role">;
+type Piece = Omit<Parameters<typeof part>[2], "group">;
+
+/**
+ * A Kyrgyz boz üy: a round felt wall on a wooden base, an ornament band and
+ * rope belts, a conical roof and the tündük crown with its crossed laths.
+ */
+function addYurt(ctx: Ctx) {
+  const { bp, rng } = ctx;
+  const D = Math.min(bp.width, bp.length);
+  const wallH = clamp(D * 0.24, 1.5, 2.2);
+  const roofH = D * 0.22;
+  const base = 0.14;
+  const felt = { color: bp.params.color ?? rng.pick(["#ece6da", "#f1ece2", "#e6dfd0"]), material: "Войлок", roughness: 0.95 };
+  const ornament = rng.pick(["#a8322d", "#8f2a3a", "#b4432a", "#2f5d8a"]);
+  const wood = { color: "#6b4a32", material: "Дерево", roughness: 0.8 };
+  const add = (name: string, group: string, opts: Piece) => push(ctx, part(ctx.id(), name, { ...opts, group }));
+
+  add("Основание", "Основание", { shape: "cylinder", role: "foundation", position: [0, base / 2, 0], size: [D * 1.05, base, D * 1.05], sides: 32, ...wood });
+  add("Стена", "Стена", { shape: "cylinder", role: "structure", position: [0, base + wallH / 2, 0], size: [D, wallH, D], sides: 32, ...felt });
+  add("Нижняя кошма", "Стена", { shape: "cylinder", role: "detail", position: [0, base + 0.12, 0], size: [D * 1.012, 0.24, D * 1.012], sides: 32, color: "#5a3a28", material: "Войлок" });
+  add("Орнамент", "Стена", { shape: "cylinder", role: "detail", position: [0, base + wallH * 0.74, 0], size: [D * 1.012, wallH * 0.16, D * 1.012], sides: 32, color: ornament, material: "Орнамент" });
+  add("Опоясывающая верёвка", "Стена", { shape: "torus", role: "detail", position: [0, base + wallH * 0.45, 0], size: [D * 1.03, 0.05, D * 1.03], repeat: { count: 2, step: [0, wallH * 0.5, 0] }, color: "#3a2a20", material: "Верёвка" });
+
+  const eaves = base + wallH;
+  add("Кровля", "Крыша", { shape: "cone", role: "roof", position: [0, eaves + roofH / 2 - 0.05, 0], size: [D * 1.08, roofH, D * 1.08], sides: 32, ...felt, color: shade(felt.color, -0.04) });
+  add("Кромка кровли", "Крыша", { shape: "torus", role: "detail", position: [0, eaves, 0], size: [D * 1.09, 0.14, D * 1.09], color: ornament, material: "Орнамент" });
+
+  // The cone narrows to 1/7 of its width a seventh of the way down: the crown rests there.
+  const crownY = eaves + roofH * (6 / 7) - 0.05;
+  const crownD = D * 1.08 / 7 + 0.12;
+  add("Түндүк", "Түндүк", { shape: "torus", role: "structure", position: [0, crownY, 0], size: [crownD, 0.12, crownD], ...wood });
+  add("Рейки түндүка", "Түндүк", { shape: "box", role: "detail", position: [0, crownY + 0.06, 0], size: [crownD * 0.95, 0.05, 0.06], repeat: { count: 3, step: [0, 0, crownD * 0.18] }, ...wood });
+  add("Поперечные рейки", "Түндүк", { shape: "box", role: "detail", position: [0, crownY + 0.1, -crownD * 0.18], size: [0.06, 0.05, crownD * 0.95], repeat: { count: 3, step: [crownD * 0.18, 0, 0] }, ...wood });
+  add("Венец", "Түндүк", { shape: "cylinder", role: "detail", position: [0, crownY + 0.04, 0], size: [crownD * 0.4, 0.1, crownD * 0.4], sides: 16, ...wood });
+
+  const doorW = Math.min(1.0, D * 0.15), doorH = Math.min(1.45, wallH * 0.85);
+  add("Дверная рама", "Дверь", { shape: "box", role: "door", position: [0, base + doorH / 2 + 0.04, D / 2 - 0.02], size: [doorW + 0.16, doorH + 0.12, 0.12], ...wood });
+  add("Дверь", "Дверь", { shape: "box", role: "door", position: [0, base + doorH / 2 + 0.04, D / 2 + 0.04], size: [doorW, doorH, 0.06], color: rng.pick(["#c0612b", "#a8322d", "#2f5d8a"]), material: "Крашеное дерево", roughness: 0.6 });
+  add("Узор двери", "Дверь", { shape: "box", role: "detail", position: [0, base + doorH * 0.6, D / 2 + 0.075], size: [doorW * 0.5, doorW * 0.5, 0.02], rotation: [0, 0, Math.PI / 4], color: "#f2c230", material: "Орнамент" });
+}
+
+/**
+ * A light helicopter: rounded cabin with a canopy, engine fairing, tail boom
+ * with fin, stabiliser and tail rotor, a four-blade main rotor and skids.
+ */
+function addHelicopter(ctx: Ctx) {
+  const { bp, rng } = ctx;
+  const L = bp.length, W = bp.width, H = bp.height;
+  const paint = bp.params.color ?? rng.pick(["#c8332b", "#f2c230", "#2f5d8a", "#e9e6df", "#3d4a3a"]);
+  const body = { color: paint, material: "Фюзеляж", metalness: 0.35, roughness: 0.4 };
+  const dark = { color: "#2f3338", material: "Металл", metalness: 0.7, roughness: 0.35 };
+  const skid = { color: "#a7adb4", material: "Металл", metalness: 0.75, roughness: 0.3 };
+  const add = (name: string, group: string, opts: Piece) => push(ctx, part(ctx.id(), name, { ...opts, group }));
+
+  const skidY = 0.08, cabinY0 = H * 0.18, cabinH = H * 0.46, cabinL = L * 0.36, cabinZ = L * 0.16;
+  const cabinY = cabinY0 + cabinH / 2;
+  add("Фюзеляж", "Кабина", { shape: "sphere", role: "volume", position: [0, cabinY, cabinZ], size: [W * 0.9, cabinH, cabinL], ...body });
+  add("Остекление", "Кабина", { shape: "sphere", role: "detail", position: [0, cabinY + cabinH * 0.1, cabinZ + cabinL * 0.2], size: [W * 0.78, cabinH * 0.72, cabinL * 0.6], color: "#7fb8d8", material: "Стекло", metalness: 0.1, roughness: 0.1, opacity: 0.75 });
+  const humpY = cabinY + cabinH * 0.4;
+  add("Капот двигателя", "Двигатель", { shape: "capsule", role: "volume", position: [0, humpY, cabinZ - cabinL * 0.18], size: [W * 0.5, cabinL * 0.55, H * 0.2], rotation: [Math.PI / 2, 0, 0], ...body, color: shade(paint, -0.08) });
+
+  // Tail boom from inside the cabin back to the fin.
+  const boomY = cabinY + cabinH * 0.12;
+  const boomFront = cabinZ - cabinL * 0.3, boomBack = -L / 2 + L * 0.04;
+  const boomL = boomFront - boomBack;
+  add("Хвостовая балка", "Хвост", { shape: "cylinder", role: "structure", position: [0, boomY, (boomFront + boomBack) / 2], size: [W * 0.2, boomL, W * 0.2], rotation: [Math.PI / 2, 0, 0], sides: 14, ...body });
+  add("Киль", "Хвост", { shape: "box", role: "detail", position: [0, boomY + H * 0.17, boomBack + L * 0.03], size: [0.1, H * 0.38, L * 0.07], rotation: [-0.25, 0, 0], ...body });
+  add("Стабилизатор", "Хвост", { shape: "box", role: "detail", position: [0, boomY, boomBack + L * 0.12], size: [W * 0.85, 0.06, L * 0.05], ...body });
+  const tailRotorY = boomY + H * 0.24, tailRotorZ = boomBack + L * 0.02;
+  add("Втулка рулевого винта", "Хвост", { shape: "cylinder", role: "detail", position: [0.1, tailRotorY, tailRotorZ], size: [0.12, 0.16, 0.12], rotation: [0, 0, Math.PI / 2], ...dark });
+  add("Лопасть рулевого винта", "Хвост", { shape: "box", role: "detail", position: [0.16, tailRotorY, tailRotorZ], size: [0.04, H * 0.34, 0.12], ...dark });
+  add("Лопасть рулевого винта", "Хвост", { shape: "box", role: "detail", position: [0.16, tailRotorY, tailRotorZ], size: [0.04, 0.12, H * 0.34], ...dark });
+
+  // Main rotor: mast on the fairing, hub, two crossing blades = four blades.
+  const mastY0 = humpY + H * 0.08, mastH = H * 0.12;
+  add("Мачта винта", "Несущий винт", { shape: "cylinder", role: "structure", position: [0, mastY0 + mastH / 2 - 0.02, cabinZ - cabinL * 0.18], size: [0.16, mastH, 0.16], ...dark });
+  const hubY = mastY0 + mastH;
+  add("Втулка несущего винта", "Несущий винт", { shape: "cylinder", role: "detail", position: [0, hubY, cabinZ - cabinL * 0.18], size: [0.42, 0.14, 0.42], ...dark });
+  const span = L * 0.88;
+  const spin = rng.float(0, Math.PI / 2);
+  for (let i = 0; i < 2; i++) {
+    add(`Лопасть несущего винта ${i + 1}`, "Несущий винт", { shape: "box", role: "detail", position: [0, hubY + 0.02, cabinZ - cabinL * 0.18], size: [span, 0.05, 0.3], rotation: [0, spin + (i * Math.PI) / 2, 0], ...dark });
+  }
+
+  // Skids: two runners on struts, tied by cross tubes under the cabin.
+  const skidX = W * 0.42, skidL = L * 0.4;
+  add("Полоз", "Шасси", { shape: "cylinder", role: "structure", position: [skidX, skidY, cabinZ], size: [0.1, skidL, 0.1], rotation: [Math.PI / 2, 0, 0], mirror: "x", sides: 10, ...skid });
+  const tubeY = cabinY0 + 0.04;
+  add("Поперечина шасси", "Шасси", { shape: "cylinder", role: "structure", position: [0, tubeY, cabinZ + skidL * 0.28], size: [0.09, skidX * 2, 0.09], rotation: [0, 0, Math.PI / 2], repeat: { count: 2, step: [0, 0, -skidL * 0.56] }, sides: 10, ...skid });
+  add("Стойка шасси", "Шасси", { shape: "cylinder", role: "structure", position: [skidX, (skidY + tubeY) / 2, cabinZ + skidL * 0.28], size: [0.08, tubeY - skidY + 0.06, 0.08], mirror: "x", repeat: { count: 2, step: [0, 0, -skidL * 0.56] }, sides: 8, ...skid });
+
+  add("Проблесковый маяк", "Хвост", { shape: "sphere", role: "detail", position: [0, boomY + H * 0.37, boomBack + L * 0.025], size: [0.14, 0.14, 0.14], color: "#ff3b30", material: "Свет", emissive: 1 });
+}
 
 /**
  * Trees, bushes and flowers. Every piece overlaps the one it grows from, so the
@@ -5123,18 +5245,26 @@ function addPlant(ctx: Ctx) {
 
   if (/цвет|роз|тюльпан|ромашк|подсолнух|flower|rose/i.test(raw)) {
     const sunflower = /подсолнух|sunflower/i.test(raw);
-    const potH = sunflower ? 0 : H * 0.28;
-    if (potH) add("Горшок", "Горшок", { shape: "cylinder", position: [0, potH / 2, 0], size: [H * 0.3, potH, H * 0.3], sides: 18, color: "#b5653a", material: "Керамика", roughness: 0.7 });
-    const stemTop = H * 0.88;
-    add("Стебель", "Стебель", { shape: "cylinder", position: [0, (potH + stemTop) / 2, 0], size: [H * 0.025, stemTop - potH + 0.02, H * 0.025], sides: 8, color: "#4d8a3a", material: "Стебель" });
-    add("Лист", "Стебель", { shape: "capsule", position: [H * 0.06, potH + (stemTop - potH) * 0.45, 0], size: [H * 0.14, H * 0.02, H * 0.06], rotation: [0, 0, -0.5], mirror: "x", color: "#4d8a3a", material: "Листва" });
+    const potH = sunflower ? 0 : H * 0.2;
+    if (potH) add("Горшок", "Горшок", { shape: "cylinder", position: [0, potH / 2, 0], size: [H * 0.22, potH, H * 0.22], sides: 18, color: "#b5653a", material: "Керамика", roughness: 0.7 });
+    const bloom = H * (sunflower ? 0.24 : 0.22);
+    const stemTop = H - bloom * 0.35;
+    add("Стебель", "Стебель", { shape: "cylinder", position: [0, (potH + stemTop) / 2, 0], size: [H * 0.03, stemTop - potH + 0.02, H * 0.03], sides: 8, color: "#4d8a3a", material: "Стебель" });
+    add("Лист", "Стебель", { shape: "capsule", position: [H * 0.07, potH + (stemTop - potH) * 0.4, 0], size: [H * 0.18, H * 0.025, H * 0.08], rotation: [0, 0, -0.5], mirror: "x", color: "#4d8a3a", material: "Листва" });
+    add("Верхний лист", "Стебель", { shape: "capsule", position: [0, potH + (stemTop - potH) * 0.65, H * 0.06], size: [H * 0.07, H * 0.025, H * 0.15], rotation: [0.5, 0, 0], color: "#4d8a3a", material: "Листва" });
     const petal = bp.params.color ?? (sunflower ? "#f2c230" : rng.pick(["#d6455d", "#f2c94c", "#f4f1ea", "#b05cc8", "#e8738f"]));
-    const bloom = H * (sunflower ? 0.22 : 0.16);
     add("Сердцевина", "Цветок", { shape: "sphere", position: [0, stemTop, 0], size: [bloom * 0.5, bloom * 0.35, bloom * 0.5], color: sunflower ? "#5a3a1c" : "#e0b23a", material: "Цветок" });
     const count = sunflower ? 14 : rng.pick([5, 6, 8]);
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
-      add(`Лепесток ${i + 1}`, "Цветок", { shape: "sphere", position: [Math.cos(angle) * bloom * 0.42, stemTop, -Math.sin(angle) * bloom * 0.42], size: [bloom * 0.5, bloom * 0.14, bloom * 0.28], rotation: [0, angle, 0], color: petal, material: "Цветок" });
+      add(`Лепесток ${i + 1}`, "Цветок", { shape: "sphere", position: [Math.cos(angle) * bloom * 0.4, stemTop, -Math.sin(angle) * bloom * 0.4], size: [bloom * 0.5, bloom * (sunflower ? 0.14 : 0.3), bloom * 0.3], rotation: [0, angle, sunflower ? 0 : 0.5], color: petal, material: "Цветок" });
+    }
+    // A cupped inner ring gives the bloom depth; a sunflower stays a flat disc.
+    if (!sunflower) {
+      for (let i = 0; i < 4; i++) {
+        const angle = (i / 4) * Math.PI * 2 + 0.4;
+        add(`Внутренний лепесток ${i + 1}`, "Цветок", { shape: "sphere", position: [Math.cos(angle) * bloom * 0.16, stemTop + bloom * 0.14, -Math.sin(angle) * bloom * 0.16], size: [bloom * 0.3, bloom * 0.34, bloom * 0.22], rotation: [0, angle, 0.3], color: shade(petal, -0.08), material: "Цветок" });
+      }
     }
     return;
   }
@@ -5169,17 +5299,19 @@ function addPlant(ctx: Ctx) {
       add(`Ствол ${i + 1}`, "Ствол", { shape: "cylinder", position: [i * lean, h * i + h / 2, 0], size: [d, h + 0.05, d], sides: 10, ...bark });
     }
     const top: Vec3 = [(segments - 1) * lean, trunkH, 0];
-    const fronds = rng.int(7, 9);
-    const length = H * 0.42;
+    const fronds = rng.int(8, 11);
+    const length = H * 0.45;
     for (let i = 0; i < fronds; i++) {
       const angle = (i / fronds) * Math.PI * 2;
-      const droop = rng.float(0.35, 0.65);
+      const droop = rng.float(0.45, 0.8);
       add(`Лист пальмы ${i + 1}`, "Крона", {
         shape: "capsule",
         position: [top[0] + Math.cos(angle) * Math.cos(droop) * length / 2, top[1] - Math.sin(droop) * length / 2, top[2] - Math.sin(angle) * Math.cos(droop) * length / 2],
-        size: [length, H * 0.015, H * 0.09],
+        size: [length, H * 0.012, H * 0.06],
         rotation: [0, angle, -droop],
-        ...foliage,
+        color: shade(leaf, -0.12),
+        material: "Листва",
+        roughness: 0.85,
       });
     }
     add("Кокосы", "Крона", { shape: "sphere", position: [top[0], top[1] - H * 0.03, top[2]], size: [H * 0.1, H * 0.08, H * 0.1], color: "#5a4128", material: "Плод" });
@@ -5200,20 +5332,21 @@ function addPlant(ctx: Ctx) {
     return;
   }
 
-  // An ordinary broadleaf tree: trunk, two boughs and a clustered crown.
-  const trunkH = H * rng.float(0.4, 0.5);
-  const trunkD = Math.max(0.12, H * 0.07);
+  // An ordinary broadleaf tree: trunk, two boughs and a rounded, lumpy crown.
+  const trunkH = H * rng.float(0.36, 0.44);
+  const trunkD = Math.max(0.14, H * 0.08);
   add("Ствол", "Ствол", { shape: "cylinder", position: [0, trunkH / 2, 0], size: [trunkD, trunkH + 0.2, trunkD], sides: 12, ...bark });
   add("Ветвь", "Ствол", { shape: "cylinder", position: [trunkD * 1.1, trunkH * 0.95, 0], size: [trunkD * 0.45, H * 0.22, trunkD * 0.45], rotation: [0, 0, -0.6], mirror: "x", sides: 8, ...bark });
-  const crownH = H - trunkH + 0.3;
+  const crownH = H - trunkH * 0.8;
   const crownY = H - crownH / 2;
-  add("Крона", "Крона", { shape: "sphere", position: [0, crownY, 0], size: [W * 0.75, crownH, W * 0.75], ...foliage });
-  const lobes = rng.int(3, 5);
+  add("Крона", "Крона", { shape: "sphere", position: [0, crownY, 0], size: [W * 0.8, crownH * 0.9, W * 0.8], ...foliage });
+  const lobes = rng.int(4, 6);
   for (let i = 0; i < lobes; i++) {
-    const angle = (i / lobes) * Math.PI * 2 + rng.float(0, 0.8);
-    const size = Math.min(W * rng.float(0.42, 0.55), crownH * 0.8);
-    add(`Часть кроны ${i + 1}`, "Крона", { shape: "sphere", position: [Math.cos(angle) * W * 0.24, crownY + rng.float(-0.12, 0.12) * crownH, -Math.sin(angle) * W * 0.24], size: [size, size * 0.85, size], ...foliage });
+    const angle = (i / lobes) * Math.PI * 2 + rng.float(0, 0.6);
+    const size = W * rng.float(0.4, 0.52);
+    add(`Часть кроны ${i + 1}`, "Крона", { shape: "sphere", position: [Math.cos(angle) * W * 0.27, crownY + rng.float(-0.22, 0.08) * crownH, -Math.sin(angle) * W * 0.27], size: [size, size * 0.85, size], color: shade(leaf, rng.float(-0.08, 0.06)), material: "Листва", roughness: 0.85 });
   }
+  add("Верх кроны", "Крона", { shape: "sphere", position: [0, H - W * 0.2, 0], size: [W * 0.45, W * 0.4, W * 0.45], color: shade(leaf, 0.05), material: "Листва", roughness: 0.85 });
 }
 
 function addStandaloneBlade(ctx: Ctx) {

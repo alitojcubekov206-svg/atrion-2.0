@@ -200,6 +200,8 @@ export type Blueprint = {
   detail: number;
   /** Words the lexicon recognised — surfaced in the generation log. */
   matched: string[];
+  /** Objects whose silhouette the generic body cannot make get their own builder. */
+  form?: "yurt" | "helicopter";
 };
 
 type Mutate = (blueprint: Blueprint, count: number | undefined) => void;
@@ -454,7 +456,8 @@ const RULES: Rule[] = [
     b.sizeClass = "furniture";
     b.legs = 0; b.wheels = 0; b.windows = 0; b.doors = 0; b.roof = "none";
     b.height = b.params.height ?? (small ? (/подсолнух/i.test(raw) ? 1.8 : 0.45) : bush ? 1.3 : b.rng.float(5, 9));
-    const crown = bush ? b.height * 1.3 : small ? b.height * 0.5 : b.height * 0.55;
+    const conifer = /[её]лк|ель(?![а-яё])|сосн|pine|хвойн|spruce/i.test(raw);
+    const crown = bush ? b.height * 1.3 : small ? b.height * 0.5 : conifer ? b.height * 0.55 : b.height * 0.7;
     b.width = b.params.width ?? crown;
     b.length = b.params.depth ?? crown;
   } },
@@ -530,7 +533,7 @@ const RULES: Rule[] = [
   { label: "антенна", re: w("антенн|antenna|спутников(ая|ую) тарелк|вышк[аиу]|радар"), counter: /антенн|antenna/i, apply: (b, n) => { b.antennas = n ?? Math.max(b.antennas, 1); } },
   { label: "динамик", kind: "device", attach: (b, n) => { b.speakers = n ?? Math.max(b.speakers, 1); }, re: w("колонк|динамик|speaker|сабвуфер|наушник|аудиосистем"), counter: /колонк|динамик|speaker/i, apply: (b, n) => { b.speakers = n ?? Math.max(b.speakers, 1); b.vents = Math.max(b.vents, 1); b.sizeClass = "handheld"; } },
   { label: "дрон", kind: "aircraft", attach: (b, n) => { b.propellers = n ?? Math.max(b.propellers, 4); }, re: w("дрон|drone|квадрокоптер|коптер"), apply: (b) => { b.propellers = Math.max(b.propellers, 4); b.skids = true; b.lenses = Math.max(b.lenses, 1); b.lights = Math.max(b.lights, 2); b.massPlan = "radial"; b.sizeClass = "handheld"; b.height = Math.max(b.height, 0.2); b.length = Math.max(b.length, 0.5); b.width = Math.max(b.width, 0.5); } },
-  { label: "вертолёт", kind: "aircraft", re: w("вертол[её]т|helicopter|геликоптер"), apply: (b) => { b.propellers = Math.max(b.propellers, 2); b.skids = true; b.massPlan = "elongated"; b.bodyShape = "capsule"; b.sizeClass = "vehicle"; b.length = Math.max(b.length, 12); b.width = Math.max(b.width, 2.6); b.height = Math.max(b.height, 3.6); b.windows = Math.max(b.windows, 2); b.lights = Math.max(b.lights, 2); b.fins = Math.max(b.fins, 1); b.wheels = 0; b.legs = 0; b.detail += 0.2; } },
+  { label: "вертолёт", kind: "aircraft", re: w("вертол[её]т|helicopter|геликоптер"), apply: (b) => { b.propellers = Math.max(b.propellers, 2); b.skids = true; b.massPlan = "elongated"; b.bodyShape = "capsule"; b.sizeClass = "vehicle"; b.length = Math.max(b.length, 12); b.width = Math.max(b.width, 2.6); b.height = Math.max(b.height, 3.6); b.windows = 0; b.lights = Math.max(b.lights, 2); b.wheels = 0; b.legs = 0; b.form = "helicopter"; } },
   { label: "космический корабль", kind: "aircraft", re: w("космическ\\S* (?:корабл|челнок)|звездол[её]т|spaceship|starship|spacecraft|\\bufo\\b|нло(?![а-яё])|летающ\\S* тарелк"), apply: (b) => { const disc = /нло|ufo|тарелк/i.test(b.params.raw); b.hull = false; b.mast = false; b.railings = false; b.wheels = 0; b.legs = 0; b.lights = Math.max(b.lights, 3); b.emissiveAccent = true; b.metalness = 0.7; b.sizeClass = "vehicle"; if (disc) { b.massPlan = "radial"; b.bodyShape = "sphere"; b.length = 8; b.width = 8; b.height = 2.6; } else { b.massPlan = "elongated"; b.bodyShape = "capsule"; b.wings = Math.max(b.wings, 2); b.wingKind = "fixed"; b.fins = Math.max(b.fins, 2); b.length = 18; b.width = 9; b.height = 4; } b.detail += 0.3; } },
   { label: "самолёт", kind: "aircraft", re: w("самолёт|самолет|plane|авиалайн|истребител|бомбардир|планёр|планер"), apply: (b) => { b.wings = Math.max(b.wings, 2); b.wingKind = "fixed"; b.massPlan = "elongated"; b.bodyShape = "capsule"; b.sizeClass = "vehicle"; b.length = Math.max(b.length, 12); b.height = Math.max(b.height, 3.4); b.wheels = Math.max(b.wheels, 3); b.wheelSize = 0.12; b.tail = 0; b.fins = Math.max(b.fins, 1); } },
   { label: "ракета", kind: "aircraft", re: w("ракет|rocket|шаттл|носител|баллистич"), apply: (b) => { b.massPlan = "stacked"; b.bodyShape = "cylinder"; b.spire = true; b.fins = Math.max(b.fins, 4); b.sizeClass = "landmark"; b.height = Math.max(b.height, 22); b.length = Math.max(b.length, 3); b.width = Math.max(b.width, 3); b.legs = 0; b.wheels = 0; } },
@@ -946,7 +949,7 @@ const BUILDING_PROFILES: BuildingProfile[] = [
   { re: /сарай|амбар|хлев|курятник|конюшн|бытовк|хижин|избушк|shed|barn|hut|cabin/i, floors: [1, 1], plans: [[4, 3], [5, 3.5], [3.5, 2.5], [6, 4]], storey: 2.6, roof: "gable", windows: "punched", extra: (b) => { b.windows = 2; b.stairs = 0; b.garage = false; } },
   { re: /бан[яи]|сауна|sauna/i, floors: [1, 1], plans: [[5, 4], [6, 4], [4, 3.5]], storey: 2.6, roof: "gable", windows: "punched", extra: (b) => { b.windows = 2; b.chimneys = 1; b.terrace = true; b.garage = false; } },
   { re: /беседк|gazebo/i, floors: [1, 1], plans: [[4, 4], [3.5, 3.5], [5, 4]], storey: 2.6, roof: "hip", windows: "punched", extra: (b) => { b.windows = 0; b.columns = Math.max(b.columns, 4); b.stairs = 2; b.garage = false; } },
-  { re: /юрт|yurt/i, floors: [1, 1], plans: [[7, 7], [6, 6], [8, 8]], storey: 2.4, roof: "dome", windows: "punched", extra: (b) => { b.windows = 0; b.dome = true; b.doors = 1; b.stairs = 0; b.garage = false; } },
+  { re: /юрт|yurt/i, floors: [1, 1], plans: [[7, 7], [6, 6], [8, 8]], storey: 2.4, roof: "dome", windows: "punched", extra: (b) => { b.windows = 0; b.doors = 1; b.stairs = 0; b.garage = false; b.form = "yurt"; } },
   { re: /теплиц|greenhouse/i, floors: [1, 1], plans: [[6, 3], [8, 3], [10, 4]], storey: 2.4, roof: "gable", windows: "curtain", glassy: true, extra: (b) => { b.stairs = 0; b.garage = false; } },
   { re: /замок|замк|крепост|двор(?:ец|ц)|castle|palace/i, floors: [2, 3], plans: [[40, 30], [34, 28], [46, 34]], storey: 4.5, roof: "flat", windows: "punched", extra: (b) => { b.towers = Math.max(b.towers, 4); b.spire = true; b.garage = false; } },
   // Shops first: "универмаг" must not read as "универ(ситет)".
