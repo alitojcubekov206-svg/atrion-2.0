@@ -27,7 +27,7 @@ Baseline должен описывать **фактически развёрну
 
 Дальше: изменение схемы — на отдельной ветке Neon (`DATABASE_URL="<прямая строка ветки>" npm run db:migrate -- --name <имя>`), выкатка в рабочую базу — `DATABASE_URL="$DATABASE_URL_UNPOOLED" npm run db:deploy`. `db:push` остаётся только для локальной временной базы.
 
-3D генерируется напрямую из текста в геометрию; интеграция генерации через изображение и конфигурация Modal удалены. В `/playground/generator` сохранена загрузка готового GLB по ссылке через `src/frontend/glb-import.ts`. Удаление файлов из репозитория не останавливает ранее развёрнутый внешний сервис Modal; это отдельное действие в инфраструктуре.
+3D генерируется напрямую из текста в геометрию; режим «Реалистично» отдельно запускает задание на приложении Modal из `infra/modal_realistic.py` (TRELLIS на A10G, не более 2 контейнеров, остановка через 60 с простоя). Для него в Vercel нужны `MODAL_REALISTIC_URL` и `MODAL_REALISTIC_SECRET`; деплой приложения — `modal deploy infra/modal_realistic.py` из аккаунта владельца, лимит расходов Modal не повышать. В `/playground/generator` сохранена загрузка готового GLB по ссылке через `src/frontend/glb-import.ts`.
 
 Для текстового AI настройте серверные `AI_TEXT_PROVIDER`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` и при необходимости `CLOUDFLARE_TEXT_MODEL`. Значения Account ID и токена в `.env.example` пустые. `auto` сначала выбирает прежние OPENAI/GROQ/AI-ключи, затем Cloudflare; `cloudflare` выбирает только Workers AI; `disabled` отключает внешнюю генерацию. Ключи не должны иметь префикс `NEXT_PUBLIC_`.
 

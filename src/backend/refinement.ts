@@ -1,6 +1,7 @@
 import type { ModelPart, ThreeDConcept } from "../shared/types";
 import { dimensionsOf, scaleParts, structureFromGroups } from "../shared/geometry";
 import { isSupportedPrimitive, normalizeShape, MAX_PARTS } from "./gen/validate";
+import { lanesIn, planFromPrompt } from "./gen/blueprint";
 
 export class EditNotApplied extends Error {
   readonly code = "EDIT_NOT_APPLIED";
@@ -9,12 +10,67 @@ export class EditNotApplied extends Error {
   }
 }
 
+const CREATE_VERB = /^(?:создай|создать|сгенерируй|построй|нарисуй|смоделируй|create|generate|build|make)\s+/i;
+// "построй больше полос", "build another tower" add to the current model.
+const ADDITION = /^(?:ещё|еще|больше|меньше|дополнительн\S*|втор\S*|more|another|extra|additional|one more|an extra)(?![а-яёa-z])/i;
+
+/**
+ * True when the message asks for a different object rather than an edit. A
+ * creation verb alone is not enough: "построй больше полос для машин" used to
+ * replace a bridge with a car, because the words after the verb were generated
+ * as a new model on their own.
+ */
 export function isModelRebuild(instruction: string): boolean {
-  if (/^(?:создай|создать|сгенерируй|построй|create|generate|build)\s+\S.{1,}/i.test(instruction.trim())) return true;
+  const text = instruction.trim();
+  const verb = text.match(CREATE_VERB);
+  if (verb) {
+    const rest = text.slice(verb[0].length);
+    if (rest.length < 2 || ADDITION.test(rest)) return false;
+    // The object must be a whole thing ("дракона", "красную машину") or an
+    // unknown noun; a feature of the current model ("террасу", "окна") is an edit.
+    const plan = planFromPrompt(rest);
+    const recognised = plan.matched.filter((label) => label !== "свободная форма по тексту");
+    return plan.kind !== "product" || !recognised.length;
+  }
   // A new building description in chat is a new subject, even without a verb.
-  if (/^(?:(?:новый|новая|новое|современный|современная|двухэтажный|тр[её]хэтажный)\s+)?(?:дом|коттедж|школа|офис|больница|отель|гостиница|завод|склад|ангар|многоэтажка|здание|house|school|office|hospital|hotel|warehouse)(?=$|[\s,.;:]|\d)/i.test(instruction.trim())) return true;
-  return /построй|замени на|вместо (этого|него)|новый объект|переделай в|сделай вместо/i.test(instruction)
-    && instruction.trim().length > 12;
+  if (/^(?:(?:новый|новая|новое|современный|современная|двухэтажный|тр[её]хэтажный)\s+)?(?:дом|коттедж|школа|офис|больница|отель|гостиница|завод|склад|ангар|многоэтажка|здание|house|school|office|hospital|hotel|warehouse)(?=$|[\s,.;:]|\d)/i.test(text)) return true;
+  return /замени на|вместо (этого|него)|новый объект|переделай в|сделай вместо/i.test(text) && text.length > 12;
+}
+
+/**
+ * "Добавь полос", "сделай 8 полос" on a bridge: the lanes belong to the bridge
+ * builder, so the same style and span are rebuilt with the new count instead of
+ * asking an AI to move boxes. Returns the prompt to build, or null.
+ */
+export function bridgeEditPrompt(concept: ThreeDConcept, instruction: string): string | null {
+  if (!/полос|\blanes?\b/i.test(instruction)) return null;
+  const names = concept.parts.map((p) => p.name);
+  const deck = concept.parts.find((p) => p.name === "Проезжая часть");
+  if (!deck) return null;
+  const dividers = new Set(names.flatMap((n) => n.match(/^Разделительная разметка (\d+)/)?.[1] ?? [])).size;
+  const centre = names.some((n) => /^(?:Осевая разметка|Разделительный барьер)/.test(n)) ? 1 : 0;
+  const current = dividers + centre + 1;
+  const asked = lanesIn(instruction) || (/(?<![а-яё])одн[уа]\s+полос|\bone (?:more )?lane/i.test(instruction) ? 1 : 0);
+  const more = /больше|добав|шире|увелич|ещё|еще|more|add|wider/i.test(instruction);
+  const fewer = /меньше|убер|убав|уже|сократ|fewer|less|narrower|remove/i.test(instruction);
+  // "добавь две полосы" is a change of two; "сделай 8 полос" and "до 8 полос" are the total.
+  const total = !(more || fewer) || /(?<![а-яё])до\s+\S*\s*\d|\bto \d/i.test(instruction);
+  const delta = asked || 2;
+  const lanes = asked && total ? asked : more ? current + delta : fewer ? current - delta : 0;
+  if (!lanes) return null;
+  const count = Math.max(1, Math.min(12, lanes));
+  const style = names.some((n) => /^(?:Вант|Стойка пилона)/.test(n)) ? "вантовый"
+    : names.some((n) => /^(?:Несущий кабель|Стойка башни)/.test(n)) ? "подвесной"
+      : names.some((n) => /^Арка/.test(n)) ? "арочный" : "балочный";
+  const water = concept.parts.some((p) => /рек|вод|river|water/i.test(`${p.name} ${p.group ?? ""}`)) ? " через реку" : "";
+  // The prompt becomes the model's title, so it should read as Russian.
+  const noun = count === 1 ? "полосу" : count <= 4 ? "полосы" : "полос";
+  return `${style} мост на ${count} ${noun} длиной ${Math.round(deck.size[2])} м${water}`;
+}
+
+/** What to generate instead of editing, or null for an ordinary edit. */
+export function rebuildPromptFor(concept: ThreeDConcept, instruction: string): string | null {
+  return bridgeEditPrompt(concept, instruction) ?? (isModelRebuild(instruction) ? instruction : null);
 }
 
 const vector = (value: unknown, positive = false): value is [number, number, number] =>

@@ -8,8 +8,8 @@ import { buildFromPlan, planFor } from "@/backend/procedural-3d";
 import { matchParts } from "@/backend/gen/match";
 import { builderOwnsGeometry, generateAIGeometry, pickBetterGeometry, type JsonRequester } from "@/backend/gen/ai-geometry";
 import type { Blueprint } from "@/backend/gen/blueprint";
-import { interiorCutHeight } from "@/shared/geometry";
-import { sanitizeParts } from "@/backend/gen/validate";
+import { interiorCutHeight, partsBounds } from "@/shared/geometry";
+import { connectedGroups, sanitizeParts } from "@/backend/gen/validate";
 
 let failures = 0;
 let passed = 0;
@@ -212,6 +212,104 @@ const CASES: Case[] = [
   check("a 120 cm table stays table height", table.width === 1.2 && table.height > 0.6 && table.height < 0.9, `${table.height.toFixed(2)} m`);
   check("two bare sizes stay ambiguous", plan("комната 4 м и 5 м").params.size === undefined);
   check("«16 дюймов» is not read as metres", plan("ноутбук 16 дюймов").params.size === undefined);
+}
+
+/* ---------------- what the words say, the model has (sweep of 2026-10-09) ---------------- */
+{
+  const plan = (prompt: string) => planFor(prompt, "words").blueprint;
+  const built = (prompt: string, variant = "words") => buildFromPlan(planFor(prompt, variant).blueprint);
+
+  // Spelled-out counts: `\b` never matched before a Cyrillic word.
+  check("«дом с тремя окнами» has 3 windows", plan("дом с тремя окнами").windows === 3, `windows=${plan("дом с тремя окнами").windows}`);
+  check("«машина с шестью колёсами» has 6 wheels", plan("машина с шестью колёсами").wheels === 6, `wheels=${plan("машина с шестью колёсами").wheels}`);
+  check("«робот на шести ногах» has 6 legs", plan("робот на шести ногах").legs === 6, `legs=${plan("робот на шести ногах").legs}`);
+  check("«дом с двумя башнями» has 2 towers", plan("дом с двумя башнями").towers === 2, `towers=${plan("дом с двумя башнями").towers}`);
+  for (const prompt of ["дом три этажа", "дом из трёх этажей", "дом с тремя этажами"]) {
+    const floors = [1, 2, 3, 4].map((i) => planFor(prompt, `f${i}`).blueprint.floors);
+    check(`«${prompt}» is always 3 floors`, floors.every((n) => n === 3), floors.join(","));
+  }
+  check("«мост на шесть полос» has 6 lanes", plan("мост на шесть полос").lanes === 6, `lanes=${plan("мост на шесть полос").lanes}`);
+
+  // Purpose and surroundings never become the object.
+  const kindOf = (prompt: string) => plan(prompt).kind;
+  check("«дом у моста» is a house, not a bridge", kindOf("дом у моста") === "building" && !plan("дом у моста").bridge, kindOf("дом у моста"));
+  check("«машина возле дома» is a car", kindOf("машина возле дома") === "vehicle", kindOf("машина возле дома"));
+  check("«лампа над столом» is a lamp", kindOf("лампа над столом") === "lighting", kindOf("лампа над столом"));
+  check("«будка для собаки» is a kennel, not a dog", kindOf("будка для собаки") === "building", kindOf("будка для собаки"));
+  check("«гараж для машины» is a garage, not a car", kindOf("гараж для машины") === "building", kindOf("гараж для машины"));
+  check("«дом под красной крышей» keeps its roof add-on", kindOf("дом под красной крышей") === "building");
+  check("«дом с машиной» gets no wheels", plan("дом с машиной").wheels === 0, `wheels=${plan("дом с машиной").wheels}`);
+  check("«гараж на две машины» gets no wheels", plan("гараж на две машины").wheels === 0);
+  check("«дом на колёсах» still gets wheels", plan("дом на колёсах").wheels > 0);
+  // "без X" of a whole-object word removes only its add-on.
+  const noGarage = plan("одноэтажный дом без гаража");
+  check("«без гаража» keeps the house's windows and doors", !noGarage.garage && noGarage.windows > 0 && noGarage.doors > 0, `windows=${noGarage.windows} doors=${noGarage.doors}`);
+  const noTower = plan("дом без башни");
+  check("«без башни» keeps the house's floors and windows", noTower.towers === 0 && noTower.windows > 0 && noTower.floors >= 1, `floors=${noTower.floors} windows=${noTower.windows}`);
+  check("«робот без рук» has no arms", plan("робот без рук").arms === 0, `arms=${plan("робот без рук").arms}`);
+  check("«робот с четырьмя руками» has 4 arms", plan("робот с четырьмя руками").arms === 4);
+
+  // Common nouns that used to fall through to a toy-sized "product".
+  const sized: [string, Blueprint["kind"], (b: Blueprint) => boolean][] = [
+    ["церковь", "building", (b) => b.height > 8],
+    ["castle", "building", (b) => b.width > 20],
+    ["сарай", "building", (b) => b.width >= 3 && b.width <= 7],
+    ["баня", "building", (b) => b.width >= 3 && b.width <= 8],
+    ["юрта", "building", (b) => b.width >= 5],
+    ["трехэтажка", "building", (b) => b.floors === 3],
+    ["вертолёт", "aircraft", (b) => b.length >= 10],
+    ["поезд", "vehicle", (b) => b.length >= 15],
+    ["космический корабль", "aircraft", (b) => b.length >= 10 && !b.hull],
+    ["дерево", "plant", (b) => b.height >= 4],
+    ["ёлка", "plant", (b) => b.height >= 4],
+    ["роза", "plant", (b) => b.height < 1],
+    ["cup", "container", (b) => b.height < 0.3],
+  ];
+  for (const [prompt, kind, sane] of sized) {
+    const b = plan(prompt);
+    check(`«${prompt}» is a ${kind} of a believable size`, b.kind === kind && sane(b), `${b.kind} ${b.width.toFixed(2)}×${b.length.toFixed(2)}×${b.height.toFixed(2)}`);
+  }
+  check("«три дерева» are three trees", plan("три дерева").copies === 3 && plan("три дерева").kind === "plant");
+  check("«пара кресел» are two chairs", plan("пара кресел").copies === 2 && plan("пара кресел").kind === "furniture");
+  check("«деревянный стол» is still a table", kindOf("деревянный стол") === "furniture");
+  check("«стол из дерева» is still a table", kindOf("стол из дерева") === "furniture");
+
+  // One measured number is the finished size, spire and all.
+  for (const [prompt, axis, target] of [["башня высотой 50 метров", 1, 50], ["робот высотой 3 метра", 1, 3], ["маяк высотой 30 м", 1, 30]] as const) {
+    const { min, max } = partsBounds(built(prompt).parts);
+    const actual = max[axis] - min[axis];
+    check(`«${prompt}» is ${target} m`, Math.abs(actual - target) <= target * 0.01, `${actual.toFixed(2)} m`);
+  }
+
+  // Nothing floats: upper-floor windows, spires, the tank's gun, the dragon's head.
+  for (const prompt of ["храм", "трехэтажка", "дом", "танк", "башня", "маяк", "rocket", "дракон", "дерево", "пальма", "ёлка", "куст", "роза", "юрта", "вертолёт", "автобус", "поезд", "замок", "пикап", "внедорожник", "спорткар", "космический корабль", "нло", "пирамида", "пианино", "рояль", "гитара"]) {
+    const groups = connectedGroups(built(prompt, "sweep01").parts, 0.05);
+    check(`«${prompt}» is one connected object`, groups.length === 1, `${groups.length} pieces`);
+  }
+
+  // Silhouettes the generic body could not make: they have their own builders.
+  const names = (prompt: string) => built(prompt).parts.map((p) => p.name).join(" | ");
+  check("a yurt is round felt with a tündük crown", /Түндүк/.test(names("юрта")) && built("юрта").parts.some((p) => p.name === "Стена" && p.shape === "cylinder"), names("юрта").slice(0, 200));
+  check("a helicopter has a tail boom, main rotor and skids", ["Хвостовая балка", "Лопасть несущего винта", "Полоз"].every((n) => names("вертолёт").includes(n)), names("вертолёт").slice(0, 200));
+  check("a bus is one glazed saloon, not a lorry", /Салон/.test(names("автобус")) && !/Грузовой отсек/.test(names("автобус")), names("автобус").slice(0, 200));
+  check("a lorry keeps its cab and cargo box", /Грузовой отсек/.test(names("грузовик")));
+  check("a castle has walls with battlements, corner towers, a gate and a keep", ["Зубцы фасада", "Угловая башня", "Ворота", "Донжон"].every((n) => names("замок").includes(n)), names("замок").slice(0, 200));
+  check("a dragon uses the animal body with claws and bat wings", ["Туловище", "Коготь", "Перепонка 1", "Наконечник хвоста"].every((n) => names("дракон").includes(n)), names("дракон").slice(0, 200));
+  check("«зелёный дракон» is green", built("зелёный дракон").parts.some((p) => p.name === "Туловище" && /^#[0-9a-f]{6}$/i.test(p.color) && parseInt(p.color.slice(3, 5), 16) > parseInt(p.color.slice(1, 3), 16)));
+  const styles = new Set(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"].map((v) => planFor("машина", v).blueprint.carStyle));
+  check("«машина» varies its body style between generations", styles.size >= 3, [...styles].join(","));
+  check("«пикап» has an open bed", /Борт кузова/.test(names("пикап")));
+  check("a spaceship has a canopy, swept wings and glowing engines", ["Кабина", "Крыло", "Сопло"].every((n) => names("космический корабль").includes(n)) && !/Корма|Парус/.test(names("космический корабль")));
+  check("a UFO is a disc with a dome and landing legs", ["Диск", "Купол", "Опора 1"].every((n) => names("нло").includes(n)));
+  check("a pyramid is a stone pyramid with a capstone", built("пирамида").parts.some((p) => p.name === "Пирамида" && p.shape === "pyramid") && /Навершие/.test(names("пирамида")));
+  check("a piano has 52 white keys and black keys in octave groups", built("пианино").parts.some((p) => p.name === "Белые клавиши" && p.repeat?.count === 52) && /Чёрные клавиши 5/.test(names("пианино")));
+  check("«рояль» is a grand with a raised lid", /Хвост корпуса/.test(names("рояль")) && /Крышка/.test(names("рояль")));
+  check("a guitar has a sound hole, neck and six strings", built("гитара").parts.some((p) => p.name === "Струны" && p.repeat?.count === 6) && /Розетка/.test(names("гитара")));
+  check("«спорткар» stays low", planFor("спорткар", "x").blueprint.height < 1.35);
+
+  // Entrance steps climb towards the door.
+  const steps = built("дом", "sweep01").parts.find((p) => p.name === "Ступени — проступь");
+  check("entrance steps rise towards the facade", !!steps && steps.repeat!.step[1] > 0 && steps.repeat!.step[2] < 0, JSON.stringify(steps?.repeat));
 }
 
 /* ---------------- generated meshes keep their texture through validation ---------------- */

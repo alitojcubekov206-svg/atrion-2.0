@@ -27,6 +27,7 @@ import { POST as generate } from "../src/app/api/3d/generate/route";
 import { POST as designModel } from "../src/app/api/design/model/route";
 import { POST as composeDesign } from "../src/app/api/design/compose/route";
 import { POST as refine } from "../src/app/api/3d/refine/route";
+import { POST as realistic } from "../src/app/api/3d/realistic/route";
 import { GET as interiorGet, POST as interiorPost } from "../src/app/api/design/projects/[[...path]]/route";
 import { GET as interiorJob } from "../src/app/api/jobs/[id]/route";
 import {POST as designPreview} from "../src/app/api/design/preview/route";
@@ -397,6 +398,54 @@ test("short house commands generate new geometry despite historical usage", asyn
   const school = (await inRequest(() => refine(post("/api/3d/refine", {concept: office, instruction: "Школа 4 этажа ширина 60 длина 120"})))).result;
   assert.equal(school.status, 200); const schoolData = await school.json();
   assert.match(schoolData.concept.name, /школа/i); assert.notDeepEqual(schoolData.concept.parts, office.parts);
+});
+
+test("realistic jobs need a login and configuration, keep the secret server-side and refund failures", async () => {
+  const start = () => realistic(post("/api/3d/realistic", {prompt: "красный дракон"}));
+  assert.equal((await inRequest(start, "invalid")).result.status, 401);
+  assert.equal((await inRequest(start)).result.status, 503, "not configured");
+
+  env.MODAL_REALISTIC_URL = "https://atrion-test--web.modal.run";
+  env.MODAL_REALISTIC_SECRET = "fixture-secret";
+  let fail = false;
+  const network = mock.method(globalThis, "fetch", async (url: unknown, init?: RequestInit) => {
+    assert.equal(url, "https://atrion-test--web.modal.run/jobs");
+    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer fixture-secret");
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.mode, "figure", "animals get a front reference and projected texture");
+    return fail ? new Response("{}", {status: 500}) : new Response(JSON.stringify({id: "fc-abc123"}));
+  });
+  const ok = (await inRequest(start)).result;
+  assert.equal(ok.status, 200);
+  const data = await ok.json();
+  assert.equal(data.pollUrl, "https://atrion-test--web.modal.run/jobs/fc-abc123");
+  assert(!JSON.stringify(data).includes("fixture-secret"), "the secret never reaches the browser");
+  assert.equal(user.aiCallsToday, 1);
+
+  fail = true;
+  assert.equal((await inRequest(start)).result.status, 502);
+  assert.equal(user.aiCallsToday, 1, "a failed start is refunded");
+  assert.equal(network.mock.callCount(), 2);
+
+  env.MODAL_REALISTIC_URL = "https://evil.example.com";
+  assert.equal((await inRequest(start)).result.status, 503, "only *.modal.run endpoints are accepted");
+});
+
+test("asking a bridge for more lanes rebuilds the same bridge, never a car", async () => {
+  // A creation verb alone used to send the rest of the sentence off as a new model.
+  for (const edit of ["построй больше полос для машин", "build more lanes for cars", "построй террасу", "построй ещё одну башню"]) assert(!isModelRebuild(edit), edit);
+  for (const fresh of ["нарисуй дракона", "создай красную машину", "сгенерируй абстрактную скульптуру"]) assert(isModelRebuild(fresh), fresh);
+
+  const bridge = buildFromPrompt("вантовый мост на 4 полосы");
+  const {result} = await inRequest(() => refine(post("/api/3d/refine", {concept: bridge, instruction: "построй больше полос для машин"})));
+  assert.equal(result.status, 200);
+  const data = await result.json();
+  const names: string[] = data.concept.parts.map((p: ModelPart) => p.name);
+  assert(names.includes("Проезжая часть"), "still a road bridge");
+  assert(names.some(n => /пилон/i.test(n)), "same cable-stayed style");
+  assert(!names.some(n => /колес|колёс/i.test(n)), "no car parts");
+  assert.match(data.concept.name, /6 полос/);
+  assert.equal(user.threeDGenerations, 1, "a rebuild counts as a generation");
 });
 
 test("successful local generation spends both allowances and does not log prompt text", async () => {

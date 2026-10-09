@@ -12,7 +12,7 @@
  * A word that is not in the lexicon still changes the result: everything left
  * unspecified is drawn from an RNG seeded by the prompt itself.
  */
-import { Rng, hashString } from "@/shared/geometry";
+import { Rng, hashString, shade } from "@/shared/geometry";
 import { setAnimalDimensions } from "./living-anatomy";
 import {
   colorIn,
@@ -61,6 +61,7 @@ export type ObjectKind =
   | "lighting"
   | "container"
   | "weapon"
+  | "plant"
   | "product";
 
 export type Blueprint = {
@@ -200,6 +201,10 @@ export type Blueprint = {
   detail: number;
   /** Words the lexicon recognised — surfaced in the generation log. */
   matched: string[];
+  /** Objects whose silhouette the generic body cannot make get their own builder. */
+  form?: "yurt" | "helicopter" | "castle" | "spaceship" | "saucer" | "pyramid" | "piano" | "guitar";
+  /** Car body: decides cabin length, its place and the open bed of a pickup. */
+  carStyle?: "sedan" | "hatchback" | "suv" | "sports" | "pickup";
 };
 
 type Mutate = (blueprint: Blueprint, count: number | undefined) => void;
@@ -222,6 +227,11 @@ type Rule = {
    * second object cannot be grafted onto the first.
    */
   attach?: Mutate;
+  /**
+   * The add-on applies only when the phrase names the part itself: "дом на
+   * колёсах" gets wheels, "дом с машиной" and "гараж на две машины" do not.
+   */
+  attachWhen?: RegExp;
   /** Material/finish words. As add-ons they describe a part, not the whole. */
   surface?: boolean;
   /** Furniture a room gets furnished with instead of turning into that piece. */
@@ -253,14 +263,37 @@ function bridgeType(raw: string, rng: Rng): NonNullable<Blueprint["bridge"]> {
 
 const BIG_WHEELS = /(больш|огромн|крупн)\S*\s+(колёс|колес)|(big|large|huge) wheels/i;
 
+/** Length, width, height and wheel size of each car body, metres. */
+const CAR_STYLES: Record<NonNullable<Blueprint["carStyle"]>, [number, number, number, number]> = {
+  sedan: [4.6, 1.82, 1.45, 0.34],
+  hatchback: [4.0, 1.75, 1.5, 0.32],
+  suv: [4.7, 1.95, 1.8, 0.42],
+  sports: [4.4, 1.95, 1.22, 0.36],
+  pickup: [5.3, 1.95, 1.8, 0.42],
+};
+
 const RULES: Rule[] = [
   /* --- ground contact --- */
   {
-    label: "колёса", kind: "vehicle", attach: (b, n) => { b.wheels = n ?? Math.max(b.wheels, 4); if (BIG_WHEELS.test(b.params.raw)) b.wheelSize = 0.45; },
+    label: "колёса", kind: "vehicle", attach: (b, n) => { b.wheels = n ?? Math.max(b.wheels, 4); if (BIG_WHEELS.test(b.params.raw)) b.wheelSize = 0.45; }, attachWhen: /колёс|колес|wheel/i,
     re: w("колёс|колес|wheel|машин|автомоб|\\bcar\\b|тачк|седан|хэтчбек|купе|кабриолет|спорткар|суперкар|болид|джип|внедорожник|\\bsuv\\b|пикап|минивэн|фургон|катафалк"),
     counter: /колёс|колес|wheel/i,
     apply: (b, n) => {
       b.wheels = n ?? Math.max(b.wheels, 4);
+      // A body style named in the prompt, or a fresh pick per generation: every
+      // "машина" used to be the same sedan box.
+      const raw = b.params.raw;
+      b.carStyle = /спорт|sport|суперкар|гиперкар|болид|гоночн|race/i.test(raw) ? "sports"
+        : /внедорож|джип|\bsuv\b|кроссовер|минивэн|фургон|\bvan\b/i.test(raw) ? "suv"
+          : /хэтчбек|hatch|компакт|малолит/i.test(raw) ? "hatchback"
+            : /пикап|pickup/i.test(raw) ? "pickup"
+              : /седан|sedan|лимузин|купе|кабриолет/i.test(raw) ? "sedan"
+                : b.rng.pick(["sedan", "sedan", "hatchback", "suv", "suv", "sports", "pickup"] as const);
+      const [length, width, height, wheel] = CAR_STYLES[b.carStyle];
+      b.length = length; b.width = width; b.height = height; b.wheelSize = wheel;
+      // Car paint rather than the stone-and-plaster palette; a named colour still wins later.
+      b.primary = b.rng.pick(["#c8332b", "#2f5d8a", "#1f2124", "#e9e6df", "#7a8088", "#2f6b4a", "#e0b23a", "#8a2b45"]);
+      b.metalness = Math.max(b.metalness, 0.45);
       if (BIG_WHEELS.test(b.params.raw)) b.wheelSize = 0.45;
       b.massPlan = "elongated";
       b.bodyShape = "box";
@@ -289,6 +322,22 @@ const RULES: Rule[] = [
     },
   },
   {
+    label: "поезд", kind: "vehicle",
+    re: w("поезд|локомотив|паровоз|тепловоз|электровоз|электричк|трамва|вагон|\\btrain\\b|locomotive|\\btram\\b"),
+    apply: (b) => {
+      b.wheels = Math.max(b.wheels, 8);
+      b.length = Math.max(b.length, 18);
+      b.width = Math.max(b.width, 3);
+      b.height = Math.max(b.height, 4);
+      b.massPlan = "elongated";
+      b.bodySegments = Math.max(b.bodySegments, 2);
+      b.sizeClass = "vehicle";
+      b.windows = Math.max(b.windows, 8);
+      b.doors = Math.max(b.doors, 2);
+      b.lights = Math.max(b.lights, 2);
+    },
+  },
+  {
     label: "мотоцикл", kind: "vehicle",
     re: w("мотоцикл|мопед|скутер|\\bbike\\b|велосипед|байк"),
     apply: (b) => {
@@ -306,7 +355,7 @@ const RULES: Rule[] = [
     },
   },
   {
-    label: "гусеницы", kind: "vehicle", attach: (b) => { b.tracks = true; },
+    label: "гусеницы", kind: "vehicle", attach: (b) => { b.tracks = true; }, attachWhen: /гусениц|track/i,
     re: w("танк|tank|гусениц|бульдозер|экскаватор|трактор|вездеход|бронетранспорт|\\bбтр\\b|\\bбмп\\b"),
     apply: (b) => {
       b.tracks = true;
@@ -384,6 +433,10 @@ const RULES: Rule[] = [
       b.width = Math.max(b.width, 1.1);
       b.height = Math.max(b.height, 2.2);
       b.detail += 0.4;
+      // Scales, not plaster: the general palette made every dragon white or grey.
+      // A colour named in the prompt still wins later.
+      const [scales, belly] = b.rng.pick([["#3f6b3a", "#b9a86a"], ["#7a2e2a", "#d6a35a"], ["#2f4f6a", "#9fb4c4"], ["#4a3a5a", "#b49ac0"], ["#2b2b2e", "#8a4a2a"]] as const);
+      b.primary = scales; b.secondary = belly; b.accent = shade(scales, -0.2);
     },
   },
   { label: "птица", kind: "animal", re: w("птиц|попуга|орёл|орел|голуб|воробе|сов[аыу]|ворон|чайк|пингвин|куриц|петух|утк[аиу]|гус[ьи]|фламинго|\\bbird\\b|\\beagle\\b|\\bowl\\b"), apply: (b) => { b.legs = 2; b.legStyle = "organic"; b.wings = 2; b.wingKind = "feather"; b.head = 1; b.eyes = 2; b.muzzle = 0.7; b.tail = Math.max(b.tail, 4); b.bodyShape = "sphere"; b.height = Math.max(b.height, 0.34); b.width = Math.max(b.width, 0.2); b.length = Math.max(b.length, 0.28); b.sizeClass = "furniture"; } },
@@ -419,12 +472,30 @@ const RULES: Rule[] = [
   { label: "шипы", re: w("шип[ыаов]|spike|колюч|гребен|гребн"), counter: /шип|spike/i, apply: (b, n) => { b.spikes = n ?? Math.max(b.spikes, 8); } },
   { label: "волосы", re: w("волос|причёск|причес|хвостик|косичк|каре|локон|hair|ponytail|twintail"), apply: (b) => { b.hair = Math.max(b.hair, 2); } },
   { label: "длинные волосы", re: w("длинн(ые|ыми|ых) волос|long hair|до пояса"), apply: (b) => { b.hair = 3; } },
-  { label: "руки", re: w("рук[аиу]|\\barms?\\b|манипулятор|щупальц"), counter: /рук|\barms?\b|манипулятор|щупальц/i, apply: (b, n) => { b.arms = n ?? Math.max(b.arms, 2); b.hands = true; } },
+  { label: "руки", re: w(`рук(?:а|и|у|ой|ами|ах|ам)?${E}|\\barms?\\b|манипулятор|щупальц`), counter: /рук|\barms?\b|манипулятор|щупальц/i, apply: (b, n) => { b.arms = n ?? Math.max(b.arms, 2); b.hands = true; } },
+
+  /* --- plants --- */
+  // "деревянный" and "из дерева" stay materials: only the noun forms name a tree.
+  { label: "растение", kind: "plant", re: w(`дерев(?:о|а|у|ом|ья|ьев|ьям|ьями)${E}|деревц|[её]лк[аиу]?${E}|ель${E}|сосн[аыуе]${E}|дуб${E}|дубы${E}|бер[её]з[аыуке]|кл[её]н${E}|пальм|куст|ив[аыу]${E}|каштан|яблон|tree|\\bpine\\b|\\boak\\b|\\bpalm\\b|\\bbush\\b|\\bshrub\\b|цвет(?:ок|ка|ку|очек|очки)|цветы${E}|роз[аыу]${E}|тюльпан|ромашк|подсолнух|flower|\\brose\\b|кактус|cactus|растени|бонсай|bonsai`), apply: (b) => {
+    const raw = b.params.raw;
+    const flower = /цвет|роз|тюльпан|ромашк|подсолнух|flower|rose/i.test(raw);
+    const bush = /куст|bush|shrub/i.test(raw);
+    const small = flower || /кактус|cactus|бонсай|bonsai|комнатн|в горшке/i.test(raw);
+    b.massPlan = "stacked";
+    b.bodyShape = "cylinder";
+    b.sizeClass = "furniture";
+    b.legs = 0; b.wheels = 0; b.windows = 0; b.doors = 0; b.roof = "none";
+    b.height = b.params.height ?? (small ? (/подсолнух/i.test(raw) ? 1.8 : 0.45) : bush ? 1.3 : b.rng.float(5, 9));
+    const conifer = /[её]лк|ель(?![а-яё])|сосн|pine|хвойн|spruce/i.test(raw);
+    const crown = bush ? b.height * 1.3 : small ? b.height * 0.5 : conifer ? b.height * 0.55 : b.height * 0.7;
+    b.width = b.params.width ?? crown;
+    b.length = b.params.depth ?? crown;
+  } },
 
   /* --- architecture --- */
   {
     label: "здание", kind: "building",
-    re: w(`дом|house|коттедж|вилл|особняк|дач[аиу]|изб[аыу]|шале|бунгало|таунхаус|здани|строени|корпус|павильон|школ|лице[йя]|гимназ|универ|институт|колледж|садик|детсад|больниц|hospital|клиник|поликлиник|офис|office|бизнес.?центр|коворкинг|магазин|молл|\\bmall\\b|торгов(ый|ого) центр|торгово.?развлекат|трц(?![а-яё])|тц(?![а-яё])|супермаркет|гипермаркет|универмаг|универсам|шопинг|shopping|supermarket|рынок|завод|фабрик|склад|ангар|цех|музе[йя]|театр|библиотек|гостиниц|отель|hotel|вокзал|аэропорт|терминал|церкв|храм|мечет|собор|ратуш|замок|крепост|многоэтажк|панельк|хрущёвк|хрущевк|жилой дом|жк${E}`),
+    re: w(`дом|house|коттедж|вилл|особняк|дач[аиу]|изб[аыу]|шале|бунгало|таунхаус|здани|строени|корпус|павильон|школ|лице[йя]|гимназ|универ|институт|колледж|садик|детсад|больниц|hospital|клиник|поликлиник|офис|office|бизнес.?центр|коворкинг|магазин|молл|\\bmall\\b|торгов(ый|ого) центр|торгово.?развлекат|трц(?![а-яё])|тц(?![а-яё])|супермаркет|гипермаркет|универмаг|универсам|шопинг|shopping|supermarket|рынок|завод|фабрик|склад|ангар|цех|музе[йя]|театр|библиотек|гостиниц|отель|hotel|вокзал|аэропорт|терминал|церк(?:ов|в)|часовн|костёл|костел|монастыр|пагод|синагог|храм|мечет|собор|ратуш|замок|замк[аеу]|крепост|двор(?:ец|ц[аеу])|castle|palace|church|cathedral|chapel|temple|mosque|[а-яё]*этажк|панельк|хрущёвк|хрущевк|жилой дом|жк${E}|сарай|амбар|хлев|курятник|конюшн|бытовк|хижин|избушк|будк[аиу]|конур|бан[яи]${E}|сауна|гараж|беседк|юрт[аыу]?${E}|теплиц|\\bshed\\b|\\bbarn\\b|\\bhut\\b|cabin|kennel|doghouse|sauna|\\bgarage\\b|gazebo|\\byurt\\b|greenhouse`),
     apply: (b) => {
       b.massPlan = "stacked";
       b.bodyShape = "box";
@@ -470,8 +541,8 @@ const RULES: Rule[] = [
 
   /* --- furniture --- */
   { label: "стол", kind: "furniture", furnishing: "стол", re: w(`стол(а|е|у|ы|ом|ами|ов|ах)?${E}|столик|обеденн|письменн(ый|ого) стол|\\btable\\b|\\bdesk\\b|верстак|парт[аы]${E}`), apply: (b) => { b.tabletop = true; b.furnitureLegs = Math.max(b.furnitureLegs, 4); b.legStyle = "furniture"; b.massPlan = "platform"; b.sizeClass = "furniture"; const seats = seatCount(b.params.raw); const coffee = /журнальн|кофейн|coffee table/i.test(b.params.raw); b.height = b.params.height ?? (coffee ? 0.45 : 0.75); b.width = b.params.width ?? (seats ? Math.max(0.8, Math.ceil(seats / 2) * 0.6) : coffee ? 1.0 : 1.5); b.length = b.params.depth ?? (coffee ? 0.55 : seats && seats >= 6 ? 0.95 : 0.85); b.legs = 0; b.wheels = 0; b.detail += 0.2; } },
-  { label: "стул", kind: "furniture", furnishing: "стул", re: w(`стул(а|е|у|ом|ья|ьев|ьям|ьями)?${E}|стуль|\\bchair\\b|табурет|кресл|сиден|скамейк|скамь|лавк|банкетк|пуф`), apply: (b) => { b.seat = true; b.backrest = true; b.furnitureLegs = Math.max(b.furnitureLegs, 4); b.legStyle = "furniture"; b.massPlan = "platform"; b.sizeClass = "furniture"; b.height = b.params.height ?? 0.9; b.width = b.params.width ?? 0.48; b.length = b.params.depth ?? 0.52; b.cushions = Math.max(b.cushions, 1); b.legs = 0; } },
-  { label: "кресло", kind: "furniture", furnishing: "кресло", re: w("кресл|\\barmchair\\b|шезлонг"), apply: (b) => { b.armrests = true; b.cushions = Math.max(b.cushions, 2); b.width = b.params.width ?? 0.78; b.length = b.params.depth ?? 0.8; } },
+  { label: "стул", kind: "furniture", furnishing: "стул", re: w(`стул(а|е|у|ом|ья|ьев|ьям|ьями)?${E}|стуль|\\bchair\\b|табурет|кресл|сиден|скамейк|скамь|лавк|банкетк|пуф|кресел`), apply: (b) => { b.seat = true; b.backrest = true; b.furnitureLegs = Math.max(b.furnitureLegs, 4); b.legStyle = "furniture"; b.massPlan = "platform"; b.sizeClass = "furniture"; b.height = b.params.height ?? 0.9; b.width = b.params.width ?? 0.48; b.length = b.params.depth ?? 0.52; b.cushions = Math.max(b.cushions, 1); b.legs = 0; } },
+  { label: "кресло", kind: "furniture", furnishing: "кресло", re: w("кресл|кресел|\\barmchair\\b|шезлонг"), apply: (b) => { b.armrests = true; b.cushions = Math.max(b.cushions, 2); b.width = b.params.width ?? 0.78; b.length = b.params.depth ?? 0.8; } },
   { label: "диван", kind: "furniture", furnishing: "диван", re: w("диван|sofa|couch|тахт|канап"), apply: (b) => { b.seat = true; b.backrest = true; b.armrests = true; b.cushions = Math.max(b.cushions, 3); b.pillows = Math.max(b.pillows, 2); b.furnitureLegs = Math.max(b.furnitureLegs, 4); b.legStyle = "furniture"; b.massPlan = "platform"; b.sizeClass = "furniture"; const seats = seatCount(b.params.raw) ?? 3; b.cushions = Math.max(1, Math.min(5, seats)); b.height = b.params.height ?? 0.85; b.width = b.params.width ?? seats * 0.62 + 0.36; b.length = b.params.depth ?? 0.9; b.legs = 0; } },
   { label: "кровать", kind: "furniture", furnishing: "кровать", re: w(`кроват|\\bbed\\b|матрас|топчан|нар[ыа]${E}|двуспальн|односпальн`), apply: (b) => { b.mattress = true; b.pillows = Math.max(b.pillows, 2); b.backrest = true; b.furnitureLegs = Math.max(b.furnitureLegs, 4); b.legStyle = "furniture"; b.massPlan = "platform"; b.sizeClass = "furniture"; b.height = b.params.height ?? 0.72; b.width = b.params.width ?? 1.6; b.length = b.params.depth ?? 2.05; b.legs = 0; } },
   { label: "шкаф", kind: "furniture", furnishing: "шкаф", re: w("шкаф|wardrobe|стеллаж|комод|тумб|буфет|сервант|пенал|витрин"), apply: (b) => { b.shelves = Math.max(b.shelves, 4); b.doors = Math.max(b.doors, 2); b.handles = Math.max(b.handles, 2); b.massPlan = "stacked"; b.sizeClass = "furniture"; b.height = b.params.height ?? 2.05; b.width = b.params.width ?? 1.2; b.length = b.params.depth ?? 0.58; b.legs = 0; b.hollow = false; } },
@@ -491,14 +562,19 @@ const RULES: Rule[] = [
   { label: "камера", re: w("камер[аыу]|camera|объектив|фотоаппарат|вебк"), counter: /камер|camera|объектив/i, apply: (b, n) => { b.lenses = n ?? Math.max(b.lenses, 1); } },
   { label: "антенна", re: w("антенн|antenna|спутников(ая|ую) тарелк|вышк[аиу]|радар"), counter: /антенн|antenna/i, apply: (b, n) => { b.antennas = n ?? Math.max(b.antennas, 1); } },
   { label: "динамик", kind: "device", attach: (b, n) => { b.speakers = n ?? Math.max(b.speakers, 1); }, re: w("колонк|динамик|speaker|сабвуфер|наушник|аудиосистем"), counter: /колонк|динамик|speaker/i, apply: (b, n) => { b.speakers = n ?? Math.max(b.speakers, 1); b.vents = Math.max(b.vents, 1); b.sizeClass = "handheld"; } },
-  { label: "дрон", kind: "aircraft", attach: (b, n) => { b.propellers = n ?? Math.max(b.propellers, 4); }, re: w("дрон|drone|квадрокоптер|коптер|вертолёт|вертолет|helicopter"), apply: (b) => { b.propellers = Math.max(b.propellers, 4); b.skids = true; b.lenses = Math.max(b.lenses, 1); b.lights = Math.max(b.lights, 2); b.massPlan = "radial"; b.sizeClass = "handheld"; b.height = Math.max(b.height, 0.2); b.length = Math.max(b.length, 0.5); b.width = Math.max(b.width, 0.5); } },
+  { label: "дрон", kind: "aircraft", attach: (b, n) => { b.propellers = n ?? Math.max(b.propellers, 4); }, re: w("дрон|drone|квадрокоптер|коптер"), apply: (b) => { b.propellers = Math.max(b.propellers, 4); b.skids = true; b.lenses = Math.max(b.lenses, 1); b.lights = Math.max(b.lights, 2); b.massPlan = "radial"; b.sizeClass = "handheld"; b.height = Math.max(b.height, 0.2); b.length = Math.max(b.length, 0.5); b.width = Math.max(b.width, 0.5); } },
+  { label: "вертолёт", kind: "aircraft", re: w("вертол[её]т|helicopter|геликоптер"), apply: (b) => { b.propellers = Math.max(b.propellers, 2); b.skids = true; b.massPlan = "elongated"; b.bodyShape = "capsule"; b.sizeClass = "vehicle"; b.length = Math.max(b.length, 12); b.width = Math.max(b.width, 2.6); b.height = Math.max(b.height, 3.6); b.windows = 0; b.lights = Math.max(b.lights, 2); b.wheels = 0; b.legs = 0; b.form = "helicopter"; } },
+  { label: "космический корабль", kind: "aircraft", re: w("космическ\\S* (?:корабл|челнок)|звездол[её]т|spaceship|starship|spacecraft|\\bufo\\b|нло(?![а-яё])|летающ\\S* тарелк"), apply: (b) => { const disc = /нло|ufo|тарелк/i.test(b.params.raw); b.hull = false; b.mast = false; b.railings = false; b.wheels = 0; b.legs = 0; b.lights = Math.max(b.lights, 3); b.emissiveAccent = true; b.metalness = 0.7; b.sizeClass = "vehicle"; b.form = disc ? "saucer" : "spaceship"; b.length = disc ? 8 : 18; b.width = disc ? 8 : 12; b.height = disc ? 2.8 : 4.2; b.detail += 0.3; } },
+  { label: "пирамида", kind: "landmark", re: w("пирамид|pyramid|зиккурат"), apply: (b) => { b.form = "pyramid"; b.sizeClass = "landmark"; b.width = 60; b.length = 60; b.height = 38; b.windows = 0; b.roof = "none"; } },
+  { label: "пианино", kind: "furniture", re: w("пианино|рояль|фортепиано|\\bpiano\\b"), apply: (b) => { b.form = "piano"; b.sizeClass = "furniture"; const grand = /рояль|grand/i.test(b.params.raw); b.width = grand ? 1.55 : 1.5; b.length = grand ? 2.1 : 0.62; b.height = grand ? 1.0 : 1.25; b.legs = 0; } },
+  { label: "гитара", kind: "device", re: w("гитар|guitar|укулеле|ukulele|балалайк|домбр|комуз"), apply: (b) => { b.form = "guitar"; b.sizeClass = "furniture"; b.height = /укулеле|ukulele/i.test(b.params.raw) ? 0.55 : 1.02; b.width = b.height * 0.37; b.length = b.height * 0.11; b.legs = 0; } },
   { label: "самолёт", kind: "aircraft", re: w("самолёт|самолет|plane|авиалайн|истребител|бомбардир|планёр|планер"), apply: (b) => { b.wings = Math.max(b.wings, 2); b.wingKind = "fixed"; b.massPlan = "elongated"; b.bodyShape = "capsule"; b.sizeClass = "vehicle"; b.length = Math.max(b.length, 12); b.height = Math.max(b.height, 3.4); b.wheels = Math.max(b.wheels, 3); b.wheelSize = 0.12; b.tail = 0; b.fins = Math.max(b.fins, 1); } },
   { label: "ракета", kind: "aircraft", re: w("ракет|rocket|шаттл|носител|баллистич"), apply: (b) => { b.massPlan = "stacked"; b.bodyShape = "cylinder"; b.spire = true; b.fins = Math.max(b.fins, 4); b.sizeClass = "landmark"; b.height = Math.max(b.height, 22); b.length = Math.max(b.length, 3); b.width = Math.max(b.width, 3); b.legs = 0; b.wheels = 0; } },
   { label: "винт", re: w(`винт${E}|пропеллер|propeller|лопаст|ротор|вентилятор|мельниц`), counter: /винт|пропеллер|propeller|лопаст/i, apply: (b, n) => { b.propellers = n ?? Math.max(b.propellers, 1); } },
   { label: "ручка", re: w("ручк[аиу]|handle|рукоят|грип|штурвал|руль"), counter: /ручк|handle|рукоят/i, apply: (b, n) => { b.handles = n ?? Math.max(b.handles, 1); } },
   { label: "носик", kind: "container", attach: (b) => { b.spout = true; }, re: w("носик|spout|чайник|kettle|teapot|заварник|лейк|кофейник|кувшин"), apply: (b) => { b.spout = true; b.lid = true; b.handles = Math.max(b.handles, 1); b.bodyShape = "cylinder"; b.massPlan = "radial"; b.sizeClass = "handheld"; b.height = b.params.height ?? 0.22; } },
   { label: "крышка", re: w("крышк|\\blid\\b|колпач"), apply: (b) => { b.lid = true; } },
-  { label: "сосуд", kind: "container", re: w("кружк|чашк|стакан|бутылк|ваз[аыу]|банк[аиу]|горшок|бокал|термос|фляг"), apply: (b) => { b.bodyShape = "cylinder"; b.hollow = true; b.massPlan = "radial"; b.sizeClass = "handheld"; b.height = b.params.height ?? 0.16; b.width = 0.09; b.length = 0.09; b.handles = Math.max(b.handles, 1); b.legs = 0; b.wheels = 0; } },
+  { label: "сосуд", kind: "container", re: w("кружк|чашк|стакан|бутылк|ваз[аыу]|банк[аиу]|горшок|бокал|термос|фляг|\\bcup\\b|\\bmug\\b|bottle|\\bvase\\b|\\bjar\\b"), apply: (b) => { b.bodyShape = "cylinder"; b.hollow = true; b.massPlan = "radial"; b.sizeClass = "handheld"; b.height = b.params.height ?? 0.16; b.width = 0.09; b.length = 0.09; b.handles = Math.max(b.handles, 1); b.legs = 0; b.wheels = 0; } },
   { label: "часы", kind: "device", re: w(`час[ыов]${E}|watch|clock|будильник|хронограф`), apply: (b) => { b.bodyShape = "cylinder"; b.massPlan = "radial"; b.sizeClass = "handheld"; b.screens = Math.max(b.screens, 1); b.buttons = Math.max(b.buttons, 2); b.height = b.params.height ?? 0.11; b.width = b.params.width ?? 0.042; b.length = b.params.depth ?? 0.014; } },
   { label: "вентиляция", re: w("вентиляц|решётк|решетк|grille|радиатор|гриль|жалюзи|перфорац"), counter: /решётк|решетк|grille/i, apply: (b, n) => { b.vents = n ?? Math.max(b.vents, 2); } },
   { label: "провода", re: w("провод|кабел|шнур|cable|трос|ванты"), counter: /провод|кабел|cable|трос|ванты/i, apply: (b, n) => { b.cables = n ?? Math.max(b.cables, 2); } },
@@ -726,17 +802,19 @@ function baseBlueprint(prompt: string, variant = "", overrides: Partial<PromptPa
 /** "8 ног", "ног 8", "восемь ног" → 8 for the unit the rule cares about. */
 function countFor(text: string, counter: RegExp): number | undefined {
   const unit = counter.source;
+  // `\b` is ASCII-only in JavaScript, so it never matched before a Cyrillic
+  // word: "с тремя окнами" silently kept the default count.
   const WORDS: [RegExp, number][] = [
-    [/\bодн(а|о|ой|им)?\b|\bодин\b/, 1],
-    [/\bдв(а|е|ух|умя)\b/, 2],
-    [/\bтр(и|ёх|ех|емя)\b/, 3],
-    [/\bчетыр(е|ёх|ех)\b/, 4],
-    [/\bпят(ь|и|ью)\b/, 5],
-    [/\bшест(ь|и|ью)\b/, 6],
-    [/\bсем(ь|и|ью)\b/, 7],
-    [/\bвосьм(и|ью)\b|\bвосемь\b/, 8],
-    [/\bдевят(ь|и|ью)\b/, 9],
-    [/\bдесят(ь|и|ью)\b/, 10],
+    [/одн(?:а|о|ой|им|ого|ому)|один|one/, 1],
+    [/дв(?:а|е|ух|умя)|two/, 2],
+    [/тр(?:и|ёх|ех|емя)|three/, 3],
+    [/четыр(?:е|ёх|ех|ьмя)|four/, 4],
+    [/пят(?:ь|и|ью)|five/, 5],
+    [/шест(?:ь|и|ью)|six/, 6],
+    [/сем(?:ь|и|ью)|seven/, 7],
+    [/восьм(?:и|ью)|восемь|eight/, 8],
+    [/девят(?:ь|и|ью)|nine/, 9],
+    [/десят(?:ь|и|ью)|ten/, 10],
   ];
 
   const numeric =
@@ -748,7 +826,7 @@ function countFor(text: string, counter: RegExp): number | undefined {
   }
 
   for (const [pattern, value] of WORDS) {
-    const combined = new RegExp(`${pattern.source}\\s*[-\\s]?(?:${unit})`, "i");
+    const combined = new RegExp(`${S}(?:${pattern.source})\\s*[-\\s]?(?:${unit})`, "i");
     if (combined.test(text)) return value;
   }
   return undefined;
@@ -782,8 +860,11 @@ export function seatCount(raw: string): number | undefined {
   return undefined;
 }
 
-type SegmentMode = "attach" | "negate" | "material";
+type SegmentMode = "attach" | "negate" | "material" | "context";
 type Segment = { text: string; mode: SegmentMode };
+
+/** Purpose and surroundings: "будка для собаки" is not a dog, "дом у моста" is not a bridge. */
+const CONTEXT_WORDS = /^(для|for|у|возле|около|рядом|напротив|позади|под|над|near|beside|behind|under|above|next to)$/i;
 
 /**
  * Split off everything that hangs on a preposition. "Робот-паук на 8 ногах с
@@ -792,7 +873,7 @@ type Segment = { text: string; mode: SegmentMode };
  */
 function splitPrompt(text: string): { subject: string; segments: Segment[] } {
   const separator =
-    /(?<!\d\s?)\s(со|с|на|во|в|для|из|без|without|with|on|in|for|made of)\s|[.;](?!\d)/gi;
+    /(?<!\d\s?)\s(со|с|на|во|в|для|из|без|у|возле|около|рядом|напротив|позади|под|над|without|with|on|in|for|made of|near|beside|behind|under|above|next to)\s|[.;](?!\d)/gi;
   const marks: { index: number; end: number; word: string }[] = [];
   for (const match of text.matchAll(separator)) {
     marks.push({ index: match.index ?? 0, end: (match.index ?? 0) + match[0].length, word: match[1]??"with" });
@@ -801,9 +882,12 @@ function splitPrompt(text: string): { subject: string; segments: Segment[] } {
 
   const segments: Segment[] = marks.map((mark, i) => {
     const word = mark.word.toLowerCase();
+    const segment = text.slice(mark.end, marks[i + 1]?.index ?? text.length);
+    // "дом под красной крышей" still describes the house's own roof.
+    const context = CONTEXT_WORDS.test(word) && !/крыш|кровл|roof/i.test(segment);
     return {
-      text: text.slice(mark.end, marks[i + 1]?.index ?? text.length),
-      mode: word === "без" || word === "without" ? "negate" : word === "из" || word === "made of" ? "material" : "attach",
+      text: segment,
+      mode: context ? "context" : word === "без" || word === "without" ? "negate" : word === "из" || word === "made of" ? "material" : "attach",
     };
   });
   return { subject: text.slice(0, marks[0].index), segments };
@@ -892,6 +976,16 @@ type BuildingProfile = {
 };
 
 const BUILDING_PROFILES: BuildingProfile[] = [
+  // Small outbuildings: without these a shed or a sauna came out as a 1 m toy.
+  { re: /будк|конур|kennel|doghouse/i, floors: [1, 1], plans: [[0.9, 1.2], [1, 1.3], [0.8, 1.1]], storey: 0.85, roof: "gable", windows: "punched", extra: (b) => { b.windows = 0; b.doors = 1; b.stairs = 0; b.chimneys = 0; b.garage = false; } },
+  { re: /гараж|garage/i, floors: [1, 1], plans: [[6, 4], [7, 4.5], [6.5, 6.5]], storey: 2.8, roof: "flat", windows: "punched", extra: (b) => { b.windows = 0; b.doors = 1; b.stairs = 0; b.chimneys = 0; b.garage = false; } },
+  { re: /сарай|амбар|хлев|курятник|конюшн|бытовк|хижин|избушк|shed|barn|hut|cabin/i, floors: [1, 1], plans: [[4, 3], [5, 3.5], [3.5, 2.5], [6, 4]], storey: 2.6, roof: "gable", windows: "punched", extra: (b) => { b.windows = 2; b.stairs = 0; b.garage = false; } },
+  { re: /бан[яи]|сауна|sauna/i, floors: [1, 1], plans: [[5, 4], [6, 4], [4, 3.5]], storey: 2.6, roof: "gable", windows: "punched", extra: (b) => { b.windows = 2; b.chimneys = 1; b.terrace = true; b.garage = false; } },
+  { re: /беседк|gazebo/i, floors: [1, 1], plans: [[4, 4], [3.5, 3.5], [5, 4]], storey: 2.6, roof: "hip", windows: "punched", extra: (b) => { b.windows = 0; b.columns = Math.max(b.columns, 4); b.stairs = 2; b.garage = false; } },
+  { re: /юрт|yurt/i, floors: [1, 1], plans: [[7, 7], [6, 6], [8, 8]], storey: 2.4, roof: "dome", windows: "punched", extra: (b) => { b.windows = 0; b.doors = 1; b.stairs = 0; b.garage = false; b.form = "yurt"; } },
+  { re: /теплиц|greenhouse/i, floors: [1, 1], plans: [[6, 3], [8, 3], [10, 4]], storey: 2.4, roof: "gable", windows: "curtain", glassy: true, extra: (b) => { b.stairs = 0; b.garage = false; } },
+  { re: /замок|замк|крепост|цитадел|castle|fortress/i, floors: [1, 1], plans: [[40, 32], [34, 28], [46, 36]], storey: 9, roof: "flat", windows: "punched", extra: (b) => { b.form = "castle"; b.garage = false; } },
+  { re: /двор(?:ец|ц)|palace/i, floors: [2, 3], plans: [[64, 28], [56, 24], [72, 30]], storey: 5, roof: "hip", windows: "punched", extra: (b) => { b.columns = Math.max(b.columns, 10); b.dome = true; b.garage = false; } },
   // Shops first: "универмаг" must not read as "универ(ситет)".
   {
     re: /торгов|трц|тц|молл|mall|универмаг|шопинг|shopping/i,
@@ -923,9 +1017,9 @@ const BUILDING_PROFILES: BuildingProfile[] = [
   { re: /гостиниц|отель|hotel/i, floors: [8, 16], plans: [[42, 16], [36, 18], [50, 15]], storey: 3.2, roof: "flat", windows: "punched", extra: (b) => { b.balconies = Math.max(b.balconies, 2); } },
   { re: /вокзал|аэропорт|терминал/i, floors: [1, 2], plans: [[140, 45], [110, 40], [160, 50]], storey: 8, roof: "flat", windows: "curtain", glassy: true },
   { re: /музе|театр|библиотек|ратуш/i, floors: [2, 3], plans: [[46, 30], [40, 28], [52, 32]], storey: 5, roof: "flat", windows: "punched", extra: (b) => { b.columns = Math.max(b.columns, 8); } },
-  { re: /многоэтажк|панельк|хрущ|жилой дом|жк/i, floors: [5, 16], plans: [[60, 14], [48, 16], [72, 13]], storey: 3, roof: "flat", windows: "punched", extra: (b) => { b.balconies = Math.max(b.balconies, 2); } },
-  { re: /церкв|храм|собор/i, floors: [1, 2], plans: [[22, 34], [18, 30]], storey: 7, roof: "gable", windows: "punched", extra: (b) => { b.dome = true; b.spire = true; } },
-  { re: /мечет/i, floors: [1, 1], plans: [[30, 30], [26, 26]], storey: 9, roof: "flat", windows: "punched", extra: (b) => { b.dome = true; b.towers = Math.max(b.towers, 1); } },
+  { re: /этажк|панельк|хрущ|жилой дом|жк/i, floors: [5, 16], plans: [[60, 14], [48, 16], [72, 13]], storey: 3, roof: "flat", windows: "punched", extra: (b) => { b.balconies = Math.max(b.balconies, 2); } },
+  { re: /церк|храм|собор|часовн|кост[её]л|монастыр|пагод|синагог|church|cathedral|chapel|temple/i, floors: [1, 2], plans: [[22, 34], [18, 30]], storey: 7, roof: "gable", windows: "punched", extra: (b) => { b.dome = true; b.spire = true; } },
+  { re: /мечет|mosque/i, floors: [1, 1], plans: [[30, 30], [26, 26]], storey: 9, roof: "flat", windows: "punched", extra: (b) => { b.dome = true; b.towers = Math.max(b.towers, 1); } },
 ];
 
 const RESIDENTIAL = /дом|house|коттедж|вилл|особняк|дач|изб|шале|бунгало|таунхаус/i;
@@ -974,14 +1068,16 @@ function varyHouse(b: Blueprint) {
 
 const LANE_WORDS: Record<string, number> = {
   двух: 2, трёх: 3, трех: 3, четырёх: 4, четырех: 4, пяти: 5, шести: 6, восьми: 8, десяти: 10, двенадцати: 12,
+  два: 2, две: 2, три: 3, четыре: 4, пять: 5, шесть: 6, восемь: 8, десять: 10, двенадцать: 12,
   two: 2, three: 3, four: 4, six: 6, eight: 8, ten: 10, twelve: 12,
 };
 
 /** "8 полос", "8-полосный", "восьмиполосный", "8 lanes", "eight lanes" → 8. */
-function lanesIn(raw: string): number {
+export function lanesIn(raw: string): number {
   const text = raw.toLowerCase();
   const digits = text.match(/(\d{1,2})\s*-?\s*(?:полос|lanes?\b)/);
   const word = text.match(/(двух|трёх|трех|четырёх|четырех|пяти|шести|восьми|десяти|двенадцати)\s*-?\s*полосн/) ??
+    text.match(/(?<![а-яё])(два|две|три|четыре|пять|шесть|восемь|десять|двенадцать)\s+полос/) ??
     text.match(/\b(two|three|four|six|eight|ten|twelve)[\s-]*lanes?\b/);
   const n = digits ? Number(digits[1]) : word ? LANE_WORDS[word[1]] : 0;
   return n >= 1 ? Math.min(12, Math.round(n)) : 0;
@@ -1081,10 +1177,14 @@ function mergeAddon(b: Blueprint, rule: Rule, count: number | undefined) {
 
 /** "без окон", "without wheels": switch off every feature the rule would add. */
 function negateRule(b: Blueprint, rule: Rule, negated: Set<string>) {
+  // A whole-object word removes only what it adds as an add-on: "без башни"
+  // drops the tower, "без гаража" the garage — not the house's windows and doors.
+  const mutate = rule.kind ? rule.attach : rule.apply;
+  if (!mutate) return;
   const zeroed = { ...b, matched: [], furnishings: [] } as unknown as Record<string, unknown>;
   for (const key of COUNT_KEYS) zeroed[key] = 0;
   for (const [key, value] of Object.entries(zeroed)) if (value === true) zeroed[key] = false;
-  rule.apply(zeroed as unknown as Blueprint, undefined);
+  mutate(zeroed as unknown as Blueprint, undefined);
 
   for (const key of COUNT_KEYS) {
     if (zeroed[key]) {
@@ -1124,6 +1224,7 @@ function applySegment(b: Blueprint, segment: Segment, fullText: string, negated:
     } else if ((b.kind === "room" || b.kind === "building") && rule.furnishing) {
       addFurnishing(b, rule, segment.text);
     } else if (rule.attach) {
+      if (rule.attachWhen && !rule.attachWhen.test(segment.text)) continue;
       rule.attach(b, count);
       b.matched.push(`+${rule.label}`);
     } else if (!rule.kind) {
@@ -1156,6 +1257,7 @@ export function planFromPrompt(prompt: string, variant = "", overrides: Partial<
 
   applySubject(blueprint, subject, text);
   for (const segment of segments) {
+    if (segment.mode === "context") continue;
     // Nothing in the main phrase said what this is — let the rest decide.
     if (blueprint.kind === "product" && segment.mode === "attach") applySubject(blueprint, segment.text, text);
     else applySegment(blueprint, segment, text, negated);

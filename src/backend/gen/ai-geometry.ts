@@ -158,7 +158,12 @@ ${EXAMPLE}`;
     .filter(Boolean)
     .join("; ");
 
+  // "3 этажный дом" is one building; the model must not read the number as a count of houses.
+  const storeys = plan.kind === "building" && plan.copies <= 1 && plan.floors > 1
+    ? `This is ONE building with ${plan.floors} storeys stacked vertically, not ${plan.floors} separate buildings.`
+    : "";
   const user = `Design this object: ${prompt}
+${storeys}
 
 ${measurements ? `Parsed from the request — honour these exactly: ${measurements}.` : "No explicit measurements were given; choose realistic ones."}
 ${answers.length ? `Clarifications:\n${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n")}` : ""}

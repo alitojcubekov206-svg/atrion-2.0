@@ -24,6 +24,7 @@ Atrion — браузерная студия, которая превращае�
 - **Правки словами.** «Сделай окна шире», «увеличь крышу на 20%» — через чат или голосовые команды.
 - **Дизайн интерьера.** Комнаты, мебель из библиотеки FORMA, отделка; список закупки с выгрузкой в CSV.
 - **Экспорт.** GLB (цвета и материалы, tangents для Unity), STL, OBJ.
+- **Реалистично.** Одна кнопка — нейросеть TRELLIS строит настоящую 3D-модель с текстурой (~1–2 мин).
 - **Устойчивый AI.** Основной провайдер, резервный провайдер и локальный процедурный генератор — модель появляется, даже если внешний AI недоступен.
 
 ## Как это работает
@@ -85,6 +86,7 @@ Atrion is a browser studio that turns plain text ("a two-storey house with a tow
 - **Edit with words:** "make the windows wider", "scale the roof up 20%" — by chat or voice.
 - **Interior design:** rooms, furniture from the FORMA library, finishes, and a procurement list with CSV export.
 - **Export:** GLB (colors, materials, Unity-ready tangents), STL, OBJ.
+- **Realistic mode:** one click builds a real textured 3D mesh with TRELLIS (~1–2 min).
 - **Resilient AI:** primary provider, fallback provider and a local procedural generator, so a model appears even when external AI is down.
 
 **How it works:** text → request parsing → blueprint (type, dimensions, parts) → geometry → validation (bounds, connected parts with nothing floating, every named element present) → repair → 3D scene. The server scores each model for quality, integrity and match to the request, shown in the "Verdict" panel.

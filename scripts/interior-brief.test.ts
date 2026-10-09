@@ -74,3 +74,21 @@ test("questions adapt to rooms and other objects without repeating explicit deta
   assert.equal(question(resolveDesignBrief("абракадабра")), "subject");
   assert.equal(question(resolveDesignBrief("абракадабра", [answer("subject", "Дом")])), "rooms");
 });
+
+test("choices left to Atrion vary between generations; named ones never do", () => {
+  const auto = ready(resolveDesignBrief("трёхэтажный дом", [answer("rooms", "Подбери сам"), answer("size", "Подбери сам")]));
+  const looks = new Set(["a1", "b2", "c3", "d4", "e5", "f6", "g7", "h8"].map(v => {
+    const model = buildBriefModel(auto, v), doc = model.document!;
+    assert.equal(doc.floors.length, 3);
+    assert((model.notes ?? []).some(note => note === `Выбран габарит ${doc.width} × ${doc.depth} м`), "the note names the size that was built");
+    return `${doc.width}×${doc.depth}|${JSON.stringify(doc.roof)}|${doc.wallColor}`;
+  }));
+  assert(looks.size >= 3, `only ${looks.size} distinct houses`);
+
+  const named = ready(resolveDesignBrief("белый дом 12 на 9 метров, 2 этажа, плоская крыша, 4 комнаты"));
+  for (const v of ["a1", "b2", "c3", "d4"]) {
+    const doc = buildBriefModel(named, v).document!;
+    assert.equal(doc.width, 12); assert.equal(doc.depth, 9); assert.equal(doc.floors.length, 2);
+    assert.match(JSON.stringify(doc.roof), /flat/); assert.equal(doc.wallColor, named.house!.wallColor);
+  }
+});

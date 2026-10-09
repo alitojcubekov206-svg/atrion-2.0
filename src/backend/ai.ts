@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { isDeepStrictEqual } from "node:util";
-import { EditNotApplied, editableParts, isModelRebuild, localRefine, restoreEditedMeshes } from "./refinement";
+import { EditNotApplied, editableParts, localRefine, rebuildPromptFor, restoreEditedMeshes } from "./refinement";
 import { primaryTextProvider, fallbackTextProvider, requestTextJSON, type TextRequestOptions } from "./text-ai";
 import type {
   Blueprint,
@@ -669,6 +669,35 @@ export async function generate3DConcept(
   return (await generate3DModel(prompt, answers)).concept;
 }
 
+/**
+ * The subject of a 3D request as a short English description for an image
+ * model — FLUX reads English far better than Russian. Falls back to the
+ * request itself when no text provider is configured or it fails.
+ */
+export async function describeForImage(
+  prompt: string,
+  answers: { question: string; answer: string }[] = []
+): Promise<string> {
+  if (!hasKey()) return prompt;
+  try {
+    const data = await chatJSON<{ subject?: unknown }>(
+      `Rewrite a 3D model request as one English image description of the object itself.
+Keep every visual detail the user gave (colours, clothing, hair, materials, style, count).
+Do not add a background or scene. At most 40 words.
+Return JSON: {"subject":"..."}`,
+      `Request: ${prompt}
+${answers.map((item) => `${item.question}: ${item.answer}`).join("\n")}`,
+      { timeoutMs: 12_000, maxTokens: 200 }
+    );
+    return typeof data.subject === "string" && data.subject.trim()
+      ? data.subject.trim().slice(0, 400)
+      : prompt;
+  } catch (error) {
+    console.warn("Image prompt rewrite unavailable", errorSummary(error));
+    return prompt;
+  }
+}
+
 function withAnswers(
   concept: ThreeDConcept,
   answers: { question: string; answer: string }[]
@@ -775,8 +804,9 @@ export async function refine3DConcept(
   instruction: string,
   selectedPartId?: string | null
 ): Promise<ThreeDConcept> {
-  if (isModelRebuild(instruction)) {
-    const rebuilt = await generate3DModel(instruction, [], { variant: crypto.randomUUID().slice(0, 8) });
+  const rebuild = rebuildPromptFor(concept, instruction);
+  if (rebuild) {
+    const rebuilt = await generate3DModel(rebuild, [], { variant: crypto.randomUUID().slice(0, 8) });
     return { ...rebuilt.concept, description: `${rebuilt.concept.description} · ${instruction}` };
   }
 
