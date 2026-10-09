@@ -12,9 +12,12 @@ import type * as THREE from "three";
 export default function SideFraming({
   desktopShift,
   phoneLift = 0,
+  fitAspect = 0.75,
 }: {
   desktopShift: number;
   phoneLift?: number;
+  /** Below this width/height ratio the view zooms out; a lower value keeps a narrow model larger on phones. */
+  fitAspect?: number;
 }) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const width = useThree((s) => s.size.width);
@@ -23,7 +26,7 @@ export default function SideFraming({
   useEffect(() => {
     const phone = width < 768;
     const aspect = width / Math.max(1, height);
-    camera.zoom = Math.min(1, aspect / 0.75);
+    camera.zoom = Math.min(1, aspect / fitAspect);
     if (phone) camera.setViewOffset(1, 1, 0, phoneLift, 1, 1);
     else camera.setViewOffset(1, 1, -desktopShift, 0, 1, 1);
     camera.updateProjectionMatrix();
@@ -32,7 +35,7 @@ export default function SideFraming({
       camera.zoom = 1;
       camera.updateProjectionMatrix();
     };
-  }, [camera, width, height, desktopShift, phoneLift]);
+  }, [camera, width, height, desktopShift, phoneLift, fitAspect]);
 
   return null;
 }
