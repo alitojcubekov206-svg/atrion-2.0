@@ -40,17 +40,6 @@ const PIPELINE = [
   "Готово",
 ] as const;
 
-const EXAMPLES = [
-  "Создай офис",
-  "Создай человека, который идёт",
-  "Аниме девушка 3D модель с длинными волосами",
-  "Уютная спальня 4×5 м с кроватью и столом",
-  "Двухэтажный дом 12×9 м с двускатной крышей",
-  "Школа 4 этажа ширина 60 длина 120",
-  "Красный спорткар",
-  "Кот сидит",
-];
-
 type ChatMessage = { role: "user" | "assistant"; text: string };
 type ExportFormat = "glb" | "stl" | "obj" | "ply" | "usdz";
 type Providers = { aiConfigured?: boolean; model?: string | null; provider?: string };
@@ -216,7 +205,7 @@ export default function DesignEnginePage() {
   }
 
   /**
-   * The one generation path, shared by the button, the examples and the voice.
+   * The one generation path, shared by the button and the voice.
    * The request is bounded by a timeout, and every outcome — model, limit,
    * stall, refusal — ends with a message on screen and the spinner cleared.
    */
@@ -951,18 +940,6 @@ export default function DesignEnginePage() {
                   placeholder="Опиши объект — что угодно: дом, персонаж, машина, мебель, гаджет…"
                   className="w-full resize-none rounded-2xl border border-white/10 bg-black/45 px-5 py-4 text-sm outline-none focus:border-[#a78bfa]/50"
                 />
-                <div className="flex flex-wrap justify-center gap-2">
-                  {EXAMPLES.map((example) => (
-                    <button
-                      key={example}
-                      type="button"
-                      onClick={() => setPrompt(example)}
-                      className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#9a948c] transition hover:border-[#a78bfa]/40 hover:text-white"
-                    >
-                      {example}
-                    </button>
-                  ))}
-                </div>
                 <button
                   type="button"
                   disabled={loading || prompt.trim().length < 3}
