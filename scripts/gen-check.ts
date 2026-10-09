@@ -279,7 +279,7 @@ const CASES: Case[] = [
   }
 
   // Nothing floats: upper-floor windows, spires, the tank's gun, the dragon's head.
-  for (const prompt of ["храм", "трехэтажка", "дом", "танк", "башня", "маяк", "rocket", "дракон", "дерево", "пальма", "ёлка", "куст", "роза", "юрта", "вертолёт", "автобус", "поезд"]) {
+  for (const prompt of ["храм", "трехэтажка", "дом", "танк", "башня", "маяк", "rocket", "дракон", "дерево", "пальма", "ёлка", "куст", "роза", "юрта", "вертолёт", "автобус", "поезд", "замок", "пикап", "внедорожник", "спорткар"]) {
     const groups = connectedGroups(built(prompt, "sweep01").parts, 0.05);
     check(`«${prompt}» is one connected object`, groups.length === 1, `${groups.length} pieces`);
   }
@@ -290,6 +290,13 @@ const CASES: Case[] = [
   check("a helicopter has a tail boom, main rotor and skids", ["Хвостовая балка", "Лопасть несущего винта", "Полоз"].every((n) => names("вертолёт").includes(n)), names("вертолёт").slice(0, 200));
   check("a bus is one glazed saloon, not a lorry", /Салон/.test(names("автобус")) && !/Грузовой отсек/.test(names("автобус")), names("автобус").slice(0, 200));
   check("a lorry keeps its cab and cargo box", /Грузовой отсек/.test(names("грузовик")));
+  check("a castle has walls with battlements, corner towers, a gate and a keep", ["Зубцы фасада", "Угловая башня", "Ворота", "Донжон"].every((n) => names("замок").includes(n)), names("замок").slice(0, 200));
+  check("a dragon uses the animal body with claws and bat wings", ["Туловище", "Коготь", "Перепонка 1", "Наконечник хвоста"].every((n) => names("дракон").includes(n)), names("дракон").slice(0, 200));
+  check("«зелёный дракон» is green", built("зелёный дракон").parts.some((p) => p.name === "Туловище" && /^#[0-9a-f]{6}$/i.test(p.color) && parseInt(p.color.slice(3, 5), 16) > parseInt(p.color.slice(1, 3), 16)));
+  const styles = new Set(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"].map((v) => planFor("машина", v).blueprint.carStyle));
+  check("«машина» varies its body style between generations", styles.size >= 3, [...styles].join(","));
+  check("«пикап» has an open bed", /Борт кузова/.test(names("пикап")));
+  check("«спорткар» stays low", planFor("спорткар", "x").blueprint.height < 1.35);
 
   // Entrance steps climb towards the door.
   const steps = built("дом", "sweep01").parts.find((p) => p.name === "Ступени — проступь");

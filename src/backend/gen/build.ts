@@ -167,6 +167,10 @@ function buildParts(bp: Blueprint, prefix: string): ModelPart[] {
     addHelicopter(ctx);
     return ctx.parts;
   }
+  if (bp.form === "castle") {
+    addCastle(ctx);
+    return ctx.parts;
+  }
 
   // A sword on its own is the whole object, not a detail on a body.
   if (bp.kind === "weapon" && bp.arms === 0) {
@@ -535,7 +539,15 @@ function massElongated(ctx: Ctx) {
   const cabin =
     (bp.wheels > 2 || bp.tracks || bp.hull) && !bp.cannon && bp.kind !== "aircraft";
   const truck = cabin && bp.wheels > 0 && (bp.wheels >= 6 || bp.length >= 7);
-  const lowerShare = !cabin ? 1 : truck ? 0.4 : bp.hull ? 0.62 : 0.56;
+  // Cabin length, its centre along the body and the share of height below the windows.
+  const style = !truck && !bp.hull && bp.carStyle ? {
+    sedan: { cabinL: 0.46, cabinZ: -0.04, lower: 0.56 },
+    hatchback: { cabinL: 0.56, cabinZ: -0.13, lower: 0.55 },
+    suv: { cabinL: 0.64, cabinZ: -0.09, lower: 0.54 },
+    sports: { cabinL: 0.36, cabinZ: -0.08, lower: 0.62 },
+    pickup: { cabinL: 0.3, cabinZ: 0.14, lower: 0.55 },
+  }[bp.carStyle] : undefined;
+  const lowerShare = !cabin ? 1 : truck ? 0.4 : bp.hull ? 0.62 : style?.lower ?? 0.56;
   const lower = total * lowerShare;
   const lowerTop = body.y0 + lower;
 
@@ -616,8 +628,28 @@ function massElongated(ctx: Ctx) {
     );
     ctx.cabin = { y0: lowerTop, y1: body.y1, z0: bp.length / 2 - cabL, z1: bp.length / 2, halfW: bp.width * 0.47 };
   } else {
-    const cabinL = bp.length * (bp.hull ? 0.36 : 0.46);
-    const cabinZ = -bp.length * (bp.hull ? 0.08 : 0.04);
+    const cabinL = bp.length * (bp.hull ? 0.36 : style?.cabinL ?? 0.46);
+    const cabinZ = bp.length * (bp.hull ? -0.08 : style?.cabinZ ?? -0.04);
+    if (bp.carStyle === "pickup" && style) {
+      // An open bed behind the cab: two sides and a tailgate on the lower body.
+      const bedZ0 = -bp.length / 2 + bp.length * 0.03, bedZ1 = cabinZ - cabinL / 2 - bp.length * 0.02;
+      const sideH = upper * 0.42;
+      push(
+        ctx,
+        part(ctx.id(), "Борт кузова", {
+          shape: "box", role: "detail", group: "Кузов",
+          position: [bp.width * 0.46, lowerTop + sideH / 2 - 0.02, (bedZ0 + bedZ1) / 2],
+          size: [bp.width * 0.06, sideH, bedZ1 - bedZ0], mirror: "x",
+          color: bp.primary, material: "Кузов", metalness: bp.metalness, roughness: bp.roughness,
+        }),
+        part(ctx.id(), "Задний борт", {
+          shape: "box", role: "detail", group: "Кузов",
+          position: [0, lowerTop + sideH / 2 - 0.02, bedZ0 + bp.length * 0.015],
+          size: [bp.width * 0.98, sideH, bp.length * 0.03],
+          color: shade(bp.primary, -0.05), material: "Кузов", metalness: bp.metalness, roughness: bp.roughness,
+        })
+      );
+    }
     push(
       ctx,
       part(ctx.id(), bp.hull ? "Надстройка" : "Кабина", {
@@ -1661,6 +1693,36 @@ function addWings(ctx: Ctx) {
   }
 
   const membrane = bp.wingKind === "membrane";
+  if (membrane) {
+    // A bat wing: bones fan out from the shoulder with thin skin between them.
+    // It used to be one solid wedge half the body tall — a yellow slab.
+    const root: Vec3 = [body.halfW * 0.6, y + bp.height * 0.05, chord * 0.1];
+    const lift = 0.35;
+    const dir = (yaw: number): Vec3 => [Math.cos(lift) * Math.cos(yaw), Math.sin(lift), -Math.cos(lift) * Math.sin(yaw)];
+    const skin = { color: shade(bp.primary, -0.22), material: "Перепонка", roughness: 0.85, opacity: 0.94 };
+    const bone = { color: shade(bp.secondary, -0.12), material: "Кость" };
+    const ribs = [0.05, 0.38, 0.7, 1.02];
+    ribs.forEach((yaw, j) => {
+      const length = span * (0.95 - j * 0.12), d = dir(yaw);
+      push(ctx, part(ctx.id(), j === 0 ? "Кость крыла" : `Фаланга ${j}`, {
+        shape: "capsule", role: "structure",
+        position: [root[0] + d[0] * length / 2, root[1] + d[1] * length / 2, root[2] + d[2] * length / 2],
+        size: [bp.height * 0.045, length, bp.height * 0.045],
+        rotation: [0, yaw, lift - Math.PI / 2], ...bone, ...common,
+      }));
+    });
+    for (let j = 0; j < ribs.length - 1; j++) {
+      const yaw = (ribs[j] + ribs[j + 1]) / 2;
+      const length = span * (0.95 - (j + 0.5) * 0.12) * 0.92, d = dir(yaw);
+      push(ctx, part(ctx.id(), `Перепонка ${j + 1}`, {
+        shape: "box", role: "limb",
+        position: [root[0] + d[0] * length / 2, root[1] + d[1] * length / 2, root[2] + d[2] * length / 2],
+        size: [length, bp.height * 0.02, length * (ribs[j + 1] - ribs[j]) * 0.75],
+        rotation: [0, yaw, lift], ...skin, ...common,
+      }));
+    }
+    return;
+  }
   push(
     ctx,
     part(ctx.id(), membrane ? "Перепонка" : "Маховые перья", {
@@ -5174,6 +5236,54 @@ function addYurt(ctx: Ctx) {
   add("Дверная рама", "Дверь", { shape: "box", role: "door", position: [0, base + doorH / 2 + 0.04, D / 2 - 0.02], size: [doorW + 0.16, doorH + 0.12, 0.12], ...wood });
   add("Дверь", "Дверь", { shape: "box", role: "door", position: [0, base + doorH / 2 + 0.04, D / 2 + 0.04], size: [doorW, doorH, 0.06], color: rng.pick(["#c0612b", "#a8322d", "#2f5d8a"]), material: "Крашеное дерево", roughness: 0.6 });
   add("Узор двери", "Дверь", { shape: "box", role: "detail", position: [0, base + doorH * 0.6, D / 2 + 0.075], size: [doorW * 0.5, doorW * 0.5, 0.02], rotation: [0, 0, Math.PI / 4], color: "#f2c230", material: "Орнамент" });
+}
+
+/**
+ * A castle: curtain walls with battlements round a courtyard, round corner
+ * towers with conical roofs, a gatehouse with a dark gate, and a tall keep.
+ */
+function addCastle(ctx: Ctx) {
+  const { bp, rng } = ctx;
+  const W = bp.width, L = bp.length;
+  const wallH = clamp(Math.min(W, L) * 0.28, 6, 14), t = clamp(Math.min(W, L) * 0.05, 1.2, 2.4);
+  const stone = { color: bp.params.color ?? rng.pick(["#a39d92", "#9a958c", "#b3ab9c", "#8f8a82"]), material: "Камень", roughness: 0.92 };
+  const darkStone = { ...stone, color: shade(stone.color, -0.12) };
+  const roof = { color: rng.pick(["#6a3b2c", "#3f4a5a", "#7a2e2a", "#2f4f3f"]), material: "Черепица", roughness: 0.7 };
+  const add = (name: string, group: string, opts: Piece) => push(ctx, part(ctx.id(), name, { ...opts, group }));
+  const merlon = 0.9, gap = 2.0;
+
+  add("Двор", "Основание", { shape: "box", role: "foundation", position: [0, 0.15, 0], size: [W, 0.3, L], ...darkStone });
+  // Front/back walls run along x, side walls along z; mirrored pairs keep it one part each.
+  add("Стена фасада", "Стены", { shape: "box", role: "structure", position: [0, wallH / 2, L / 2 - t / 2], size: [W, wallH, t], mirror: "z", ...stone });
+  add("Боковая стена", "Стены", { shape: "box", role: "structure", position: [W / 2 - t / 2, wallH / 2, 0], size: [t, wallH, L], mirror: "x", ...stone });
+  const countX = Math.max(3, Math.floor((W - t * 4) / gap)), countZ = Math.max(3, Math.floor((L - t * 4) / gap));
+  add("Зубцы фасада", "Стены", { shape: "box", role: "detail", position: [-(countX - 1) * gap / 2, wallH + merlon / 2 - 0.05, L / 2 - t / 2], size: [gap * 0.55, merlon, t * 1.04], repeat: { count: countX, step: [gap, 0, 0] }, mirror: "z", ...stone });
+  add("Боковые зубцы", "Стены", { shape: "box", role: "detail", position: [W / 2 - t / 2, wallH + merlon / 2 - 0.05, -(countZ - 1) * gap / 2], size: [t * 1.04, merlon, gap * 0.55], repeat: { count: countZ, step: [0, 0, gap] }, mirror: "x", ...stone });
+
+  // Corner towers stand proud of the walls.
+  const towerD = t * 3.4, towerH = wallH * 1.5;
+  const corner: Vec3 = [W / 2 - towerD * 0.3, 0, L / 2 - towerD * 0.3];
+  add("Угловая башня", "Башни", { shape: "cylinder", role: "structure", position: [corner[0], towerH / 2, corner[2]], size: [towerD, towerH, towerD], sides: 20, mirror: "xz", ...stone });
+  add("Парапет башни", "Башни", { shape: "cylinder", role: "detail", position: [corner[0], towerH + 0.4, corner[2]], size: [towerD * 1.14, 0.9, towerD * 1.14], sides: 20, mirror: "xz", ...darkStone });
+  add("Крыша башни", "Башни", { shape: "cone", role: "roof", position: [corner[0], towerH + 0.8 + towerD * 0.55, corner[2]], size: [towerD * 1.22, towerD * 1.1, towerD * 1.22], sides: 20, mirror: "xz", ...roof });
+  add("Бойница", "Башни", { shape: "box", role: "detail", position: [corner[0], towerH * 0.6, corner[2] + towerD / 2], size: [0.3, 1.3, 0.12], repeat: { count: 2, step: [0, -towerH * 0.3, 0] }, mirror: "xz", color: "#2a2622", material: "Проём" });
+
+  // Gatehouse: two small towers flanking a dark gate in the front wall.
+  const gateW = clamp(W * 0.12, 3, 5), gateH = wallH * 0.62;
+  add("Ворота", "Ворота", { shape: "box", role: "door", position: [0, gateH / 2 + 0.3, L / 2 + 0.03], size: [gateW, gateH, 0.2], color: "#4a3423", material: "Дерево", roughness: 0.8 });
+  add("Арка ворот", "Ворота", { shape: "cylinder", role: "detail", position: [0, gateH + 0.3, L / 2 + 0.02], size: [gateW, 0.22, gateW], rotation: [Math.PI / 2, 0, 0], sides: 16, color: "#4a3423", material: "Дерево" });
+  const flankD = t * 2.3;
+  add("Надвратная башня", "Ворота", { shape: "cylinder", role: "structure", position: [gateW / 2 + flankD * 0.45, wallH * 0.62, L / 2], size: [flankD, wallH * 1.24, flankD], sides: 16, mirror: "x", ...stone });
+  add("Крыша надвратной башни", "Ворота", { shape: "cone", role: "roof", position: [gateW / 2 + flankD * 0.45, wallH * 1.24 + flankD * 0.45, L / 2], size: [flankD * 1.2, flankD * 0.95, flankD * 1.2], sides: 16, mirror: "x", ...roof });
+
+  // The keep: the tallest block, towards the back of the courtyard.
+  const keepW = W * 0.32, keepL = L * 0.3, keepH = wallH * 2.1, keepZ = -L * 0.16;
+  add("Донжон", "Донжон", { shape: "box", role: "volume", position: [0, keepH / 2, keepZ], size: [keepW, keepH, keepL], ...stone });
+  const keepCount = Math.max(3, Math.floor(keepW / gap));
+  add("Зубцы донжона", "Донжон", { shape: "box", role: "detail", position: [-(keepCount - 1) * gap / 2, keepH + merlon / 2 - 0.05, keepZ + keepL / 2 - 0.4], size: [gap * 0.55, merlon, 0.8], repeat: { count: keepCount, step: [gap, 0, 0] }, mirror: "z", ...stone });
+  add("Окна донжона", "Донжон", { shape: "box", role: "detail", position: [-keepW * 0.25, keepH * 0.55, keepZ + keepL / 2 + 0.03], size: [0.7, 1.8, 0.12], repeat: { count: 3, step: [keepW * 0.25, 0, 0] }, color: "#2a2622", material: "Проём" });
+  add("Флагшток", "Донжон", { shape: "cylinder", role: "detail", position: [0, keepH + 2.2, keepZ], size: [0.14, 4.4, 0.14], ...darkStone });
+  add("Флаг", "Донжон", { shape: "box", role: "detail", position: [0.9, keepH + 3.6, keepZ], size: [1.8, 1.1, 0.05], color: rng.pick(["#c8332b", "#2f5d8a", "#e0b23a"]), material: "Ткань" });
 }
 
 /**

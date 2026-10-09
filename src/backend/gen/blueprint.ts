@@ -12,7 +12,7 @@
  * A word that is not in the lexicon still changes the result: everything left
  * unspecified is drawn from an RNG seeded by the prompt itself.
  */
-import { Rng, hashString } from "@/shared/geometry";
+import { Rng, hashString, shade } from "@/shared/geometry";
 import { setAnimalDimensions } from "./living-anatomy";
 import {
   colorIn,
@@ -201,7 +201,9 @@ export type Blueprint = {
   /** Words the lexicon recognised — surfaced in the generation log. */
   matched: string[];
   /** Objects whose silhouette the generic body cannot make get their own builder. */
-  form?: "yurt" | "helicopter";
+  form?: "yurt" | "helicopter" | "castle";
+  /** Car body: decides cabin length, its place and the open bed of a pickup. */
+  carStyle?: "sedan" | "hatchback" | "suv" | "sports" | "pickup";
 };
 
 type Mutate = (blueprint: Blueprint, count: number | undefined) => void;
@@ -260,6 +262,15 @@ function bridgeType(raw: string, rng: Rng): NonNullable<Blueprint["bridge"]> {
 
 const BIG_WHEELS = /(больш|огромн|крупн)\S*\s+(колёс|колес)|(big|large|huge) wheels/i;
 
+/** Length, width, height and wheel size of each car body, metres. */
+const CAR_STYLES: Record<NonNullable<Blueprint["carStyle"]>, [number, number, number, number]> = {
+  sedan: [4.6, 1.82, 1.45, 0.34],
+  hatchback: [4.0, 1.75, 1.5, 0.32],
+  suv: [4.7, 1.95, 1.8, 0.42],
+  sports: [4.4, 1.95, 1.22, 0.36],
+  pickup: [5.3, 1.95, 1.8, 0.42],
+};
+
 const RULES: Rule[] = [
   /* --- ground contact --- */
   {
@@ -268,6 +279,20 @@ const RULES: Rule[] = [
     counter: /колёс|колес|wheel/i,
     apply: (b, n) => {
       b.wheels = n ?? Math.max(b.wheels, 4);
+      // A body style named in the prompt, or a fresh pick per generation: every
+      // "машина" used to be the same sedan box.
+      const raw = b.params.raw;
+      b.carStyle = /спорт|sport|суперкар|гиперкар|болид|гоночн|race/i.test(raw) ? "sports"
+        : /внедорож|джип|\bsuv\b|кроссовер|минивэн|фургон|\bvan\b/i.test(raw) ? "suv"
+          : /хэтчбек|hatch|компакт|малолит/i.test(raw) ? "hatchback"
+            : /пикап|pickup/i.test(raw) ? "pickup"
+              : /седан|sedan|лимузин|купе|кабриолет/i.test(raw) ? "sedan"
+                : b.rng.pick(["sedan", "sedan", "hatchback", "suv", "suv", "sports", "pickup"] as const);
+      const [length, width, height, wheel] = CAR_STYLES[b.carStyle];
+      b.length = length; b.width = width; b.height = height; b.wheelSize = wheel;
+      // Car paint rather than the stone-and-plaster palette; a named colour still wins later.
+      b.primary = b.rng.pick(["#c8332b", "#2f5d8a", "#1f2124", "#e9e6df", "#7a8088", "#2f6b4a", "#e0b23a", "#8a2b45"]);
+      b.metalness = Math.max(b.metalness, 0.45);
       if (BIG_WHEELS.test(b.params.raw)) b.wheelSize = 0.45;
       b.massPlan = "elongated";
       b.bodyShape = "box";
@@ -407,6 +432,10 @@ const RULES: Rule[] = [
       b.width = Math.max(b.width, 1.1);
       b.height = Math.max(b.height, 2.2);
       b.detail += 0.4;
+      // Scales, not plaster: the general palette made every dragon white or grey.
+      // A colour named in the prompt still wins later.
+      const [scales, belly] = b.rng.pick([["#3f6b3a", "#b9a86a"], ["#7a2e2a", "#d6a35a"], ["#2f4f6a", "#9fb4c4"], ["#4a3a5a", "#b49ac0"], ["#2b2b2e", "#8a4a2a"]] as const);
+      b.primary = scales; b.secondary = belly; b.accent = shade(scales, -0.2);
     },
   },
   { label: "птица", kind: "animal", re: w("птиц|попуга|орёл|орел|голуб|воробе|сов[аыу]|ворон|чайк|пингвин|куриц|петух|утк[аиу]|гус[ьи]|фламинго|\\bbird\\b|\\beagle\\b|\\bowl\\b"), apply: (b) => { b.legs = 2; b.legStyle = "organic"; b.wings = 2; b.wingKind = "feather"; b.head = 1; b.eyes = 2; b.muzzle = 0.7; b.tail = Math.max(b.tail, 4); b.bodyShape = "sphere"; b.height = Math.max(b.height, 0.34); b.width = Math.max(b.width, 0.2); b.length = Math.max(b.length, 0.28); b.sizeClass = "furniture"; } },
@@ -951,7 +980,8 @@ const BUILDING_PROFILES: BuildingProfile[] = [
   { re: /беседк|gazebo/i, floors: [1, 1], plans: [[4, 4], [3.5, 3.5], [5, 4]], storey: 2.6, roof: "hip", windows: "punched", extra: (b) => { b.windows = 0; b.columns = Math.max(b.columns, 4); b.stairs = 2; b.garage = false; } },
   { re: /юрт|yurt/i, floors: [1, 1], plans: [[7, 7], [6, 6], [8, 8]], storey: 2.4, roof: "dome", windows: "punched", extra: (b) => { b.windows = 0; b.doors = 1; b.stairs = 0; b.garage = false; b.form = "yurt"; } },
   { re: /теплиц|greenhouse/i, floors: [1, 1], plans: [[6, 3], [8, 3], [10, 4]], storey: 2.4, roof: "gable", windows: "curtain", glassy: true, extra: (b) => { b.stairs = 0; b.garage = false; } },
-  { re: /замок|замк|крепост|двор(?:ец|ц)|castle|palace/i, floors: [2, 3], plans: [[40, 30], [34, 28], [46, 34]], storey: 4.5, roof: "flat", windows: "punched", extra: (b) => { b.towers = Math.max(b.towers, 4); b.spire = true; b.garage = false; } },
+  { re: /замок|замк|крепост|цитадел|castle|fortress/i, floors: [1, 1], plans: [[40, 32], [34, 28], [46, 36]], storey: 9, roof: "flat", windows: "punched", extra: (b) => { b.form = "castle"; b.garage = false; } },
+  { re: /двор(?:ец|ц)|palace/i, floors: [2, 3], plans: [[64, 28], [56, 24], [72, 30]], storey: 5, roof: "hip", windows: "punched", extra: (b) => { b.columns = Math.max(b.columns, 10); b.dome = true; b.garage = false; } },
   // Shops first: "универмаг" must not read as "универ(ситет)".
   {
     re: /торгов|трц|тц|молл|mall|универмаг|шопинг|shopping/i,

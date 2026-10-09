@@ -57,7 +57,8 @@ function limb(ctx: Context, name: string, group: string, a: Vec3, b: Vec3, r0: n
 }
 
 export function hasLivingAnatomy(bp: Blueprint) {
-  return bp.legStyle === "organic" && (bp.kind === "character" || (bp.kind === "animal" && bp.matched.includes("четвероногое")));
+  // A dragon is a four-legged animal too: the generic body gave it robot legs and a ball head.
+  return bp.legStyle === "organic" && (bp.kind === "character" || (bp.kind === "animal" && (bp.matched.includes("четвероногое") || bp.matched.includes("дракон"))));
 }
 
 export function buildLivingAnatomy(ctx: Context) {
@@ -116,9 +117,9 @@ function human(ctx: Context) {
   }
 }
 
-type Species = "cat"|"dog"|"horse"|"rabbit"|"bear"|"elephant"|"generic";
+type Species = "cat"|"dog"|"horse"|"rabbit"|"bear"|"elephant"|"dragon"|"generic";
 export function animalSpecies(text: string): Species {
-  const patterns: [Species,RegExp][] = [["cat",/(?:^|[^а-яёa-z])(?:кот(?:а|у|ом|ы|ов|ик|ята)?|кошк[а-яё]*|cat|kitten)(?=$|[^а-яёa-z])/ig],["dog",/собак|п[её]с(?:\b|[^а-яё])|щен|\bdog\b|\bpuppy\b|волк|wolf/ig],["horse",/лошад|конь|пони|\bhorse\b|pony/ig],["rabbit",/кролик|заяц|зайц|rabbit|bunny/ig],["bear",/медвед|bear/ig],["elephant",/слон|elephant|мамонт/ig]];
+  const patterns: [Species,RegExp][] = [["cat",/(?:^|[^а-яёa-z])(?:кот(?:а|у|ом|ы|ов|ик|ята)?|кошк[а-яё]*|cat|kitten)(?=$|[^а-яёa-z])/ig],["dog",/собак|п[её]с(?:\b|[^а-яё])|щен|\bdog\b|\bpuppy\b|волк|wolf/ig],["horse",/лошад|конь|пони|\bhorse\b|pony/ig],["rabbit",/кролик|заяц|зайц|rabbit|bunny/ig],["bear",/медвед|bear/ig],["elephant",/слон|elephant|мамонт/ig],["dragon",/дракон|dragon|виверн|wyvern|грифон|горыныч/ig]];
   const found=patterns.map(([species,re])=>({species,index:re.exec(text)?.index??Infinity})).sort((a,b)=>a.index-b.index)[0];
   return found.index<Infinity?found.species:"generic";
 }
@@ -132,24 +133,30 @@ export function setAnimalDimensions(bp: Blueprint, subject: string) {
 
 function quadruped(ctx: Context) {
   const {bp}=ctx, species=animalSpecies(bp.prompt), h=bp.height;
-  const horse=species==="horse", rabbit=species==="rabbit", elephant=species==="elephant", cat=species==="cat";
-  const w=bp.width, l=bp.length, coat=bp.params.color??(cat?"#bc8854":horse?"#885538":rabbit?"#c8bfb0":elephant?"#9b9991":species==="bear"?"#70513c":"#b9956e");
-  const legRatio=horse?.56:rabbit?.26:elephant?.43:.43, low=h*legRatio, high=h*(rabbit?.65:horse?.81:.75), cy=(low+high)/2;
+  const horse=species==="horse", rabbit=species==="rabbit", elephant=species==="elephant", cat=species==="cat", dragon=species==="dragon";
+  const w=bp.width, l=bp.length, coat=bp.params.color??(dragon?bp.primary:cat?"#bc8854":horse?"#885538":rabbit?"#c8bfb0":elephant?"#9b9991":species==="bear"?"#70513c":"#b9956e");
+  const legRatio=horse?.56:rabbit?.26:dragon?.36:elephant?.43:.43, low=h*legRatio, high=h*(rabbit?.65:horse?.81:dragon?.7:.75), cy=(low+high)/2;
   ctx.body={halfW:w/2,halfL:l*.41,y0:low,y1:high};
-  loft(ctx,"Туловище","Тело",[0,cy,0],[[-l*.43,w*.18,(high-low)*.25],[-l*.31,w*.47,(high-low)*.48],[-l*.08,w*.5,(high-low)*.5],[l*.22,w*.43,(high-low)*.45],[l*.37,w*.22,(high-low)*.28]],"z",coat,"Шерсть");
-  const headSize=h*(horse?.26:elephant?.31:rabbit?.30:.28), headY=horse?h*.85:rabbit?h*.72:h*.79, headZ=l*(horse?.40:.46);
+  loft(ctx,"Туловище","Тело",[0,cy,0],[[-l*.43,w*.18,(high-low)*.25],[-l*.31,w*.47,(high-low)*.48],[-l*.08,w*.5,(high-low)*.5],[l*.22,w*.43,(high-low)*.45],[l*.37,w*.22,(high-low)*.28]],"z",coat,dragon?"Чешуя":"Шерсть");
+  // A dragon's pale belly plates run under the scaled body.
+  // Tipped forward, the capsule's long local y runs along the body (z).
+  if(dragon) solid(ctx,"Брюхо","Тело",[0,cy-(high-low)*.28,l*.02],[w*.66,l*.62,(high-low)*.36],bp.secondary,"capsule",[Math.PI/2,0,0]);
+  const headSize=h*(horse?.26:elephant?.31:rabbit?.30:dragon?.24:.28), headY=horse?h*.85:rabbit?h*.72:dragon?h*.98:h*.79, headZ=l*(horse?.40:dragon?.56:.46);
   if(bp.head) {
-    solid(ctx,"Шея","Шея",[0,(high+headY)/2,l*.30],[w*.50,horse?h*.36:h*.24,headSize*.78],coat,"capsule",[horse?.38:.65,0,0]);
-    solid(ctx,"Голова","Голова",[0,headY,headZ],[headSize*(horse?.62:1),headSize,headSize*(horse?.94:.89)],coat);
-    const muzzle=cat?.27:rabbit?.29:horse?.85:elephant?.50:.62;
+    if(dragon) {
+      // A long neck reaching up and forward from the shoulders to the head.
+      limb(ctx,"Шея","Шея",[0,headY-headSize*.3,headZ-headSize*.35],[0,high-(high-low)*.1,l*.3],headSize*.42,w*.3,coat);
+    } else solid(ctx,"Шея","Шея",[0,(high+headY)/2,l*.30],[w*.50,horse?h*.36:h*.24,headSize*.78],coat,"capsule",[horse?.38:.65,0,0]);
+    solid(ctx,"Голова","Голова",[0,headY,headZ],[headSize*(horse?.62:dragon?.8:1),headSize*(dragon?.85:1),headSize*(horse?.94:.89)],coat);
+    const muzzle=cat?.27:rabbit?.29:horse?.85:dragon?.95:elephant?.50:.62;
     if(bp.muzzle>0) {
       solid(ctx,"Морда","Голова",[0,headY-headSize*.19,headZ+headSize*.37],[headSize*.63,headSize*.42,headSize*muzzle],shade(coat,.13));
       solid(ctx,"Нос","Голова",[0,headY-headSize*.13,headZ+headSize*(.39+muzzle/2)],[headSize*.23,headSize*.15,headSize*.085],cat?"#ba8179":"#302c2a");
     }
     for(let i=0;i<bp.eyes;i++) {
       const x=(i-(bp.eyes-1)/2)*headSize*.64, z=headZ+headSize*.32;
-      solid(ctx,"Глаз","Голова",[x,headY+headSize*.06,z],[headSize*.21,headSize*.20,headSize*.115],cat?"#9eae64":"#5d4837");
-      solid(ctx,"Зрачок","Голова",[x,headY+headSize*.06,z+headSize*.055],[headSize*(cat?.035:.075),headSize*.13,headSize*.025],"#161719");
+      solid(ctx,"Глаз","Голова",[x,headY+headSize*.06,z],[headSize*.21,headSize*.20,headSize*.115],cat?"#9eae64":dragon?"#e0b23a":"#5d4837");
+      solid(ctx,"Зрачок","Голова",[x,headY+headSize*.06,z+headSize*.055],[headSize*(cat||dragon?.035:.075),headSize*.13,headSize*.025],"#161719");
       solid(ctx,"Блик глаза","Голова",[x-headSize*.024,headY+headSize*.103,z+headSize*.063],[headSize*.037,headSize*.037,headSize*.012],"#f6f0dc");
     }
     if(bp.ears!=="none") for(const s of [-1,1]) {
@@ -166,23 +173,25 @@ function quadruped(ctx: Context) {
   }
   for(let i=0;i<bp.legs;i++) {
     const pairs=Math.ceil(bp.legs/2), s=i%2?-1:1, z=pairs===1?0:(Math.floor(i/2)/(pairs-1)-.5)*l*.58, x=s*w*.32;
-    const hip:Vec3=[x,cy,z], knee:Vec3=[x,low*.56,z+(z<0?-1:1)*h*.045], ankle:Vec3=[x,h*.055,z+h*.015], r=h*(horse?.029:elephant?.067:.038);
+    const hip:Vec3=[x,cy,z], knee:Vec3=[x,low*.56,z+(z<0?-1:1)*h*.045], ankle:Vec3=[x,h*.055,z+h*.015], r=h*(horse?.029:elephant?.067:dragon?.055:.038);
     limb(ctx,"Бедро","Ноги",knee,hip,r*1.1,r*1.8,coat);
     solid(ctx,"Колено","Ноги",knee,[r*2.15,r*2.3,r*2.15],coat);
     limb(ctx,"Голень","Ноги",ankle,knee,r*.75,r*1.12,coat);
     const paw:Vec3=[r*(horse?2.5:3.2),h*.09,h*(rabbit&&z<0?.24:horse?.1:.13)];
     solid(ctx,horse?"Копыто":"Лапа","Ноги",[x,h*.045,z+h*.04],paw,horse?"#39302a":shade(coat,-.07),"capsule");
-    if(!horse&&!elephant) for(let t=0;t<3;t++) solid(ctx,"Палец лапы","Ноги",[x+(t-1)*r*.77,h*.028,z+h*.105],[r*.7,h*.038,h*.058],shade(coat,.05),"capsule");
+    if(!horse&&!elephant) for(let t=0;t<3;t++) solid(ctx,dragon?"Коготь":"Палец лапы","Ноги",[x+(t-1)*r*.77,h*.028,z+h*.105],[r*.7,h*.038,h*(dragon?.09:.058)],dragon?"#2b2622":shade(coat,.05),dragon?"cone":"capsule",dragon?[Math.PI/2,0,0]:[0,0,0]);
   }
   if(bp.tail) {
     if(rabbit) solid(ctx,"Хвост","Хвост",[0,cy,-l*.44],[h*.16,h*.16,h*.16],shade(coat,.1));
     else {
-      const n=Math.max(3,Math.min(12,bp.tail)), length=l*(cat?.68:horse?.46:.43), radius=h*(horse?.036:cat?.029:.043);
+      // A dragon's tail is long and heavy, sweeping sideways close to the ground.
+      const n=Math.max(3,Math.min(12,bp.tail)), length=l*(cat?.68:horse?.46:dragon?.95:.43), radius=h*(horse?.036:cat?.029:dragon?.09:.043);
+      const point=(v:number):Vec3=>dragon?[Math.sin(v*2.2)*l*.12,cy-(cy-h*.12)*v,-l*.39-length*v]:[Math.sin(v*1.5)*h*.04,cy+h*(cat?.3:-.36)*v,-l*.39-length*v];
       for(let i=0;i<n;i++) {
         const t=i/n, t1=(i+1)/n;
-        const point=(v:number):Vec3=>[Math.sin(v*1.5)*h*.04,cy+h*(cat?.3:-.36)*v,-l*.39-length*v];
         limb(ctx,"Хвост","Хвост",point(t),point(t1),radius*(1-t*.78),radius*(1-t1*.78),horse?shade(coat,-.4):coat);
       }
+      if(dragon) {const tip=point(1); solid(ctx,"Наконечник хвоста","Хвост",[tip[0],tip[1],tip[2]-h*.06],[h*.14,h*.04,h*.2],shade(coat,-.25),"cone",[-Math.PI/2,0,0]);}
     }
   }
 }
