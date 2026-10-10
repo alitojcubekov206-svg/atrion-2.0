@@ -410,7 +410,7 @@ test("realistic jobs need a login and configuration, keep the secret server-side
     assert.equal(url, "https://atrion-test--web.modal.run/jobs");
     assert.equal(new Headers(init?.headers).get("authorization"), "Bearer fixture-secret");
     const body = JSON.parse(String(init?.body));
-    assert.equal(body.mode, "figure", "animals get a front reference and projected texture");
+    assert.equal(body.mode, "object", "an animal is not drawn in a human A-pose");
     return fail ? new Response("{}", {status: 500}) : new Response(JSON.stringify({id: "fc-abc123"}));
   });
   const ok = (await inRequest(start)).result;

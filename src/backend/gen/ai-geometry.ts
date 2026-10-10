@@ -168,6 +168,7 @@ ${storeys}
 ${measurements ? `Parsed from the request — honour these exactly: ${measurements}.` : "No explicit measurements were given; choose realistic ones."}
 ${answers.length ? `Clarifications:\n${answers.map((item) => `- ${item.question}: ${item.answer}`).join("\n")}` : ""}
 ${named.length ? `Components the user named — each must be present as its own named parts:\n${named.map((item) => `- ${item.en}`).join("\n")}` : ""}
+${plan.unread.length ? `Also named in the request — build each as its own object or feature at real relative scale (a scene such as "кот на мосту" is a cat AND a bridge under it): ${plan.unread.join("; ")}` : ""}
 The request and explicit measurements take priority. No template defines the requested object's parts.
 ${options.variation ? `Design variation ${options.variation}: where the request leaves something open (style, proportions, colours, secondary features), make your own distinct choices instead of the most generic version.` : ""}
 

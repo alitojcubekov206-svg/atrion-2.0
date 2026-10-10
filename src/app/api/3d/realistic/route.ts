@@ -61,9 +61,11 @@ export async function POST(req: Request) {
   try {
     // The picture model reads English; the 3D model follows the picture.
     const subject = (await describeForImage(prompt.trim(), safeAnswers)).slice(0, 600);
-    // People and animals get a straight front reference and a projected texture.
+    // People get a straight A-pose front reference and a projected texture. That
+    // wording ("arms away from the body, detailed face") turned a cat into a man,
+    // so animals take the object view.
     const kind = detectCategory(prompt);
-    const mode = kind === "character" || kind === "animal" ? "figure" : "object";
+    const mode = kind === "character" ? "figure" : "object";
     const res = await fetch(`${endpoint.url}/jobs`, {
       method: "POST",
       headers: { Authorization: `Bearer ${endpoint.secret}`, "Content-Type": "application/json" },
