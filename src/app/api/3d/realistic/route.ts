@@ -4,6 +4,7 @@ import { consumeAiQuota } from "@/backend/ai-quota";
 import { describeForImage } from "@/backend/ai";
 import { rateLimit, rateLimitedResponse } from "@/backend/rate-limit";
 import { detectCategory } from "@/backend/procedural-3d";
+import { imageSubjectFrom } from "@/backend/realistic-subject";
 
 export const maxDuration = 30;
 
@@ -58,9 +59,17 @@ export async function POST(req: Request) {
   const quota = await consumeAiQuota(userId);
   if (!quota.ok) return NextResponse.json({ error: quota.error, code: quota.code }, { status: quota.status });
 
+  // The picture model reads English only, and the 3D model follows the picture.
+  const subject = imageSubjectFrom(prompt.trim(), await describeForImage(prompt.trim(), safeAnswers));
+  if (!subject) {
+    await quota.refund();
+    return NextResponse.json(
+      { error: "Не получилось понять объект для реалистичного режима. Назовите его проще, например «красное кресло».", code: "REALISTIC_SUBJECT_UNKNOWN" },
+      { status: 422 }
+    );
+  }
+
   try {
-    // The picture model reads English; the 3D model follows the picture.
-    const subject = (await describeForImage(prompt.trim(), safeAnswers)).slice(0, 600);
     // People get a straight A-pose front reference and a projected texture. That
     // wording ("arms away from the body, detailed face") turned a cat into a man,
     // so animals take the object view.

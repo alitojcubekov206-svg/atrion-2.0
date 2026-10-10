@@ -411,6 +411,8 @@ test("realistic jobs need a login and configuration, keep the secret server-side
     assert.equal(new Headers(init?.headers).get("authorization"), "Bearer fixture-secret");
     const body = JSON.parse(String(init?.body));
     assert.equal(body.mode, "object", "an animal is not drawn in a human A-pose");
+    assert(!/[а-яё]/i.test(body.prompt), `the picture model gets English, not «${body.prompt}»`);
+    assert.match(body.prompt, /red dragon.*full body/, "an animal is drawn whole");
     return fail ? new Response("{}", {status: 500}) : new Response(JSON.stringify({id: "fc-abc123"}));
   });
   const ok = (await inRequest(start)).result;

@@ -476,12 +476,17 @@ class Realistic:
         mode = "figure" if mode == "figure" else "object"
         picture = self._paint(prompt, seed, mode)
         painted = time.time()
+        torch.cuda.empty_cache()
         try:
             glb = self._mesh(picture, seed, target_faces)
-        except torch.OutOfMemoryError:
-            # A wide subject (a bridge, a long hall) fills TRELLIS's grid, and its
+        except (torch.OutOfMemoryError, RuntimeError) as error:
+            # A wide subject (a bridge, a house) fills TRELLIS's grid, and its
             # mesh decoder then needs more than is left beside the picture model.
-            # Park the painter on the CPU for this mesh, then bring it back.
+            # torch raises OutOfMemoryError; the sparse-conv library raises a plain
+            # RuntimeError ("cuda failed with error 2 out of memory"). Park the
+            # painter on the CPU for this mesh, then bring it back.
+            if not isinstance(error, torch.OutOfMemoryError) and "out of memory" not in str(error).lower():
+                raise
             print("[atrion] out of GPU memory; retrying the mesh with the painter on the CPU")
             self.painter.to("cpu")
             torch.cuda.empty_cache()
