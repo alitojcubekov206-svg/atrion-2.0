@@ -18,6 +18,8 @@ Part dimensions are full sizes in metres before rotation. Part rotations use XYZ
 
 Explicit dimensions and object counts take precedence over generated variations. Storey modifiers describe building height, rather than the number of buildings. New models initially appear whole; section view is enabled by the user.
 
+Procedural entrance steps rise toward the door and meet the ground-floor landing. Both side supports follow the same slope; terrace railings leave the approach open. Entrance height follows the ground-floor slab rather than the total building height.
+
 Bridge prompts always use the dedicated bridge builder. A colour named on the roof ("with a red roof") colours the roof; unnamed houses vary their facade and roof colours. Unknown objects must not be presented as successfully understood merely because a generic primitive can be returned.
 
 ## Design and interiors

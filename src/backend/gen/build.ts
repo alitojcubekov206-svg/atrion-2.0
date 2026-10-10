@@ -2151,6 +2151,12 @@ function addStorefront(ctx: Ctx) {
   );
 }
 
+/** Anchor the entrance to its actual ground-floor slab, not total building height. */
+function entranceLevel(ctx: Ctx): number {
+  const slab = ctx.parts.find(p => p.name === "Цоколь" || p.name === "Пол первого этажа");
+  return slab ? slab.position[1] + slab.size[1] / 2 : Math.max(ctx.body.y0, 0.12);
+}
+
 function addDoors(ctx: Ctx) {
   const { bp, body } = ctx;
   const span = body.y1 - body.y0;
@@ -2209,7 +2215,7 @@ function addDoors(ctx: Ctx) {
     doorUnit({
       id: ctx.id,
       group: "Вход",
-      center: [0, body.y0 + height / 2, body.halfL],
+      center: [0, (bp.kind === "building" && bp.stairs > 0 ? entranceLevel(ctx) : body.y0) + height / 2, body.halfL],
       width,
       height,
       facing: "front",
@@ -2706,7 +2712,8 @@ function addTerrace(ctx: Ctx) {
   const { bp, body } = ctx;
   const depth = Math.min(bp.length * 0.4, 3.2);
   const width = bp.width * 0.78;
-  const deckY = body.y0 + Math.max(0.08, bp.height * 0.03);
+  const deckThickness = clamp((body.y1 - body.y0) / Math.max(1, bp.floors) * 0.02, 0.06, 0.12);
+  const deckY = entranceLevel(ctx) - deckThickness / 2;
 
   push(
     ctx,
@@ -2715,7 +2722,7 @@ function addTerrace(ctx: Ctx) {
       role: "foundation",
       group: "Терраса",
       position: [0, deckY, body.halfL + depth / 2],
-      size: [width, Math.max(0.06, bp.height * 0.02), depth],
+      size: [width, deckThickness, depth],
       color: shade(bp.secondary, -0.05),
       material: "Настил",
       roughness: 0.9,
@@ -2724,8 +2731,8 @@ function addTerrace(ctx: Ctx) {
       shape: "box",
       role: "detail",
       group: "Терраса",
-      position: [-width / 2, deckY + bp.height * 0.012, body.halfL + depth / 2],
-      size: [width * 0.02, Math.max(0.01, bp.height * 0.004), depth * 0.98],
+      position: [-width / 2, entranceLevel(ctx) + 0.005, body.halfL + depth / 2],
+      size: [width * 0.02, 0.01, depth * 0.98],
       color: shade(bp.secondary, -0.18),
       material: "Шов",
       repeat: { count: 10, step: [width / 10, 0, 0] },
@@ -2752,30 +2759,40 @@ function addTerrace(ctx: Ctx) {
     })
   );
 
-  push(
-    ctx,
-    railingRun({
+  // Keep the approach open instead of placing a railing across the top step.
+  const gap = bp.stairs > 0 ? Math.min(bp.width * 0.32, 2.4) + 0.12 : 0;
+  const sections = gap > 0
+    ? [-1, 1].map(side => ({center: side * (width + gap) / 4, length: (width - gap) / 2}))
+    : [{center: 0, length: width}];
+  for (const section of sections) if (section.length > 0) push(ctx, railingRun({
       id: ctx.id,
       group: "Терраса",
-      center: [0, deckY, body.halfL + depth],
-      length: width,
-      height: bp.height * 0.13,
+      center: [section.center, entranceLevel(ctx), body.halfL + depth],
+      length: section.length,
+      height: clamp((body.y1 - body.y0) / Math.max(1, bp.floors) * 0.33, 0.8, 1.2),
       along: "x",
       color: shade(bp.secondary, -0.12),
-    })
-  );
+    }));
 }
 
 function addStairs(ctx: Ctx) {
   const { bp, body } = ctx;
   const steps = clamp(bp.stairs, 1, 20);
-  const rise = Math.max(0.04, body.y0 > 0.05 ? body.y0 / steps : (bp.height * 0.04) / 1);
-  const run = rise * 1.5;
+  const landingY = entranceLevel(ctx);
+  const rise = landingY / steps;
+  const run = clamp(rise * 1.5, 0.25, 0.35);
   const width = Math.min(bp.width * 0.32, 2.4);
   // The flight climbs towards the door: the lowest step is outermost and the
-  // top one meets the facade (or the terrace edge). "back" made it climb away.
-  const face = body.halfL + (bp.terrace ? Math.min(bp.length * 0.4, 3.2) : 0);
+  // top one meets the landing (or the terrace edge).
+  const landingDepth = bp.terrace ? Math.min(bp.length * 0.4, 3.2) : 0.8;
+  const face = body.halfL + landingDepth;
   const zBase = face + run * (steps - 0.5);
+
+  if (!bp.terrace) push(ctx, part(ctx.id(), "Входная площадка", {
+    shape: "box", role: "foundation", group: "Вход",
+    position: [0, landingY / 2, body.halfL + landingDepth / 2],
+    size: [width, landingY, landingDepth], color: shade(bp.trim, 0.25), material: "Крыльцо",
+  }));
 
   push(
     ctx,

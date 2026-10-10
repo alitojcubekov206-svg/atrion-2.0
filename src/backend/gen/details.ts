@@ -592,7 +592,7 @@ export type StairOptions = {
   cheeks?: boolean;
 };
 
-/** Treads, risers and side cheeks from one repeat each. */
+/** Treads climb inward; both side supports keep the same slope direction. */
 export function stairFlight(options: StairOptions): ModelPart[] {
   const {
     id,
@@ -627,25 +627,22 @@ export function stairFlight(options: StairOptions): ModelPart[] {
   if (cheeks) {
     const totalRise = rise * count;
     const totalRun = run * count;
-    parts.push(
-      part(id(), `${name} — щека`, {
+    // A wedge rises along its local +x. Size it before rotating, and do not
+    // mirror its rotation: that would make the other support climb backwards.
+    const yaw = {front: Math.PI / 2, back: -Math.PI / 2, left: 0, right: Math.PI}[facing];
+    for (const side of [-1, 1]) parts.push(
+      part(id(), `${name} — щека ${side < 0 ? "левая" : "правая"}`, {
         shape: "wedge",
         role: "structure",
         group,
         position: shift(
           base,
-          offset(facing, width / 2 + run * 0.09, totalRise / 2, -totalRun / 2 + run / 2)
+          offset(facing, side * (width / 2 + run * 0.09), totalRise / 2, -totalRun / 2 + run / 2)
         ),
-        size: orient(facing, run * 0.18, totalRise, totalRun),
-        rotation:
-          facing === "front"
-            ? [0, Math.PI / 2, 0]
-            : facing === "back"
-              ? [0, -Math.PI / 2, 0]
-              : [0, 0, 0],
+        size: [totalRun, totalRise, run * 0.18],
+        rotation: [0, yaw, 0],
         color: shade(color, -0.18),
         material: "Косоур",
-        mirror: facing === "left" || facing === "right" ? "z" : "x",
       })
     );
   }

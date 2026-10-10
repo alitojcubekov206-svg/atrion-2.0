@@ -64,6 +64,9 @@ HOW TO BUILD SOMETHING THAT LOOKS RIGHT
    repeat.step is linear translation, not a circular array; place radial components separately.
 8. Check that visible surfaces (windows, controls, trim) are not entirely hidden inside opaque volumes.
    Main sub-volumes must meet at sensible joints; do not bury an entire nose or lid inside the body.
+9. For an entrance staircase, place the lowest step furthest from the door and rise toward it.
+   Match the highest tread, landing and door threshold. Keep both side supports parallel with the
+   same uphill direction; mirroring a wedge's yaw can reverse its slope. Leave the approach clear.
 
 OUTPUT — strict JSON, no prose, no markdown fence:
 {"name":"...","description":"...","category":"...","parts":[
