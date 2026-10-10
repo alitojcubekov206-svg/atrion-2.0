@@ -35,6 +35,16 @@ export function placeObject(scene: InteriorScene, object: SceneObject, variant =
   throw new DesignError(`Не удалось разместить «${findAsset(object.assetId).name}» с проходом. Уменьшите набор мебели или измените размеры.`, 422, "DESIGN_NO_SPACE");
 }
 
+/**
+ * Moves and turns the user makes by hand. They may narrow a walkway — the drag
+ * used to snap back without a word whenever one did — but never overlap a
+ * wall, a door or other furniture.
+ */
+export function isManualPlacement(actions: unknown): boolean {
+  return Array.isArray(actions) && actions.length > 0 &&
+    actions.every(a => a && typeof a === "object" && ["MOVE_OBJECT", "ROTATE_OBJECT"].includes((a as {type?: unknown}).type as string));
+}
+
 export function applyActions(input: InteriorScene, raw: unknown, variant = 0, choices: number[] = []): InteriorScene {
   let scene = structuredClone(parseScene(input));
   const actions = list(record(raw, "План действий").actions, "actions", 80, 1);
@@ -76,7 +86,7 @@ export function applyActions(input: InteriorScene, raw: unknown, variant = 0, ch
     } else throw new DesignError("Неподдерживаемое действие", 422, "DESIGN_ACTION_UNSUPPORTED");
     scene = parseScene(scene);
   }
-  return validateLayout(scene);
+  return validateLayout(scene, !isManualPlacement(actions));
 }
 
 const TERMS: [RegExp, string][] = [[/журнальн\S*\s+стол\S*|coffee\s+table/i, "table_coffee"], [/кресл|\barmchair\b/i, "armchair_soft"], [/пуф|ottoman/i, "ottoman_round"], [/банкетк|скамь|\bbench\b/i, "bench_soft"], [/комод|sideboard/i, "cabinet_low"], [/стеллаж|книжн\S*\s+(?:шкаф|полк)\S*|bookcase|bookshelf/i, "bookcase_open"],

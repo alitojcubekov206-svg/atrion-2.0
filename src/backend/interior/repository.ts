@@ -31,10 +31,10 @@ export async function saveVersion(tx: Tx, project: DesignProject, scene: Interio
   const version = await tx.designVersion.create({data: {projectId: project.id, parentId: project.currentVersionId, before: project.scene as Prisma.InputJsonValue, after: json(scene), actionType, source}});
   return tx.designProject.update({where: {id: project.id}, data: {scene: json(scene), style: scene.style, roomType: scene.roomType, currentVersionId: version.id, redoIds: [], revision: {increment: 1}, status: "ready"}});
 }
-export async function changeScene(projectId: string, userId: string, revision: number, change: (s: InteriorScene) => InteriorScene, actionType = "EDIT") {
+export async function changeScene(projectId: string, userId: string, revision: number, change: (s: InteriorScene) => InteriorScene, actionType = "EDIT", circulation = true) {
   return db.$transaction(async tx => {
     const p = await locked(projectId, userId, tx); expectRevision(p, revision); await ensureIdle(tx, p.id);
-    const next = validateLayout(change(parseScene(p.scene)));
+    const next = validateLayout(change(parseScene(p.scene)), circulation);
     if (JSON.stringify(next) === JSON.stringify(parseScene(p.scene))) return p;
     return saveVersion(tx, p, next, actionType, "user");
   });

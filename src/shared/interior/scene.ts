@@ -117,8 +117,9 @@ function hasCirculation(s: InteriorScene, boxes: Rect[]): boolean {
   return doors.every(d => queue.some(i => overlaps({...point(i), width: .01, depth: .01}, d))) &&
     boxes.every(b => queue.some(i => {const p = point(i); return p.x >= b.x - .65 && p.x <= b.x + b.width + .65 && p.z >= b.z - .65 && p.z <= b.z + b.depth + .65;}));
 }
-export function validateLayout(scene: InteriorScene): InteriorScene {
-  const parsed = parseScene(scene), issues = layoutIssues(parsed);
+/** `circulation: false` keeps walls, doors and overlaps but lets a hand placement narrow a walkway. */
+export function validateLayout(scene: InteriorScene, circulation = true): InteriorScene {
+  const parsed = parseScene(scene), issues = layoutIssues(parsed, circulation);
   if (issues.length) throw new DesignError(issues.slice(0, 4).join("; "), 422, "DESIGN_COLLISION");
   return parsed;
 }

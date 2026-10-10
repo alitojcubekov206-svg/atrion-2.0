@@ -83,7 +83,14 @@ export default function InteriorViewer({scene, selected, onSelect, ghostWalls, c
       <Lightformer intensity={3} color="#fff4e2" position={daylight.window} rotation-y={daylight.facing} scale={[3,2.4,1]}/>
     </Environment>
     {scene.lights.map(l => <pointLight key={l.id} position={[l.position.x-scene.width/2,l.position.y,l.position.z-scene.length/2]} color={l.color} intensity={l.intensity*2.2} distance={extent*1.8} decay={1.4}/>) }
-    <primitive object={model} onClick={(e:{stopPropagation:()=>void;object:Object3D}) => {e.stopPropagation();if(dragging.current)return;let owner:Object3D|null=e.object;while(owner&&!owner.userData.objectId)owner=owner.parent;onSelect(owner?.userData.objectId??null);}}/>
+    <primitive object={model} onClick={(e:{stopPropagation:()=>void;intersections:{object:Object3D}[]}) => {
+      e.stopPropagation();if(dragging.current)return;
+      // Cutaway walls are hidden, not removed, and still catch the ray: clicking a chair
+      // behind one used to select nothing. Take the first hit that is actually shown.
+      const shown=(node:Object3D|null)=>{for(let n=node;n;n=n.parent)if(!n.visible)return false;return true;};
+      let owner:Object3D|null=e.intersections.find(hit=>shown(hit.object))?.object??null;
+      while(owner&&!owner.userData.objectId)owner=owner.parent;onSelect(owner?.userData.objectId??null);
+    }}/>
     <Cutaway model={model} enabled={ghostWalls}/>
     {onCommit && <ObjectGizmo model={model} selected={selected} mode={mode} disabled={disabled} locked={scene.objects.find(o=>o.id===selected)?.locked} offset={[-scene.width/2,0,-scene.length/2]} onCommit={onCommit} onDragState={active=>{dragging.current=active;}}/>}
     <ContactShadows key={JSON.stringify(scene)} position={[0,-.14,0]} scale={extent*2.5} opacity={.45} blur={2.8} far={5} resolution={256} frames={1} color="#000000"/>

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {newScene, parseScene, layoutIssues} from "../src/shared/interior/scene";
 import {applyActions, designWithPlanner, localPlan} from "../src/backend/interior/engine";
+import {isManualPlacement} from "../src/shared/interior/engine";
 import {sceneParts, assetParts} from "../src/shared/interior/geometry";
 import {ASSETS} from "../src/shared/interior/catalog";
 import {boxesGlb} from "../src/backend/interior/glb";
@@ -89,4 +90,25 @@ test("variants preserve requested counts and every layout remains accessible", a
 test("blocking the entrance or leaving the room is rejected", async () => {
   const {scene} = await designWithPlanner(newScene(), "стол", false, 0), objectId = scene.objects[0].id;
   for (const position of [{x: .6, y: 0, z: 4.6}, {x: -1, y: 0, z: 2}]) assert.throws(() => applyActions(scene, {actions: [{type: "MOVE_OBJECT", objectId, position}]}));
+});
+
+test("hand moves may narrow a walkway but never overlap; other edits keep the walkway rule", () => {
+  assert.equal(isManualPlacement([{type: "MOVE_OBJECT"}, {type: "ROTATE_OBJECT"}]), true);
+  assert.equal(isManualPlacement([{type: "MOVE_OBJECT"}, {type: "ADD_OBJECT"}]), false);
+  assert.equal(isManualPlacement([]), false);
+  // A narrow 2 × 4 m room, door on the south wall: a bed across the middle can cut off the chair by the north wall.
+  const scene = parseScene({...newScene(2, 4), objects: [
+    {id: "a", assetId: "chair_simple", position: {x: 1, y: 0, z: .4}, rotation: {x: 0, y: 0, z: 0}, scale: {x: 1, y: 1, z: 1}, color: "#ffffff", locked: false},
+    {id: "b", assetId: "bed_double", position: {x: 1, y: 0, z: 1.1}, rotation: {x: 0, y: 0, z: 0}, scale: {x: 1, y: 1, z: 1}, color: "#ffffff", locked: false},
+  ]});
+  // A spot for chair b that overlaps nothing but closes the walkway.
+  const at = (x: number, z: number) => ({...scene, objects: scene.objects.map(o => o.id === "b" ? {...o, position: {x, y: 0, z}} : o)});
+  let narrowed: {x: number; y: number; z: number} | undefined;
+  for (let x = .3; x <= 1.7 && !narrowed; x += .1) for (let z = .3; z <= 3.7 && !narrowed; z += .1) {
+    if (!layoutIssues(at(x, z), false).length && /прохода/.test(layoutIssues(at(x, z)).join())) narrowed = {x, y: 0, z};
+  }
+  assert(narrowed, "some spot narrows the walkway without overlapping");
+  assert.doesNotThrow(() => applyActions(scene, {actions: [{type: "MOVE_OBJECT", objectId: "b", position: narrowed}]}));
+  assert.throws(() => applyActions(scene, {actions: [{type: "REMOVE_OBJECT", objectId: "b"}, {type: "ADD_OBJECT", id: "c", assetId: "bed_double", position: narrowed}]}), /прохода/);
+  assert.throws(() => applyActions(scene, {actions: [{type: "MOVE_OBJECT", objectId: "b", position: {x: 1, y: 0, z: 1.1}}]}), /пересечение/);
 });

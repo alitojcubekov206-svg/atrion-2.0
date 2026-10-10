@@ -40,6 +40,7 @@ export default function DesignWorkspace({initialScene, preview = false}: {initia
   const [prompt, setPrompt] = useState(initialScene?.roomType === "living" ? "Светлая гостиная: диван, кресло, журнальный стол, стеллаж, торшер и растение." : DEFAULT_PROMPT), [command, setCommand] = useState("");
   const [selected, setSelected] = useState<string | null>(null), [ghostWalls, setGhostWalls] = useState(true);
   const [placementMode, setPlacementMode] = useState<PlacementMode>("select");
+  const [step, setStep] = useState(0.1), [placeNote, setPlaceNote] = useState("");
   const [localUndo,setLocalUndo] = useState<InteriorScene[]>([]), [localRedo,setLocalRedo] = useState<InteriorScene[]>([]);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [job, setJob] = useState<Job | null>(null);
   const [history, setHistory] = useState<Version[]>([]), [saved, setSaved] = useState("");
@@ -146,6 +147,25 @@ export default function DesignWorkspace({initialScene, preview = false}: {initia
     if (!project) {try {const next=applyActions(scene, {actions});setLocalUndo(h=>[...h.slice(-49),scene]);setLocalRedo([]);setScene(next);setError("");return true;} catch (e) {setError((e as Error).message);return false;}}
     return run(async () => {const data = await api<{project: Project}>(root + "/scene", "PATCH", {actions, revision: project.revision}); accept(data.project);});
   }
+  const selectedObject = scene.objects.find(o => o.id === selected);
+  useEffect(() => setPlaceNote(""), [selected]);
+  /** A hand placement is tried here first, so a blocked spot says why instead of silently snapping back. */
+  async function place(actions: Record<string, unknown>[]) {
+    try {applyActions(scene, {actions});}
+    catch (e) {setPlaceNote(/закреплён/.test((e as Error).message) ? "Предмет закреплён — его нельзя двигать." : "Туда не поставить: мешает стена, дверь или другой предмет."); return false;}
+    setPlaceNote("");
+    return action(actions);
+  }
+  function nudge(dx: number, dz: number) {
+    if (!selectedObject) return;
+    const p = selectedObject.position, r = (n: number) => Math.round(n * 1000) / 1000;
+    void place([{type: "MOVE_OBJECT", objectId: selectedObject.id, position: {x: r(p.x + dx), y: 0, z: r(p.z + dz)}}]);
+  }
+  function turn(degrees: number) {
+    if (!selectedObject) return;
+    const angle = selectedObject.rotation.y + degrees * Math.PI / 180;
+    void place([{type: "ROTATE_OBJECT", objectId: selectedObject.id, angle: Math.atan2(Math.sin(angle), Math.cos(angle))}]);
+  }
   function localHistory(redo: boolean) {
     const stack=redo?localRedo:localUndo, next=stack.at(-1);if(!next)return;
     if(redo){setLocalRedo(stack.slice(0,-1));setLocalUndo(h=>[...h,scene]);}else{setLocalUndo(stack.slice(0,-1));setLocalRedo(h=>[...h,scene]);}
@@ -227,8 +247,8 @@ export default function DesignWorkspace({initialScene, preview = false}: {initia
           <div className="flex flex-wrap items-center justify-between gap-2 p-3"><label className="text-xs text-slate-300"><input type="checkbox" className="mr-2" checked={ghostWalls} onChange={e => setGhostWalls(e.target.checked)}/>Разрез комнаты</label>
             <div className="flex gap-2"><button className={button} onClick={()=>setResetKey(k=>k+1)}>Общий вид</button>{(["undo", "redo"] as const).map(a => <button key={a} className={button} disabled={disabled || Boolean(dirty) || (project ? (a === "undo" ? !project.currentVersionId : !project.redoIds.length) : !(a === "undo" ? localUndo.length : localRedo.length))} onClick={() => project ? void run(async () => accept((await api<{project: Project}>(root + "/" + a, "POST", {revision: project.revision})).project)) : localHistory(a === "redo")}>{a === "undo" ? "↶ Отменить" : "↷ Повторить"}</button>)}</div>
           </div>
-          <div className="border-y border-white/10 px-4 py-3"><PlacementToolbar mode={placementMode} onChange={setPlacementMode} disabled={Boolean(disabled || dirty)}/></div>
-          <div className="h-[clamp(320px,55vh,640px)]"><Viewer scene={scene} selected={selected} onSelect={setSelected} ghostWalls={ghostWalls} capture={capture} resetKey={resetKey} mode={placementMode} disabled={Boolean(disabled || dirty)} onCommit={(id,pose)=>action([{type:"MOVE_OBJECT",objectId:id,position:{...pose.position,y:0}},{type:"ROTATE_OBJECT",objectId:id,angle:pose.angle}])}/></div>
+          <div className="border-y border-white/10 px-4 py-3"><PlacementToolbar mode={placementMode} onChange={setPlacementMode} disabled={Boolean(disabled || dirty)} target={selectedObject ? findAsset(selectedObject.assetId).name : undefined} step={step} onStep={setStep} onNudge={nudge} onTurn={turn} note={placeNote}/></div>
+          <div className="h-[clamp(320px,55vh,640px)]"><Viewer scene={scene} selected={selected} onSelect={setSelected} ghostWalls={ghostWalls} capture={capture} resetKey={resetKey} mode={placementMode} disabled={Boolean(disabled || dirty)} onCommit={(id,pose)=>place([{type:"MOVE_OBJECT",objectId:id,position:{...pose.position,y:0}},{type:"ROTATE_OBJECT",objectId:id,angle:pose.angle}])}/></div>
           <div className="flex flex-wrap justify-between gap-2 p-3 text-xs text-muted"><span>{scene.width} × {scene.length} м · {scene.objects.length} предметов · вращайте сцену мышью</span><div className="flex gap-2">{(["glb", "json", "png"] as const).map(f => <button key={f} className="text-accent disabled:text-slate-600" disabled={disabled || Boolean(dirty)} onClick={() => void (preview ? localTask : run)(() => exportFile(f))}>{f.toUpperCase()} ↓</button>)}</div></div>
         </div>}
         {!model && engine === "rules" && <ProcurementList value={procurement}/>}

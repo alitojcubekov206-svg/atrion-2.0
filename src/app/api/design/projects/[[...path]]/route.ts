@@ -4,6 +4,7 @@ import {interiorApi, readDesignBody} from "@/backend/interior/http";
 import {changeScene, createProject, deleteProject, enqueue, owned, restoreVersion, undoRedo, savePlan, renameProject} from "@/backend/interior/repository";
 import {applyActions} from "@/backend/interior/engine";
 import {parseScene} from "@/shared/interior/scene";
+import {isManualPlacement} from "@/shared/interior/engine";
 import {detailedScene,disposeDetailed} from "@/shared/interior/detailed";
 import {detailedGlb} from "@/backend/interior/detailed-glb";
 import {number, text, DesignError} from "@/shared/design/validation";
@@ -61,7 +62,7 @@ async function handle(req: Request, context: Context) {
         const name = text(b.name, "Название", 120);
         return NextResponse.json({project: await renameProject(projectId, userId, revision, name)});
       }
-      if (action === "scene" && method === "PATCH") return NextResponse.json({project: await changeScene(projectId, userId, revision, s => b.actions ? applyActions(s, b) : parseScene(b.scene))});
+      if (action === "scene" && method === "PATCH") return NextResponse.json({project: await changeScene(projectId, userId, revision, s => b.actions ? applyActions(s, b) : parseScene(b.scene), "EDIT", !isManualPlacement(b.actions))});
       if (["generate", "regenerate", "assistant"].includes(action) && method === "POST") {
         const editing = action === "assistant", variants = editing ? 1 : number(b.variants ?? 1, "variants", 1, 3);
         if (!Number.isInteger(variants)) throw new DesignError("Число вариантов должно быть целым");
