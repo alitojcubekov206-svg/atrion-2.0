@@ -470,11 +470,25 @@ class Realistic:
 
     @modal.method()
     def generate(self, prompt: str, seed: int = 0, target_faces: int = 60000, mode: str = "object") -> dict:
+        import torch
+
         started = time.time()
         mode = "figure" if mode == "figure" else "object"
         picture = self._paint(prompt, seed, mode)
         painted = time.time()
-        glb = self._mesh(picture, seed, target_faces)
+        try:
+            glb = self._mesh(picture, seed, target_faces)
+        except torch.OutOfMemoryError:
+            # A wide subject (a bridge, a long hall) fills TRELLIS's grid, and its
+            # mesh decoder then needs more than is left beside the picture model.
+            # Park the painter on the CPU for this mesh, then bring it back.
+            print("[atrion] out of GPU memory; retrying the mesh with the painter on the CPU")
+            self.painter.to("cpu")
+            torch.cuda.empty_cache()
+            try:
+                glb = self._mesh(picture, seed, target_faces)
+            finally:
+                self.painter.to("cuda")
         buffer = io.BytesIO()
         picture.convert("RGB").save(buffer, format="JPEG", quality=85)
         print(f"[atrion] {mode}: paint {painted - started:.1f}s, mesh {time.time() - painted:.1f}s, glb {len(glb)} bytes")
